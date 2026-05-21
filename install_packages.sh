@@ -79,6 +79,8 @@ if ! grep -q "JAVA_HOME" "$BASHRC"; then
     echo "Java 17 environment variables added to $BASHRC."
 else
     echo "Java environment variables already present in $BASHRC."
+    echo "⚠️  WARNING: If your existing JAVA_HOME in $BASHRC does not point to JDK 17, Gradle builds may fail."
+    echo "             Please ensure it points to: ${JDK_17_PATH:-/usr/lib/jvm/java-17-openjdk-amd64}"
 fi
 
 # Configure ANDROID_HOME
@@ -115,4 +117,10 @@ echo "================================================"
 echo "Installation complete!"
 echo "Please restart your terminal or run: source ~/.bashrc"
 echo "You can then build the app by running: ./gradlew assembleDebug"
+if [ -n "$JDK_17_PATH" ]; then
+    echo ""
+    echo "If you run into 'Unsupported class file major version' errors, run:"
+    echo "  export JAVA_HOME=$JDK_17_PATH"
+    echo "before running ./gradlew"
+fi
 echo "================================================"
