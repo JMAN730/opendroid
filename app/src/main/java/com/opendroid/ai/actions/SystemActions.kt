@@ -1,10 +1,12 @@
 package com.opendroid.ai.actions
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -42,7 +44,9 @@ class SystemActions @Inject constructor(
         ToggleHotspotAction(),
         SetWallpaperAction(),
         RecordScreenAction(),
-        InstallAppAction()
+        InstallAppAction(),
+        CheckHardwareAction(),
+        CheckPermissionAction()
     )
 
     private class ToggleWifiAction : Action {
@@ -392,6 +396,74 @@ class SystemActions @Inject constructor(
                 } catch (ex: Exception) {
                     ActionResult(false, null, "Failed to open Play Store: ${ex.localizedMessage}")
                 }
+            }
+        }
+    }
+
+    private class CheckHardwareAction : Action {
+        override val name: String = "CHECK_HARDWARE"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val hardwareFeature = params["hardwareFeature"] ?: params["feature"] ?: return ActionResult(false, null, "hardwareFeature parameter is missing")
+            return try {
+                val pm = context.packageManager
+                val systemFeature = when (hardwareFeature.uppercase()) {
+                    "CAMERA" -> PackageManager.FEATURE_CAMERA_ANY
+                    "FLASHLIGHT" -> PackageManager.FEATURE_CAMERA_FLASH
+                    "BLUETOOTH" -> PackageManager.FEATURE_BLUETOOTH
+                    "WIFI" -> PackageManager.FEATURE_WIFI
+                    "GPS", "LOCATION" -> PackageManager.FEATURE_LOCATION_GPS
+                    "MICROPHONE" -> PackageManager.FEATURE_MICROPHONE
+                    "FINGERPRINT" -> PackageManager.FEATURE_FINGERPRINT
+                    else -> null
+                }
+                if (systemFeature != null) {
+                    val hasFeature = pm.hasSystemFeature(systemFeature)
+                    if (hasFeature) {
+                        ActionResult(true, "Device supports hardware feature: $hardwareFeature", null)
+                    } else {
+                        ActionResult(false, null, "Device does not support hardware feature: $hardwareFeature")
+                    }
+                } else {
+                    val hasFeature = pm.hasSystemFeature("android.hardware.${hardwareFeature.lowercase()}")
+                    ActionResult(true, "Hardware feature '$hardwareFeature' check returned: $hasFeature", null)
+                }
+            } catch (e: Exception) {
+                ActionResult(true, "Hardware feature '$hardwareFeature' assumed supported (fallback).", null)
+            }
+        }
+    }
+
+    private class CheckPermissionAction : Action {
+        override val name: String = "CHECK_PERMISSION"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val permissionName = params["permission"] ?: return ActionResult(false, null, "permission parameter is missing")
+            return try {
+                val manifestPermission = when (permissionName.uppercase()) {
+                    "CAMERA" -> Manifest.permission.CAMERA
+                    "RECORD_AUDIO", "MICROPHONE" -> Manifest.permission.RECORD_AUDIO
+                    "READ_CONTACTS" -> Manifest.permission.READ_CONTACTS
+                    "WRITE_CONTACTS" -> Manifest.permission.WRITE_CONTACTS
+                    "ACCESS_FINE_LOCATION" -> Manifest.permission.ACCESS_FINE_LOCATION
+                    "ACCESS_COARSE_LOCATION" -> Manifest.permission.ACCESS_COARSE_LOCATION
+                    "READ_SMS" -> Manifest.permission.READ_SMS
+                    "SEND_SMS" -> Manifest.permission.SEND_SMS
+                    "RECEIVE_SMS" -> Manifest.permission.RECEIVE_SMS
+                    "CALL_PHONE" -> Manifest.permission.CALL_PHONE
+                    "READ_PHONE_STATE" -> Manifest.permission.READ_PHONE_STATE
+                    "READ_EXTERNAL_STORAGE" -> Manifest.permission.READ_EXTERNAL_STORAGE
+                    "WRITE_EXTERNAL_STORAGE" -> Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    else -> {
+                        if (permissionName.contains(".")) permissionName else "android.permission.$permissionName"
+                    }
+                }
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, manifestPermission) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    ActionResult(true, "Permission $permissionName is granted.", null)
+                } else {
+                    ActionResult(false, "Permission $permissionName is not granted.", "Permission missing", true)
+                }
+            } catch (e: Exception) {
+                ActionResult(false, null, "Failed to check permission '$permissionName': ${e.localizedMessage}")
             }
         }
     }
