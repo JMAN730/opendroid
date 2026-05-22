@@ -13,13 +13,17 @@ import com.opendroid.ai.data.db.entities.MemoryEntity
 import com.opendroid.ai.data.db.entities.PlanEntity
 import com.opendroid.ai.data.db.entities.TaskHistoryEntity
 
+import com.opendroid.ai.data.db.dao.UnknownActionDao
+import com.opendroid.ai.data.db.entities.UnknownActionEntity
+
 @Database(
     entities = [
         ConversationEntity::class,
         PlanEntity::class,
         MemoryEntity::class,
         TaskHistoryEntity::class,
-        MacroEntity::class
+        MacroEntity::class,
+        UnknownActionEntity::class
     ],
     version = 1,
     exportSchema = false
@@ -30,4 +34,5 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao
     abstract fun taskHistoryDao(): TaskHistoryDao
     abstract fun macroDao(): MacroDao
+    abstract fun unknownActionDao(): UnknownActionDao
 }

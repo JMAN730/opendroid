@@ -15,6 +15,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+import com.opendroid.ai.data.db.dao.UnknownActionDao
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -50,4 +52,8 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideMacroDao(db: OpenDroidDatabase): MacroDao = db.macroDao()
+
+    @Provides
+    @Singleton
+    fun provideUnknownActionDao(db: OpenDroidDatabase): UnknownActionDao = db.unknownActionDao()
 }

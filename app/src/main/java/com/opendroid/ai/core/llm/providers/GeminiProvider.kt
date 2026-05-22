@@ -87,10 +87,13 @@ class GeminiProvider @Inject constructor(
             .build()
 
         client.newCall(httpRequest).execute().use { response ->
+            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Gemini request failed: Code ${response.code} - ${response.body?.string()}")
+                throw IOException("Gemini request failed: Code ${response.code} - $responseBody")
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Gemini")
+            if (responseBody == null) {
+                throw IOException("Empty response body from Gemini")
+            }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val candidates = jsonResponse.getAsJsonArray("candidates")
             val firstCandidate = candidates[0].asJsonObject

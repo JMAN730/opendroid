@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import android.provider.ContactsContract
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,17 +29,66 @@ class CommunicationActions @Inject constructor() {
         ReadEmailsAction()
     )
 
+    companion object {
+        private fun resolveContactToPhoneNumber(context: Context, contact: String): String {
+            val cleaned = contact.replace(" ", "").replace("-", "")
+            if (cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })) {
+                return cleaned
+            }
+
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+                return cleaned
+            }
+
+            try {
+                val contentResolver = context.contentResolver
+                val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                
+                // 1. Try exact match
+                val selectionExact = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
+                val selectionArgsExact = arrayOf(contact.trim())
+                contentResolver.query(uri, projection, selectionExact, selectionArgsExact, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        if (numberIndex >= 0) {
+                            val number = cursor.getString(numberIndex)
+                            if (!number.isNullOrBlank()) {
+                                return number.replace(" ", "").replace("-", "")
+                            }
+                        }
+                    }
+                }
+
+                // 2. Try partial match
+                val selectionLike = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+                val selectionArgsLike = arrayOf("%${contact.trim()}%")
+                contentResolver.query(uri, projection, selectionLike, selectionArgsLike, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        if (numberIndex >= 0) {
+                            val number = cursor.getString(numberIndex)
+                            if (!number.isNullOrBlank()) {
+                                return number.replace(" ", "").replace("-", "")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore query failures
+            }
+
+            return cleaned
+        }
+    }
+
     private class SendWhatsAppAction : Action {
         override val name: String = "SEND_WHATSAPP"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact is missing")
             val message = params["message"] ?: return ActionResult(false, null, "message is missing")
             
-            // Try to resolve phone number if nickname is provided
-            var phone = contact.replace(" ", "").replace("-", "")
-            if (!phone.startsWith("+") && phone.all { it.isDigit() }) {
-                // assume some default code or raw
-            }
+            val phone = resolveContactToPhoneNumber(context, contact)
 
             return try {
                 val encodedMsg = URLEncoder.encode(message, "UTF-8")
@@ -75,21 +125,22 @@ class CommunicationActions @Inject constructor() {
         override val name: String = "MAKE_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
+            val phone = resolveContactToPhoneNumber(context, contact)
             return try {
-                val callUri = Uri.parse("tel:$contact")
+                val callUri = Uri.parse("tel:$phone")
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                     val intent = Intent(Intent.ACTION_CALL, callUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "Direct call placed to $contact", null)
+                    ActionResult(true, "Direct call placed to $contact ($phone)", null)
                 } else {
                     // Fallback to DIAL if CALL permission is missing
                     val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "CALL_PHONE permission missing. Opened dialer to $contact as fallback.", null, true)
+                    ActionResult(true, "CALL_PHONE permission missing. Opened dialer to $contact ($phone) as fallback.", null, true)
                 }
             } catch (e: Exception) {
                 ActionResult(false, null, "Call failed: ${e.localizedMessage}")
@@ -102,15 +153,16 @@ class CommunicationActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
             val message = params["message"] ?: return ActionResult(false, null, "message parameter missing")
+            val phone = resolveContactToPhoneNumber(context, contact)
             return try {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                     val smsManager = context.getSystemService(SmsManager::class.java)
-                    smsManager.sendTextMessage(contact, null, message, null, null)
-                    ActionResult(true, "SMS sent to $contact", null)
+                    smsManager.sendTextMessage(phone, null, message, null, null)
+                    ActionResult(true, "SMS sent to $contact ($phone)", null)
                 } else {
                     // Fallback to SMS compose intent
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
-                        data = Uri.parse("smsto:$contact")
+                        data = Uri.parse("smsto:$phone")
                         putExtra("sms_body", message)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
@@ -167,11 +219,12 @@ class CommunicationActions @Inject constructor() {
         override val name: String = "MAKE_VIDEO_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
+            val phone = resolveContactToPhoneNumber(context, contact)
             val app = params["app"] ?: "whatsapp"
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$contact")).apply {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$phone")).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -186,14 +239,14 @@ class CommunicationActions @Inject constructor() {
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
                         } else {
-                            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$contact")).apply {
+                            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(dialIntent)
                         }
                     }
                 }
-                ActionResult(true, "Video call initiated to $contact using $app", null)
+                ActionResult(true, "Video call initiated to $contact ($phone) using $app", null)
             } catch (e: Exception) {
                 ActionResult(false, null, "Video call failed: ${e.localizedMessage}")
             }

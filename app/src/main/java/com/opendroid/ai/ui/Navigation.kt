@@ -173,7 +173,7 @@ fun MainDashboard(
                 Screen.Plan -> PlanScreen(viewModel = planViewModel)
                 Screen.Memory -> MemoryScreen(viewModel = memoryViewModel)
                 Screen.Macros -> MacrosScreen(viewModel = macroViewModel)
-                Screen.History -> HistoryScreen(viewModel = historyViewModel)
+                Screen.History -> LogsScreen(viewModel = historyViewModel)
                 Screen.Settings -> SettingsScreen(
                     viewModel = settingsViewModel,
                     onNavigateToBenchmark = onNavigateToBenchmark

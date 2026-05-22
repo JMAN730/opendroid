@@ -11,4 +11,7 @@ interface TaskHistoryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(task: TaskHistoryEntity)
+
+    @Query("DELETE FROM task_history")
+    suspend fun clearAll()
 }

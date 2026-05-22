@@ -89,8 +89,23 @@ class FinanceActions @Inject constructor() {
             
             return try {
                 val total = totalAmountStr.toDouble()
-                val peopleList = peopleStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val numPeople = peopleList.size
+                
+                val parsedInt = peopleStr.trim().toIntOrNull()
+                val (numPeople, peopleList) = if (parsedInt != null) {
+                    Pair(parsedInt, (1..parsedInt).map { "Person $it" })
+                } else {
+                    // Try parsing "X people", "X friends", "X person", etc.
+                    val regex = Regex("""^(\d+)\s+(?:people|person|persons|members|friends)$""", RegexOption.IGNORE_CASE)
+                    val matchResult = regex.matchEntire(peopleStr.trim())
+                    if (matchResult != null) {
+                        val count = matchResult.groupValues[1].toInt()
+                        Pair(count, (1..count).map { "Person $it" })
+                    } else {
+                        // Treat as a comma-separated list of names
+                        val list = peopleStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        Pair(list.size, list)
+                    }
+                }
                 
                 if (numPeople <= 0) {
                     return ActionResult(false, null, "No people specified to split the bill with.")
@@ -99,8 +114,13 @@ class FinanceActions @Inject constructor() {
                 val share = total / numPeople
                 val formattedShare = String.format("%.2f", share)
                 
-                val summary = "Total: $totalAmountStr divided among $numPeople people (${peopleList.joinToString(", ")}). " +
-                              "Individual Share: $formattedShare per person. Event: '$description'"
+                val summary = if (peopleList.firstOrNull()?.startsWith("Person ") == true) {
+                    "Total: $totalAmountStr divided among $numPeople people. " +
+                    "Individual Share: $formattedShare per person. Event: '$description'"
+                } else {
+                    "Total: $totalAmountStr divided among $numPeople people (${peopleList.joinToString(", ")}). " +
+                    "Individual Share: $formattedShare per person. Event: '$description'"
+                }
                               
                 ActionResult(true, summary, null)
             } catch (e: Exception) {

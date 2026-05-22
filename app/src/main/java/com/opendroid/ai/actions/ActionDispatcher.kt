@@ -37,8 +37,17 @@ class ActionDispatcher @Inject constructor(
 
     fun hasAction(actionName: String): Boolean = actionsMap.containsKey(actionName)
 
+    fun isRegistered(actionName: String): Boolean = hasAction(actionName)
+
+    fun getAllRegisteredActions(): List<String> = actionsMap.keys.toList()
+
+    fun getActionCount(): Int = actionsMap.size
+
     suspend fun execute(actionName: String, params: Map<String, String>, context: Context): ActionResult {
-        val action = actionsMap[actionName] ?: return ActionResult(false, null, "Action '$actionName' is not registered in ActionDispatcher")
+        val action = actionsMap[actionName] ?: return ActionResult.UnknownAction(
+            attemptedAction = actionName,
+            availableActions = getAllRegisteredActions()
+        )
         return action.execute(params, context)
     }
 }

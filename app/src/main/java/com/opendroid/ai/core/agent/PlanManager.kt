@@ -1,5 +1,6 @@
 package com.opendroid.ai.core.agent
 
+import android.content.Context
 import com.opendroid.ai.core.memory.WorkingMemory
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStatus
@@ -15,13 +16,15 @@ import javax.inject.Singleton
 @Singleton
 class PlanManager @Inject constructor(
     private val planRepository: PlanRepository,
-    private val workingMemory: WorkingMemory
+    private val workingMemory: WorkingMemory,
+    private val planValidator: dagger.Lazy<PlanValidator>
 ) {
     private val _currentPlan = MutableStateFlow<Plan?>(null)
     val currentPlan: StateFlow<Plan?> = _currentPlan.asStateFlow()
 
-    suspend fun startNewPlan(plan: Plan) {
-        val runningPlan = plan.copy(status = PlanStatus.RUNNING)
+    suspend fun startNewPlan(plan: Plan, context: Context) {
+        val validatedPlan = planValidator.get().validateAndFix(plan, context)
+        val runningPlan = validatedPlan.copy(status = PlanStatus.RUNNING)
         _currentPlan.value = runningPlan
         workingMemory.activePlan = runningPlan
         saveCurrentPlan()

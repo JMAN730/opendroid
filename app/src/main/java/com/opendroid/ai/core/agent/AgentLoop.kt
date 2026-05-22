@@ -2,6 +2,7 @@ package com.opendroid.ai.core.agent
 
 import android.content.Context
 import com.opendroid.ai.actions.ActionDispatcher
+import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
@@ -23,6 +24,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,13 +48,27 @@ class AgentLoop @Inject constructor(
     private val actionDispatcher: ActionDispatcher,
     private val memoryManager: MemoryManager,
     private val conversationRepository: ConversationRepository,
-    private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository
+    private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
+    private val reEvalEngine: dagger.Lazy<ReEvaluationEngine>
 ) {
     private val scope = CoroutineScope(Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
     val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
+
+    private val _userInputFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    var isWaitingForUserInput: Boolean = false
+        private set
+
+    suspend fun awaitUserResponse(): String {
+        isWaitingForUserInput = true
+        try {
+            return _userInputFlow.first()
+        } finally {
+            isWaitingForUserInput = false
+        }
+    }
 
     fun setAgentState(state: AgentState) {
         _agentState.value = state
@@ -63,8 +80,6 @@ class AgentLoop @Inject constructor(
     fun processQuery(query: String, context: Context) {
         scope.launch {
             try {
-                _agentState.value = AgentState.Thinking
-                
                 // Capture screenshot of the active screen if accessibility service is active
                 val screenshotBase64 = com.opendroid.ai.accessibility.OpenDroidAccessibilityService.getInstance()?.takeScreenshotAndEncode()
 
@@ -78,6 +93,13 @@ class AgentLoop @Inject constructor(
                 )
                 memoryManager.storeMessage(userMsg)
                 conversationRepository.insertMessage(userMsg)
+
+                if (isWaitingForUserInput) {
+                    _userInputFlow.emit(query)
+                    return@launch
+                }
+
+                _agentState.value = AgentState.Thinking
 
                 // 1. Intent Classification
                 val requiresAction = intentClassifier.requiresAction(query)
@@ -100,6 +122,8 @@ class AgentLoop @Inject constructor(
             val systemPrompt = """
                 You are OpenDroid, a professional and precise autonomous Android AI Assistant. 
                 Answer the user's question directly. Keep answers concise, clear, and professional.
+                
+                Note on capabilities: You have full access and capability to control this Android device and run action plans (like opening apps, setting alarms, toggling WiFi/Bluetooth/Flashlight, sending messages/emails, making calls, etc.). If the user asks you to perform an action directly, guide them to request it, or explain how you can perform it.
                 
                 Context about user and device state:
                 $relevantContext
@@ -239,7 +263,7 @@ class AgentLoop @Inject constructor(
                 json.decodeFromString<Plan>(cleaned)
             }
 
-            planManager.startNewPlan(plan)
+            planManager.startNewPlan(plan, context)
             if (config.autoConfirmPlans) {
                 executePlanLoop(plan, context)
             } else {
@@ -294,6 +318,60 @@ class AgentLoop @Inject constructor(
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
                 )
+            } else if (actionResult is ActionResult.UnknownAction) {
+                planManager.updateStepStatus(
+                    nextStep.stepId,
+                    StepStatus.FAILED,
+                    error = actionResult.error ?: "Action execution failed."
+                )
+
+                // Update current state of plan to include the failed step status
+                currentPlanState = planManager.currentPlan.value ?: break
+
+                // Trigger learning extraction
+                reEvalEngine.get().extractLearning(nextStep.action, currentPlanState.goal)
+
+                // Trigger silent replanning
+                val completed = currentPlanState.steps.filter { it.status == StepStatus.COMPLETED }
+                val remaining = currentPlanState.steps.filter { it.status == StepStatus.PENDING }
+
+                val replan = reEvalEngine.get().replanAfterUnknownAction(
+                    originalGoal = currentPlanState.goal,
+                    failedStep = nextStep,
+                    completedSteps = completed,
+                    remainingSteps = remaining,
+                    planId = currentPlanState.planId
+                )
+
+                if (replan.speech.isNotEmpty()) {
+                    onSpeakCallback?.invoke(replan.speech)
+                }
+
+                when (replan.decision.uppercase()) {
+                    "ABANDON" -> {
+                        planManager.updatePlanStatus(PlanStatus.FAILED)
+                        speakAndSaveSummary(currentPlanState, false)
+                        return
+                    }
+                    "MODIFY" -> {
+                        if (replan.updatedPlan != null) {
+                            val mergedSteps = currentPlanState.steps.filter { it.status != StepStatus.PENDING } +
+                                    replan.updatedPlan.steps.filter { step ->
+                                        currentPlanState.steps.none { it.stepId == step.stepId }
+                                    }
+                            planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps), context)
+                        }
+                    }
+                    else -> {
+                        planManager.updatePlanStatus(PlanStatus.FAILED)
+                        speakAndSaveSummary(currentPlanState, false)
+                        return
+                    }
+                }
+
+                // Refresh current state of plan and continue
+                currentPlanState = planManager.currentPlan.value ?: break
+                continue
             } else {
                 // Try fallback action
                 if (nextStep.fallback.isNotEmpty() && actionDispatcher.hasAction(nextStep.fallback)) {
@@ -332,8 +410,7 @@ class AgentLoop @Inject constructor(
                 continue
             }
 
-            val reEvalEngine = ReEvaluationEngine(llmProviderFactory)
-            val reEval = reEvalEngine.evaluateStepResult(
+            val reEval = reEvalEngine.get().evaluateStepResult(
                 originalGoal = currentPlanState.goal,
                 completedSteps = completed,
                 failedSteps = failed,
@@ -358,7 +435,7 @@ class AgentLoop @Inject constructor(
                                 reEval.updatedPlan.steps.filter { step ->
                                     currentPlanState.steps.none { it.stepId == step.stepId }
                                 }
-                        planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps))
+                        planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps), context)
                     }
                 }
                 "CONTINUE" -> {
@@ -396,6 +473,20 @@ class AgentLoop @Inject constructor(
         if (content.endsWith("```")) {
             content = content.removeSuffix("```")
         }
-        return content.trim()
+        content = content.trim()
+        try {
+            val jsonElement = json.parseToJsonElement(content)
+            if (jsonElement is JsonObject) {
+                if (jsonElement.containsKey("plan")) {
+                    val planElement = jsonElement["plan"]
+                    if (planElement != null) {
+                        return planElement.toString()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Silently ignore parsing errors here and let downstream deserialization report them if needed
+        }
+        return content
     }
 }

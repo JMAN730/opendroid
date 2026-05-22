@@ -5,6 +5,8 @@ import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.ConversationRepository
 import com.opendroid.ai.data.repository.MemoryRepository
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -19,7 +21,8 @@ class MemoryManager @Inject constructor(
     val proceduralMemory: ProceduralMemory,
     private val memoryExtractor: MemoryExtractor,
     private val conversationRepository: ConversationRepository,
-    private val memoryRepository: MemoryRepository
+    private val memoryRepository: MemoryRepository,
+    @ApplicationContext private val context: Context
 ) {
     private val json = Json { prettyPrint = true }
 
@@ -43,7 +46,24 @@ class MemoryManager @Inject constructor(
     suspend fun getRelevantContext(currentGoal: String): String {
         // Collect facts from semantic database
         val facts = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
-        val factsContext = facts.joinToString("; ") { "${it.key}: ${it.value}" }
+        val dbFacts = facts.joinToString("; ") { "${it.key}: ${it.value}" }
+
+        // Read user info from SharedPreferences
+        val sharedPrefs = context.getSharedPreferences("opendroid_prefs", Context.MODE_PRIVATE)
+        val userName = sharedPrefs.getString("user_name", "") ?: ""
+        val userDob = sharedPrefs.getString("user_dob", "") ?: ""
+
+        val userFactsList = mutableListOf<String>()
+        if (userName.isNotEmpty()) {
+            userFactsList.add("User Name: $userName")
+        }
+        if (userDob.isNotEmpty()) {
+            userFactsList.add("User Date of Birth (DOB): $userDob")
+        }
+        if (dbFacts.isNotEmpty()) {
+            userFactsList.add(dbFacts)
+        }
+        val factsContext = userFactsList.joinToString("; ")
         
         // Context from working memory
         val activePlanStr = workingMemory.activePlan?.let { "Active Plan Goal: ${it.goal}" } ?: "No active plan."

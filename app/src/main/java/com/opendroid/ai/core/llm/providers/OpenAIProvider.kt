@@ -33,11 +33,18 @@ class OpenAIProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
+        // OpenAI model selection mapping (fallback if user selected invalid model)
+        val selectedModel = if (config.activeModel in availableModels) {
+            config.activeModel
+        } else {
+            "gpt-4o"
+        }
+
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
         val requestBodyMap = mutableMapOf<String, Any>(
-            "model" to config.activeModel,
+            "model" to selectedModel,
             "messages" to messagesList,
             "temperature" to request.temperature,
             "max_tokens" to request.maxTokens
@@ -55,10 +62,13 @@ class OpenAIProvider @Inject constructor(
             .build()
 
         client.newCall(httpRequest).execute().use { response ->
+            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("OpenAI request failed: Code ${response.code} - ${response.body?.string()}")
+                throw IOException("OpenAI request failed: Code ${response.code} - $responseBody")
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from OpenAI")
+            if (responseBody == null) {
+                throw IOException("Empty response body from OpenAI")
+            }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val choices = jsonResponse.getAsJsonArray("choices")
             val messageObj = choices[0].asJsonObject.getAsJsonObject("message")
@@ -70,7 +80,7 @@ class OpenAIProvider @Inject constructor(
             return LLMResponse(
                 content = content,
                 tokensUsed = tokensUsed,
-                model = config.activeModel,
+                model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
             )

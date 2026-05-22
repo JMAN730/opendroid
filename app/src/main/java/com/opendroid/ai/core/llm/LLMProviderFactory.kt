@@ -1,7 +1,13 @@
 package com.opendroid.ai.core.llm
 
+import com.opendroid.ai.actions.ActionDispatcher
+import com.opendroid.ai.core.agent.IntentClassifier
+import com.opendroid.ai.core.agent.QueryComplexity
+import com.opendroid.ai.core.llm.prompts.PlanningPrompts
+import com.opendroid.ai.core.llm.prompts.SystemPrompts
 import com.opendroid.ai.core.llm.providers.*
 import com.opendroid.ai.data.repository.SettingsRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Provider
@@ -20,11 +26,13 @@ class LLMProviderFactory @Inject constructor(
     private val cohereProvider: Provider<CohereProvider>,
     private val deepSeekProvider: Provider<DeepSeekProvider>,
     private val copilotProvider: Provider<CopilotProvider>,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
+    private val intentClassifier: dagger.Lazy<IntentClassifier>
 ) {
 
     fun getProviderByName(name: String): LLMProvider {
-        return when (name) {
+        val rawProvider = when (name) {
             "Anthropic Claude" -> claudeProvider.get()
             "OpenAI" -> openAIProvider.get()
             "Google Gemini" -> geminiProvider.get()
@@ -38,6 +46,7 @@ class LLMProviderFactory @Inject constructor(
             "Copilot API" -> copilotProvider.get()
             else -> geminiProvider.get()
         }
+        return WrappedLLMProvider(rawProvider, actionDispatcher, intentClassifier)
     }
 
     private fun getFallbackChain(primaryName: String): List<LLMProvider> {
@@ -71,7 +80,7 @@ class LLMProviderFactory @Inject constructor(
             }
         }
         // If nothing is configured, default to Gemini (it has Nano offline mock fallback)
-        return geminiProvider.get()
+        return getProviderByName("Google Gemini")
     }
 
     suspend fun executeWithFallback(request: LLMRequest): LLMResponse {
@@ -100,5 +109,60 @@ class LLMProviderFactory @Inject constructor(
             updatedBenchmarks[providerName] = latency
             current.copy(latencyBenchmarks = updatedBenchmarks)
         }
+    }
+}
+
+class WrappedLLMProvider(
+    private val delegate: LLMProvider,
+    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
+    private val intentClassifier: dagger.Lazy<IntentClassifier>
+) : LLMProvider {
+    override val name: String get() = delegate.name
+    override val availableModels: List<String> get() = delegate.availableModels
+
+    override suspend fun complete(request: LLMRequest): LLMResponse {
+        val rewrittenRequest = rewriteRequestIfNeeded(request)
+        return delegate.complete(rewrittenRequest)
+    }
+
+    override fun streamComplete(request: LLMRequest): Flow<String> {
+        val rewrittenRequest = rewriteRequestIfNeeded(request)
+        return delegate.streamComplete(rewrittenRequest)
+    }
+
+    override suspend fun isAvailable(): Boolean = delegate.isAvailable()
+
+    private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {
+        if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains(PlanningPrompts.PLANNING_SYSTEM_PROMPT)) {
+            val userMessageText = request.messages.lastOrNull()?.text ?: ""
+            val complexity = intentClassifier.get().classifyComplexity(userMessageText)
+            val maxSteps = when (complexity) {
+                QueryComplexity.SIMPLE -> 1
+                QueryComplexity.MEDIUM -> 3
+                QueryComplexity.COMPLEX -> 10
+            }
+
+            val memoryContext = if (request.systemPrompt.contains("Context about user and device:")) {
+                request.systemPrompt.substringAfter("Context about user and device:").trim()
+            } else {
+                ""
+            }
+
+            val currentDateTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            val deviceState = "Battery: 80%, WiFi: Connected, Location: Enabled"
+
+            val registeredActions = actionDispatcher.get().getAllRegisteredActions()
+
+            val newSystemPrompt = SystemPrompts.buildMainPrompt(
+                registeredActions = registeredActions,
+                memoryContext = memoryContext,
+                currentDateTime = currentDateTime,
+                deviceState = deviceState,
+                maxSteps = maxSteps
+            )
+
+            return request.copy(systemPrompt = newSystemPrompt)
+        }
+        return request
     }
 }

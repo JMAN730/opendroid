@@ -12,6 +12,7 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.provider.ContactsContract
 import android.provider.Settings
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
@@ -46,7 +47,11 @@ class SystemActions @Inject constructor(
         RecordScreenAction(),
         InstallAppAction(),
         CheckHardwareAction(),
-        CheckPermissionAction()
+        CheckPermissionAction(),
+        VerifyContactAction(),
+        PromptUserSelectionAction(agentLoop),
+        GetSystemInfoAction(),
+        AskUserAction(agentLoop)
     )
 
     private class ToggleWifiAction : Action {
@@ -267,7 +272,19 @@ class SystemActions @Inject constructor(
                 // Ignore toast errors if any
             }
             
-            return ActionResult(true, "Action confirmed: $message", null)
+            val response = agentLoop.get().awaitUserResponse().trim().lowercase()
+            
+            val positiveWords = listOf("yes", "yep", "sure", "ok", "okay", "confirm", "proceed", "do it", "yeah", "agree")
+            val negativeWords = listOf("no", "nope", "cancel", "stop", "dont", "don't", "deny", "abort")
+            
+            val isPositive = positiveWords.any { response.contains(it) }
+            val isNegative = negativeWords.any { response.contains(it) }
+            
+            return if (isPositive && !isNegative) {
+                ActionResult(true, "User confirmed: $response", null)
+            } else {
+                ActionResult(false, null, "Action cancelled by user response: $response")
+            }
         }
     }
 
@@ -465,6 +482,181 @@ class SystemActions @Inject constructor(
             } catch (e: Exception) {
                 ActionResult(false, null, "Failed to check permission '$permissionName': ${e.localizedMessage}")
             }
+        }
+    }
+
+    private class VerifyContactAction : Action {
+        override val name: String = "VERIFY_CONTACT"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val contactName = params["contactName"] ?: params["contact"]
+                ?: return ActionResult(false, null, "contactName parameter is missing")
+
+            val contacts = mutableListOf<Pair<String, String>>()
+            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            )
+            try {
+                context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    if (nameIndex != -1 && numberIndex != -1) {
+                        while (cursor.moveToNext()) {
+                            val name = cursor.getString(nameIndex) ?: ""
+                            val number = cursor.getString(numberIndex) ?: ""
+                            if (name.contains(contactName, ignoreCase = true)) {
+                                contacts.add(name to number)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                return ActionResult(false, null, "Failed to read contacts: ${e.localizedMessage}")
+            }
+
+            val uniqueContacts = contacts.distinctBy { it.first + it.second }
+
+            return when {
+                uniqueContacts.isEmpty() -> {
+                    ActionResult(false, null, "No contacts found matching '$contactName'")
+                }
+                uniqueContacts.size == 1 -> {
+                    ActionResult(true, uniqueContacts.first().second, null)
+                }
+                else -> {
+                    val optionsJson = uniqueContacts.joinToString(prefix = "[", postfix = "]") { (name, num) ->
+                        "{\"name\":\"${name.replace("\\", "\\\\").replace("\"", "\\\"")}\",\"number\":\"${num.replace("\\", "\\\\").replace("\"", "\\\"")}\"}"
+                    }
+                    ActionResult(true, optionsJson, null)
+                }
+            }
+        }
+    }
+
+    private class PromptUserSelectionAction(
+        private val agentLoop: dagger.Lazy<AgentLoop>
+    ) : Action {
+        override val name: String = "PROMPT_USER_SELECTION"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val optionsStr = params["options"] ?: return ActionResult(false, null, "options parameter is missing")
+            
+            val options = parseOptions(optionsStr)
+            if (options.isEmpty()) {
+                return ActionResult(false, null, "No valid options to select from")
+            }
+
+            val speakText = StringBuilder("I found multiple matches. Which one would you like to choose? ")
+            options.forEachIndexed { index, option ->
+                speakText.append("${index + 1}: ${option.name}. ")
+            }
+            val promptText = speakText.toString()
+
+            agentLoop.get().onSpeakCallback?.invoke(promptText)
+
+            try {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, promptText, android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                // Ignore toast errors
+            }
+
+            val userResponse = agentLoop.get().awaitUserResponse()
+
+            val selectedOption = matchResponseToOption(userResponse, options)
+                ?: return ActionResult(false, null, "Could not understand your selection: '$userResponse'")
+
+            return ActionResult(true, selectedOption.number, null)
+        }
+
+        private data class ContactOption(val name: String, val number: String)
+
+        private fun parseOptions(optionsStr: String): List<ContactOption> {
+            val list = mutableListOf<ContactOption>()
+            val regex = """\{"name":"(.*?)","number":"(.*?)"\}""".toRegex()
+            val matches = regex.findAll(optionsStr)
+            for (match in matches) {
+                val name = match.groups[1]?.value ?: ""
+                val number = match.groups[2]?.value ?: ""
+                list.add(ContactOption(name, number))
+            }
+            if (list.isEmpty()) {
+                val items = optionsStr.split(",")
+                for (item in items) {
+                    val trimmed = item.trim()
+                    if (trimmed.isEmpty()) continue
+                    val numRegex = """(.*)\((.*?)\)""".toRegex()
+                    val numMatch = numRegex.find(trimmed)
+                    if (numMatch != null) {
+                        val name = numMatch.groups[1]?.value?.trim() ?: trimmed
+                        val number = numMatch.groups[2]?.value?.trim() ?: ""
+                        list.add(ContactOption(name, number))
+                    } else {
+                        list.add(ContactOption(trimmed, trimmed))
+                    }
+                }
+            }
+            return list
+        }
+
+        private fun matchResponseToOption(response: String, options: List<ContactOption>): ContactOption? {
+            val cleanResponse = response.trim().lowercase()
+
+            val indexMap = mapOf(
+                "1" to 0, "one" to 0, "first" to 0,
+                "2" to 1, "two" to 1, "second" to 1,
+                "3" to 2, "three" to 2, "third" to 2,
+                "4" to 3, "four" to 3, "fourth" to 3,
+                "5" to 4, "five" to 4, "fifth" to 4
+            )
+            for ((key, value) in indexMap) {
+                if (cleanResponse.contains(key) && value < options.size) {
+                    return options[value]
+                }
+            }
+
+            for (option in options) {
+                val cleanName = option.name.lowercase()
+                if (cleanResponse.contains(cleanName) || cleanName.contains(cleanResponse)) {
+                    return option
+                }
+            }
+
+            val digit = cleanResponse.firstOrNull { it.isDigit() }?.toString()
+            if (digit != null) {
+                val idx = digit.toInt() - 1
+                if (idx in options.indices) {
+                    return options[idx]
+                }
+            }
+
+            return null
+        }
+    }
+
+    private class GetSystemInfoAction : Action {
+        override val name: String = "GET_SYSTEM_INFO"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val buildInfo = "OS Version: ${android.os.Build.VERSION.RELEASE}, Model: ${android.os.Build.MODEL}"
+            return ActionResult(true, "System Info retrieved: $buildInfo", null)
+        }
+    }
+
+    private class AskUserAction(
+        private val agentLoop: dagger.Lazy<AgentLoop>
+    ) : Action {
+        override val name: String = "ASK_USER"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val question = params["question"] ?: params["message"] ?: "Please provide the required information."
+            agentLoop.get().onSpeakCallback?.invoke(question)
+            try {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, question, android.widget.Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {}
+            val response = agentLoop.get().awaitUserResponse().trim()
+            return ActionResult(true, response, null)
         }
     }
 }

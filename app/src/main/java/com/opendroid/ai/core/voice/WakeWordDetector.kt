@@ -76,7 +76,7 @@ class WakeWordDetector(private val context: Context) {
                 if (matches != null) {
                     for (match in matches) {
                         if (match.contains("opendroid", ignoreCase = true) || match.contains("open droid", ignoreCase = true)) {
-                            onWakeWordDetectedCallback?.invoke()
+                            triggerWakeWord()
                             break
                         }
                     }
@@ -89,7 +89,7 @@ class WakeWordDetector(private val context: Context) {
                 if (matches != null) {
                     for (match in matches) {
                         if (match.contains("opendroid", ignoreCase = true) || match.contains("open droid", ignoreCase = true)) {
-                            onWakeWordDetectedCallback?.invoke()
+                            triggerWakeWord()
                             break
                         }
                     }
@@ -103,6 +103,14 @@ class WakeWordDetector(private val context: Context) {
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
             scheduleRestart()
+        }
+    }
+
+    private fun triggerWakeWord() {
+        val callback = onWakeWordDetectedCallback
+        if (callback != null) {
+            onWakeWordDetectedCallback = null
+            callback.invoke()
         }
     }
 
@@ -128,6 +136,7 @@ class WakeWordDetector(private val context: Context) {
         isListening = false
         handler.removeCallbacks(restartRunnable)
         cleanupRecognizer()
+        onWakeWordDetectedCallback = null
     }
 
     fun destroy() {

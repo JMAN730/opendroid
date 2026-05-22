@@ -39,11 +39,18 @@ class CopilotProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
+        // Copilot model selection mapping (fallback if user selected invalid model)
+        val selectedModel = if (config.activeModel in availableModels) {
+            config.activeModel
+        } else {
+            "gpt-4o"
+        }
+
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
         val requestBodyMap = mutableMapOf<String, Any>(
-            "model" to config.activeModel,
+            "model" to selectedModel,
             "messages" to messagesList,
             "temperature" to request.temperature,
             "max_tokens" to request.maxTokens
@@ -64,10 +71,13 @@ class CopilotProvider @Inject constructor(
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
+            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Copilot API request failed: Code ${response.code} - ${response.body?.string()}")
+                throw IOException("Copilot API request failed: Code ${response.code} - $responseBody")
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Copilot API")
+            if (responseBody == null) {
+                throw IOException("Empty response body from Copilot API")
+            }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val choices = jsonResponse.getAsJsonArray("choices")
             val messageObj = choices[0].asJsonObject.getAsJsonObject("message")
@@ -79,7 +89,7 @@ class CopilotProvider @Inject constructor(
             return LLMResponse(
                 content = content,
                 tokensUsed = tokensUsed,
-                model = config.activeModel,
+                model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
             )

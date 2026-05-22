@@ -1,9 +1,14 @@
 package com.opendroid.ai.core.agent
 
+import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.prompts.ReEvalPrompts
+import com.opendroid.ai.data.db.dao.MemoryDao
+import com.opendroid.ai.data.db.dao.UnknownActionDao
+import com.opendroid.ai.data.db.entities.MemoryEntity
+import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
@@ -15,7 +20,10 @@ import javax.inject.Singleton
 
 @Singleton
 class ReEvaluationEngine @Inject constructor(
-    private val llmProviderFactory: LLMProviderFactory
+    private val llmProviderFactory: LLMProviderFactory,
+    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
+    private val memoryDao: dagger.Lazy<MemoryDao>,
+    private val unknownActionDao: dagger.Lazy<UnknownActionDao>
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -72,6 +80,116 @@ class ReEvaluationEngine @Inject constructor(
                 decision = "CONTINUE",
                 updatedPlan = null
             )
+        }
+    }
+
+    suspend fun replanAfterUnknownAction(
+        originalGoal: String,
+        failedStep: PlanStep,
+        completedSteps: List<PlanStep>,
+        remainingSteps: List<PlanStep>,
+        planId: String
+    ): ReEvalResult {
+        return try {
+            val provider = llmProviderFactory.getActiveProvider()
+            val whitelist = actionDispatcher.get().getAllRegisteredActions()
+            
+            // Format details for the prompt
+            val systemPrompt = """
+                You are OpenDroid's Re-evaluation Engine. A plan step failed because the action '${failedStep.action}' is NOT registered.
+                
+                You must rewrite the plan starting from this failed step. 
+                You MUST ONLY use the actions listed in the Whitelist below. Any other actions will fail.
+                
+                Whitelist:
+                ${whitelist.joinToString("\n") { "  - $it" }}
+                
+                Respond strictly in JSON:
+                {
+                  "speech": "An explanation to the user of how you fixed the plan.",
+                  "decision": "MODIFY",
+                  "updatedPlan": {
+                    "goal": "$originalGoal",
+                    "planId": "$planId",
+                    "estimatedSteps": ${remainingSteps.size + 1},
+                    "estimatedDuration": "2 minutes",
+                    "steps": [
+                      // List the corrected step and the remaining steps. Use steps from the whitelist only.
+                    ]
+                  }
+                }
+            """.trimIndent()
+
+            val inputDetails = """
+                - Failed step: ${json.encodeToString(failedStep)}
+                - Completed steps: ${json.encodeToString(completedSteps)}
+                - Remaining steps: ${json.encodeToString(remainingSteps)}
+            """.trimIndent()
+
+            val response = provider.complete(
+                LLMRequest(
+                    systemPrompt = systemPrompt,
+                    messages = listOf(
+                        com.opendroid.ai.data.models.ChatMessage(
+                            id = java.util.UUID.randomUUID().toString(),
+                            text = inputDetails,
+                            sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
+                        )
+                    ),
+                    temperature = 0.0f,
+                    maxTokens = 1000,
+                    responseFormat = ResponseFormat.JSON
+                )
+            )
+
+            val cleaned = cleanJsonString(response.content)
+            val result = json.decodeFromString<ReEvalResult>(cleaned)
+            
+            // Log to unknown actions DB that we successfully replanned
+            try {
+                unknownActionDao.get().insertUnknownAction(
+                    UnknownActionEntity(
+                        attemptedAction = failedStep.action,
+                        goal = originalGoal,
+                        fixStatus = "REPLANNED"
+                    )
+                )
+            } catch (e: Exception) {}
+            
+            result
+        } catch (e: Exception) {
+            // Log failed status to DB
+            try {
+                unknownActionDao.get().insertUnknownAction(
+                    UnknownActionEntity(
+                        attemptedAction = failedStep.action,
+                        goal = originalGoal,
+                        fixStatus = "FAILED"
+                    )
+                )
+            } catch (ex: Exception) {}
+
+            ReEvalResult(
+                speech = "Failed to replan failed step: ${e.localizedMessage}",
+                decision = "ABANDON",
+                updatedPlan = null
+            )
+        }
+    }
+
+    suspend fun extractLearning(attemptedAction: String, goal: String) {
+        try {
+            val key = "invalid_action_$attemptedAction"
+            val value = "The action '$attemptedAction' is not registered in OpenDroid. Do not use this action name for goal '$goal' or any other goals. Instead, use only whitelisted actions like OPEN_APP or ASK_USER."
+            val memory = MemoryEntity(
+                key = key,
+                value = value,
+                type = "SEMANTIC",
+                timestamp = System.currentTimeMillis()
+            )
+            memoryDao.get().insertOrUpdateMemory(memory)
+        } catch (e: Exception) {
+            // Ignore memory DB errors
         }
     }
 
