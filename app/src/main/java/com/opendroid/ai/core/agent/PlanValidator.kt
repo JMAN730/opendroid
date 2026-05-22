@@ -39,7 +39,10 @@ class PlanValidator @Inject constructor(
     }
 
     suspend fun validateAndFix(plan: Plan, context: Context): Plan {
-        val updatedSteps = plan.steps.map { step ->
+        val finalSteps = mutableListOf<PlanStep>()
+        var currentOrder = 1
+
+        for (step in plan.steps) {
             var updatedStep = step
             val isReg = actionDispatcher.get().isRegistered(step.action)
 
@@ -101,21 +104,52 @@ class PlanValidator @Inject constructor(
                         val updatedParams = updatedStep.params.toMutableMap().apply {
                             put("contact", resolvedPhone)
                         }
-                        updatedStep = updatedStep.copy(params = updatedParams)
-                    } else {
-                        // Unresolved - convert this step to ASK_USER to query the user for details
                         updatedStep = updatedStep.copy(
-                            action = "ASK_USER",
-                            params = mapOf("question" to "I couldn't find a contact named '$contactName'. What is their phone number?")
+                            order = currentOrder++,
+                            params = updatedParams
                         )
-                    }
-                }
-            }
+                        finalSteps.add(updatedStep)
+                    } else {
+                        // Unresolved - insert ASK_USER step and link this step to it
+                        val askStepId = "${updatedStep.stepId}_ask"
+                        val askStep = PlanStep(
+                            stepId = askStepId,
+                            order = currentOrder++,
+                            description = "Ask user for contact number of '$contactName'",
+                            action = "ASK_USER",
+                            params = mapOf("question" to "I couldn't find a contact named '$contactName'. What is their phone number?"),
+                            fallback = ""
+                        )
+                        finalSteps.add(askStep)
 
-            updatedStep
+                        // Update the communication step to depend on the ask step and reference its output
+                        val updatedParams = updatedStep.params.toMutableMap().apply {
+                            put("contact", "$$askStepId")
+                        }
+                        val updatedDependsOn = updatedStep.dependsOn.toMutableList().apply {
+                            if (!contains(askStepId)) add(askStepId)
+                        }
+                        updatedStep = updatedStep.copy(
+                            order = currentOrder++,
+                            params = updatedParams,
+                            dependsOn = updatedDependsOn
+                        )
+                        finalSteps.add(updatedStep)
+                    }
+                } else {
+                    updatedStep = updatedStep.copy(order = currentOrder++)
+                    finalSteps.add(updatedStep)
+                }
+            } else {
+                updatedStep = updatedStep.copy(order = currentOrder++)
+                finalSteps.add(updatedStep)
+            }
         }
 
-        return plan.copy(steps = updatedSteps)
+        return plan.copy(
+            steps = finalSteps,
+            estimatedSteps = finalSteps.size
+        )
     }
 
     private suspend fun logUnknownAction(attemptedAction: String, goal: String, fixStatus: String) {

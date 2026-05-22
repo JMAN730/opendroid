@@ -31,6 +31,9 @@ class CommunicationActions @Inject constructor() {
 
     companion object {
         private fun resolveContactToPhoneNumber(context: Context, contact: String): String {
+            if (contact.startsWith("$")) {
+                throw IllegalArgumentException("Unresolved contact placeholder: $contact")
+            }
             val cleaned = contact.replace(" ", "").replace("-", "")
             if (cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })) {
                 return cleaned

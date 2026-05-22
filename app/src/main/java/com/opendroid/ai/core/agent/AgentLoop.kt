@@ -309,8 +309,26 @@ class AgentLoop @Inject constructor(
             _agentState.value = AgentState.ExecutingPlan(nextStep.description)
             planManager.updateStepStatus(nextStep.stepId, StepStatus.RUNNING)
 
+            // Resolve parameters from prior step results
+            val resolvedParams = nextStep.params.mapValues { (_, value) ->
+                var newValue = value
+                currentPlanState.steps.forEach { completedStep ->
+                    if (completedStep.status == StepStatus.COMPLETED && completedStep.result != null) {
+                        val refKey = "$" + completedStep.stepId
+                        if (newValue.contains(refKey)) {
+                            newValue = newValue.replace(refKey, completedStep.result!!)
+                        }
+                        val doubleRefKey = "$$" + completedStep.stepId
+                        if (newValue.contains(doubleRefKey)) {
+                            newValue = newValue.replace(doubleRefKey, completedStep.result!!)
+                        }
+                    }
+                }
+                newValue
+            }
+
             // Execute the action dispatcher
-            val actionResult = actionDispatcher.execute(nextStep.action, nextStep.params, context)
+            val actionResult = actionDispatcher.execute(nextStep.action, resolvedParams, context)
 
             if (actionResult.success) {
                 planManager.updateStepStatus(
@@ -375,7 +393,7 @@ class AgentLoop @Inject constructor(
             } else {
                 // Try fallback action
                 if (nextStep.fallback.isNotEmpty() && actionDispatcher.hasAction(nextStep.fallback)) {
-                    val fallbackResult = actionDispatcher.execute(nextStep.fallback, nextStep.params, context)
+                    val fallbackResult = actionDispatcher.execute(nextStep.fallback, resolvedParams, context)
                     if (fallbackResult.success) {
                         planManager.updateStepStatus(
                             nextStep.stepId,
