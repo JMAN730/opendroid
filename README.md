@@ -8,14 +8,18 @@
 
 OpenDroid is a production-ready, autonomous, self-planning AI assistant for Android. Rather than acting as a simple chat interface, OpenDroid is a fully agentic system capable of breaking complex goals into sequential sub-tasks, executing them through direct device controls and accessibility automation, monitoring execution results, and dynamically replanning when steps fail or environment conditions change.
 
+Developed & Maintained by **[yashab-cyber](https://github.com/yashab-cyber)**.
+
 ---
 
 ## 🌟 Key Features
 
 - 🧠 **Autonomous Planning & Re-evaluation**: Breaks down high-level user commands (e.g. *"Check if it's going to rain, and if so, text my wife that I'll be late and set an alarm for 6 PM"*) into logical steps, executing each sequentially, verifying the outcome, and adapting the remaining steps dynamically.
 - 📱 **Full Device & System Control**: Supports a wide range of native system actions including brightness adjustments, toggling Wi-Fi/Bluetooth/Flashlight, locking the screen, scheduling alarms/timers, calendar management, and currency/language translation.
-- 🤖 **Accessibility Automation**: Leveraging `JarvisAccessibilityService` to click, scroll, read screens, and automate apps (e.g. sending messages on WhatsApp or finding locations in maps) when API controls are unavailable.
-- 🔌 **Unified Multi-LLM Layer**: Supports 10 major LLM providers interchangeably (Claude, OpenAI, Gemini, Mistral, Groq, Ollama, OpenRouter, Together AI, Cohere, DeepSeek) with automatic fallback chaining when API limits are hit.
+- 🤖 **Accessibility Automation**: Leveraging `OpenDroidAccessibilityService` to click, scroll, read screens, and automate apps (e.g. sending messages on WhatsApp or finding locations in maps) when API controls are unavailable.
+- 📸 **Vision Engine (Screenshot Analysis)**: Fully integrated multimodal analysis. Captures screen buffers via Accessibility API (Android 11+) and feeds them to the LLM. In case of permission limits or older OS versions, it automatically falls back to an accessibility text-scraping mode to analyze active layouts seamlessly.
+- ⚡ **Compound Intent Safeguard**: Prevents alias resolvers from breaking multi-step commands (e.g., "Open WhatsApp and send message to Dad") by using smart intent guards to defer compound statements to the planner.
+- 📞 **Robust Calls & SMS Fallbacks**: Implements zero-refusal background calling/texting with a reliable fallback to system dialers and SMS composer intents if permissions are missing or telephony services are not present.
 - 🗄️ **Multi-Tier Persistent Memory**:
   - **Working Memory**: Manages temporary context and execution variables of the current plan.
   - **Episodic Memory**: Logs logs and results of past action sequences.
@@ -36,7 +40,7 @@ com.opendroid.ai
 ├── accessibility/     # Accessibility services & third-party app automators (WhatsApp, etc.)
 ├── actions/           # Command execution modules (System, Communications, Productivity, etc.)
 ├── core/
-│   ├── agent/         # PlanManager, ReEvaluationEngine, IntentClassifier
+│   ├── agent/         # PlanManager, ReEvaluationEngine, IntentClassifier, ContactResolver
 │   ├── llm/           # Providers, factory, prompt templates, fallback logic
 │   ├── memory/        # Multi-tier memory, semantic fact extractor
 │   ├── service/       # Foreground OpenDroidService, BootReceiver
@@ -94,11 +98,11 @@ Through the **Settings Screen** in the app, you can configure your LLM models an
 ```
 Copyright 2026 OpenDroid Contributors
 
-Licensed under the Apache License, Version 2.5 (the "License");
+Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.5
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
