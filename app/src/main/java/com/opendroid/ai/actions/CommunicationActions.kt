@@ -103,23 +103,42 @@ class CommunicationActions @Inject constructor() {
     private class MakeCallAction : Action {
         override val name: String = "MAKE_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
+            // Accept contact, number, phone, or phoneNumber params
+            val contact = params["contact"]
+                ?: params["number"]
+                ?: params["phone"]
+                ?: params["phoneNumber"]
+                ?: return ActionResult(false, null, "contact or number parameter missing")
+
             val phone = resolveContactToPhoneNumber(context, contact)
+            val cleanPhone = phone.replace(Regex("[\\s\\-\\(\\)]"), "").trim()
+
             return try {
-                val callUri = Uri.parse("tel:$phone")
+                val callUri = Uri.parse("tel:$cleanPhone")
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                     val intent = Intent(Intent.ACTION_CALL, callUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "Direct call placed to $contact ($phone)", null)
+                    ActionResult(true, "Calling $contact ($cleanPhone)", null)
                 } else {
                     // Fallback to DIAL if CALL permission is missing
                     val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "CALL_PHONE permission missing. Opened dialer to $contact ($phone) as fallback.", null, true)
+                    ActionResult(true, "Opened dialer for $contact ($cleanPhone). Tap call to proceed.", null, true)
+                }
+            } catch (e: SecurityException) {
+                // Security fallback — try ACTION_DIAL
+                try {
+                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(dialIntent)
+                    ActionResult(true, "Opened dialer for $cleanPhone", null, true)
+                } catch (e2: Exception) {
+                    ActionResult(false, null, "Call failed: ${e2.localizedMessage}")
                 }
             } catch (e: Exception) {
                 ActionResult(false, null, "Call failed: ${e.localizedMessage}")

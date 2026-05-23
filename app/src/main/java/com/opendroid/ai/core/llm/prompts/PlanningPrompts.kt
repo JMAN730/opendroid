@@ -127,12 +127,17 @@ CRITICAL DEPENDENCY RULES:
 1. "dependsOn" defaults to [] (empty) for most steps. Steps already execute sequentially by order.
 2. ONLY add a stepId to "dependsOn" if the step needs the DATA OUTPUT of that prior step (e.g., using ${'$'}${'$'}stepId to reference its result).
 3. Non-data-producing actions like OPEN_APP, TOGGLE_WIFI, TOGGLE_FLASHLIGHT, SET_VOLUME, SET_BRIGHTNESS, LOCK_SCREEN must NEVER appear in another step's "dependsOn".
-4. Data-producing actions that CAN be referenced: WEB_SEARCH, GET_WEATHER, GET_NEWS, CALCULATE, ASK_USER, GET_SYSTEM_INFO, CHECK_BALANCE, SPLIT_BILL, TRANSLATE, CURRENCY_CONVERT.
+4. Data-producing actions that CAN be referenced: WEB_SEARCH, GET_WEATHER, GET_NEWS, CALCULATE, ASK_USER, GET_SYSTEM_INFO, CHECK_BALANCE, SPLIT_BILL, TRANSLATE, CURRENCY_CONVERT, ANALYZE_SCREENSHOT.
 
 SELF-CONTAINED ACTIONS (do NOT add OPEN_APP before these):
 - SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally.
 - BOOK_UBER, BOOK_OLA — these open the ride app internally.
 - PLAY_MUSIC, PLAY_YOUTUBE — these open the media app internally.
+
+CRITICAL: NEVER generate OPEN_APP as a separate step before a self-contained action.
+  WRONG: Step 1: OPEN_APP {appName: "WhatsApp"}, Step 2: SEND_WHATSAPP {contact: "dad", message: "hi"}
+  CORRECT: Step 1: SEND_WHATSAPP {contact: "dad", message: "hi"}
+  "open whatsapp and send hi to dad" = just SEND_WHATSAPP (1 step, not 2)
 
 Always return the structured PLAN JSON format, even if the user request can be accomplished in a single step (in which case, return a plan with a single step in the steps list). Avoid hardcoding variables when a previous step's output is required (e.g., dependsOn mapping). All parameter values in "params" must be Strings.
 
