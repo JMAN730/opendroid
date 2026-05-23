@@ -149,26 +149,51 @@ class CommunicationActions @Inject constructor() {
     private class SendSmsAction : Action {
         override val name: String = "SEND_SMS"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
-            val message = params["message"] ?: return ActionResult(false, null, "message parameter missing")
+            val contact = params["contact"]
+                ?: params["to"]
+                ?: params["recipient"]
+                ?: return ActionResult(false, null, "contact parameter missing")
+            val message = params["message"]
+                ?: params["text"]
+                ?: params["body"]
+                ?: return ActionResult(false, null, "message parameter missing")
             val phone = resolveContactToPhoneNumber(context, contact)
+
+            // Always try to open SMS compose intent first (works on all devices)
+            // Direct SmsManager.sendTextMessage can fail on devices without telephony
             return try {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
-                    val smsManager = context.getSystemService(SmsManager::class.java)
-                    smsManager.sendTextMessage(phone, null, message, null, null)
-                    ActionResult(true, "SMS sent to $contact ($phone)", null)
-                } else {
-                    // Fallback to SMS compose intent
-                    val intent = Intent(Intent.ACTION_SENDTO).apply {
-                        data = Uri.parse("smsto:$phone")
+                    try {
+                        val smsManager = context.getSystemService(SmsManager::class.java)
+                        if (smsManager != null) {
+                            smsManager.sendTextMessage(phone, null, message, null, null)
+                            return ActionResult(true, "SMS sent to $contact ($phone)", null)
+                        }
+                    } catch (_: Exception) {
+                        // SmsManager failed (no telephony, etc.) — fall through to intent
+                    }
+                }
+                // Fallback: open SMS compose intent (always works)
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("smsto:$phone")
+                    putExtra("sms_body", message)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "Opened SMS to $contact ($phone) with message pre-filled.", null)
+            } catch (e: Exception) {
+                // Last resort: try generic messaging app
+                try {
+                    val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("sms:$phone")
                         putExtra("sms_body", message)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(intent)
-                    ActionResult(true, "SEND_SMS permission missing. Opened SMS editor as fallback.", null, true)
+                    context.startActivity(fallbackIntent)
+                    ActionResult(true, "Opened messaging app for $contact", null, true)
+                } catch (e2: Exception) {
+                    ActionResult(false, null, "Could not open SMS: ${e2.localizedMessage}")
                 }
-            } catch (e: Exception) {
-                ActionResult(false, null, "SMS failed: ${e.localizedMessage}")
             }
         }
     }
