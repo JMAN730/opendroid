@@ -24,7 +24,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SystemActions @Inject constructor(
-    private val agentLoop: dagger.Lazy<AgentLoop>
+    private val agentLoop: dagger.Lazy<AgentLoop>,
+    private val visionEngine: dagger.Lazy<com.opendroid.ai.core.agent.VisionEngine>
 ) {
 
     fun getActions(): List<Action> = listOf(
@@ -51,7 +52,8 @@ class SystemActions @Inject constructor(
         VerifyContactAction(),
         PromptUserSelectionAction(agentLoop),
         GetSystemInfoAction(),
-        AskUserAction(agentLoop)
+        AskUserAction(agentLoop),
+        AnalyzeScreenshotAction(visionEngine)
     )
 
     private class ToggleWifiAction : Action {
@@ -75,10 +77,31 @@ class SystemActions @Inject constructor(
     }
 
     private class ToggleFlashlightAction : Action {
+        companion object {
+            @Volatile
+            var isFlashlightOn: Boolean = false
+            private var callbackRegistered: Boolean = false
+        }
+
         override val name: String = "TOGGLE_FLASHLIGHT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val onParam = params["on"] ?: "toggle"
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+            // Register torch callback to track actual state (once)
+            if (!callbackRegistered) {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        cameraManager.registerTorchCallback(object : CameraManager.TorchCallback() {
+                            override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+                                isFlashlightOn = enabled
+                            }
+                        }, null)
+                        callbackRegistered = true
+                    }
+                } catch (_: Exception) {}
+            }
+
             return try {
                 var foundCameraId: String? = null
                 for (id in cameraManager.cameraIdList) {
@@ -91,8 +114,17 @@ class SystemActions @Inject constructor(
                 }
                 val cameraId = foundCameraId ?: cameraManager.cameraIdList.firstOrNull()
                 if (cameraId != null) {
-                    cameraManager.setTorchMode(cameraId, on)
-                    ActionResult(true, "Flashlight set to $on", null)
+                    // Determine target state
+                    val targetOn = when (onParam) {
+                        "true" -> true
+                        "false" -> false
+                        "toggle" -> !isFlashlightOn
+                        else -> !isFlashlightOn
+                    }
+                    cameraManager.setTorchMode(cameraId, targetOn)
+                    isFlashlightOn = targetOn
+                    val stateWord = if (targetOn) "on" else "off"
+                    ActionResult(true, "Flashlight turned $stateWord", null)
                 } else {
                     ActionResult(false, null, "No camera with flashlight support was found.")
                 }
@@ -657,6 +689,21 @@ class SystemActions @Inject constructor(
             } catch (e: Exception) {}
             val response = agentLoop.get().awaitUserResponse().trim()
             return ActionResult(true, response, null)
+        }
+    }
+
+    private class AnalyzeScreenshotAction(
+        private val visionEngine: dagger.Lazy<com.opendroid.ai.core.agent.VisionEngine>
+    ) : Action {
+        override val name: String = "ANALYZE_SCREENSHOT"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val question = params["question"] ?: "What do you see on this screen?"
+            return try {
+                val analysis = visionEngine.get().analyzeCurrentScreen(question)
+                ActionResult(true, analysis, null)
+            } catch (e: Exception) {
+                ActionResult(false, null, "Screenshot analysis failed: ${e.localizedMessage}")
+            }
         }
     }
 }

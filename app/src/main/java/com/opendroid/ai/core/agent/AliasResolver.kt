@@ -6,7 +6,7 @@ package com.opendroid.ai.core.agent
  * can bypass the LLM entirely and execute the action directly.
  *
  * This gives OpenDroid "common sense" vocabulary — the user says
- * "flash", "torch", or "light" and the flashlight turns on immediately.
+ * "flash", "torch", or "light" and the flashlight toggles immediately.
  */
 object AliasResolver {
 
@@ -17,27 +17,29 @@ object AliasResolver {
 
     private val aliases: Map<String, ActionHint> = mapOf(
 
-        // ── FLASHLIGHT ──────────────────────────────────
-        "flash"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "flashlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "torch"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "torchlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "light"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "open flash"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "open torch"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "open flashlight"   to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        // ── FLASHLIGHT (ambiguous = toggle, explicit = on/off) ──
+        "flash"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "flashlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "torch"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "torchlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "light"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "open flash"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "open torch"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        "open flashlight"   to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        // Explicit on
         "turn on flash"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
         "turn on torch"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
         "turn on flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        "flash on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        "torch on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        "flashlight on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        // Explicit off
         "turn off flash"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
         "turn off torch"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
         "turn off flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
         "flash off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
         "torch off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
         "flashlight off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "flash on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "torch on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "flashlight on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
 
         // ── SCREENSHOT ──────────────────────────────────
         "screenshot"            to ActionHint("TAKE_SCREENSHOT", emptyMap()),
@@ -49,6 +51,23 @@ object AliasResolver {
         "snap screen"           to ActionHint("TAKE_SCREENSHOT", emptyMap()),
         "screengrab"            to ActionHint("TAKE_SCREENSHOT", emptyMap()),
         "screen capture"        to ActionHint("TAKE_SCREENSHOT", emptyMap()),
+
+        // ── VISION / ANALYZE SCREENSHOT ─────────────────
+        "analyze screen"                to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "analyse screen"                to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "what's on screen"              to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "what's on my screen"           to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "whats on screen"               to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "whats on my screen"            to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "what do you see"               to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "read screen"                   to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "read my screen"                to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "describe screen"               to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "describe my screen"            to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "screenshot and analyze"        to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "take screenshot and analyze"   to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "look at screen"                to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
+        "look at my screen"             to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
 
         // ── WIFI ─────────────────────────────────────────
         "wifi on"           to ActionHint("TOGGLE_WIFI", mapOf("on" to "true")),

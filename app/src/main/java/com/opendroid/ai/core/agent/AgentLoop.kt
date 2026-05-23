@@ -520,9 +520,30 @@ class AgentLoop @Inject constructor(
 
     private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean) {
         val summaryText = if (isSuccess) {
-            "Successfully completed your task: '${plan.goal}'."
+            // Build a specific summary from step results
+            val stepSummaries = plan.steps
+                .filter { it.status == StepStatus.COMPLETED && !it.result.isNullOrBlank() }
+                .mapNotNull { step ->
+                    val result = step.result ?: return@mapNotNull null
+                    // Use the action result data directly if it's descriptive
+                    when {
+                        result.length > 5 && !result.startsWith("{") -> result
+                        else -> "${step.action}: Done"
+                    }
+                }
+            if (stepSummaries.isNotEmpty()) {
+                stepSummaries.joinToString(". ")
+            } else {
+                "Done! Completed: '${plan.goal}'"
+            }
         } else {
-            "Failed to complete task: '${plan.goal}'."
+            val failedSteps = plan.steps.filter { it.status == StepStatus.FAILED }
+            if (failedSteps.isNotEmpty()) {
+                val errors = failedSteps.mapNotNull { it.error }.joinToString(". ")
+                "Could not complete '${plan.goal}': $errors"
+            } else {
+                "Failed to complete task: '${plan.goal}'."
+            }
         }
 
         val assistantMsg = ChatMessage(
