@@ -101,6 +101,13 @@ class AgentLoop @Inject constructor(
 
                 _agentState.value = AgentState.Thinking
 
+                // 0. Alias resolution — bypass LLM for known commands
+                val alias = AliasResolver.resolve(query)
+                if (alias != null) {
+                    executeAliasDirect(alias, query, context)
+                    return@launch
+                }
+
                 // 1. Intent Classification
                 val requiresAction = intentClassifier.requiresAction(query)
                 if (requiresAction) {
@@ -111,6 +118,54 @@ class AgentLoop @Inject constructor(
             } catch (e: Exception) {
                 _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
             }
+        }
+    }
+
+    /**
+     * Execute an alias-resolved command directly, bypassing the LLM.
+     * Builds a single-step Plan and runs it through the normal plan execution pipeline.
+     */
+    private suspend fun executeAliasDirect(
+        alias: AliasResolver.ActionHint,
+        originalQuery: String,
+        context: Context
+    ) {
+        try {
+            val speechText = "Executing: ${alias.action.lowercase().replace("_", " ")}"
+            onSpeakCallback?.invoke(speechText)
+
+            // Save agent response
+            val replyMsg = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = speechText,
+                sender = ChatMessage.Sender.AGENT,
+                modelBadge = "alias"
+            )
+            conversationRepository.insertMessage(replyMsg)
+            memoryManager.storeMessage(replyMsg)
+
+            // Build a single-step plan from the alias
+            val plan = Plan(
+                planId = UUID.randomUUID().toString(),
+                goal = originalQuery,
+                estimatedDuration = "instant",
+                estimatedSteps = 1,
+                steps = listOf(
+                    PlanStep(
+                        stepId = "s1",
+                        order = 1,
+                        description = "Execute ${alias.action}",
+                        action = alias.action,
+                        params = alias.baseParams,
+                        fallback = ""
+                    )
+                )
+            )
+
+            planManager.startNewPlan(plan, context)
+            executePlanLoop(plan, context)
+        } catch (e: Exception) {
+            _agentState.value = AgentState.Error("Alias execution failed: ${e.localizedMessage}")
         }
     }
 

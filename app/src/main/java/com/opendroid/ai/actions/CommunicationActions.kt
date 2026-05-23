@@ -40,48 +40,13 @@ class CommunicationActions @Inject constructor() {
                 return cleaned
             }
 
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-                return cleaned
+            // Use ContactResolver for full fuzzy matching (exact → partial → relationship aliases)
+            val result = com.opendroid.ai.core.agent.ContactResolver.resolve(context, contact)
+            if (result is com.opendroid.ai.core.agent.ContactResolver.ContactResult.Found) {
+                return result.phoneNumber
             }
 
-            try {
-                val contentResolver = context.contentResolver
-                val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-                val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                
-                // 1. Try exact match
-                val selectionExact = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
-                val selectionArgsExact = arrayOf(contact.trim())
-                contentResolver.query(uri, projection, selectionExact, selectionArgsExact, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                        if (numberIndex >= 0) {
-                            val number = cursor.getString(numberIndex)
-                            if (!number.isNullOrBlank()) {
-                                return number.replace(" ", "").replace("-", "")
-                            }
-                        }
-                    }
-                }
-
-                // 2. Try partial match
-                val selectionLike = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-                val selectionArgsLike = arrayOf("%${contact.trim()}%")
-                contentResolver.query(uri, projection, selectionLike, selectionArgsLike, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                        if (numberIndex >= 0) {
-                            val number = cursor.getString(numberIndex)
-                            if (!number.isNullOrBlank()) {
-                                return number.replace(" ", "").replace("-", "")
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore query failures
-            }
-
+            // Fallback: return the cleaned input (may be a name the dialer can handle)
             return cleaned
         }
     }

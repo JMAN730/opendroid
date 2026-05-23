@@ -9,5 +9,7 @@ data class UnknownActionEntity(
     val attemptedAction: String,
     val goal: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val fixStatus: String // "AUTO_FIXED" | "REPLANNED" | "FAILED"
+    val fixStatus: String, // "AUTO_FIXED" | "REPLANNED" | "FAILED"
+    val wasAutoFixed: Boolean = false,
+    val fixedWith: String? = null
 )
