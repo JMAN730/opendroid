@@ -212,7 +212,9 @@ $numberedActions
             - MAKE_CALL: Implemented via Android phone Intent
             - TOGGLE_FLASHLIGHT: Implemented via CameraManager API
             - SEND_WHATSAPP: Implemented via deep link + accessibility
+            - SEND_SMS: Implemented via SmsManager + messaging app fallback
             - OPEN_APP: Implemented via PackageManager
+            - ANALYZE_SCREENSHOT: Implemented via Accessibility + Vision LLM
             If an action fails, the app handles the error automatically.
             Your job is to dispatch the action, not judge if it will work.
             Always dispatch. Never refuse.
