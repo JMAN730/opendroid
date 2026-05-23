@@ -132,16 +132,35 @@ object AliasResolver {
     )
 
     /**
+     * Words that indicate a compound intent — when present in the input,
+     * partial alias matching should be skipped so the LLM can generate
+     * the correct multi-param action (e.g., SEND_WHATSAPP with contact+message).
+     */
+    private val compoundIntentWords = setOf(
+        "send", "message", "text", "msg", "call", "dial", "ring",
+        "email", "mail", "navigate", "directions", "search", "find",
+        "play", "book", "order", "set alarm", "set timer", "remind"
+    )
+
+    /**
      * Resolve user input to an ActionHint.
      * Returns null if no alias matches.
      */
     fun resolve(input: String): ActionHint? {
         val lower = input.lowercase().trim()
 
-        // 1. Exact match
+        // 1. Exact match (always wins)
         aliases[lower]?.let { return it }
 
-        // 2. Longest partial match — input contains the alias key
+        // 2. Skip partial matching if input has compound intent
+        //    e.g., "open whatsapp and send message to dad" should NOT match "open whatsapp"
+        //    — it needs the LLM to generate SEND_WHATSAPP with contact+message params
+        val hasCompoundIntent = compoundIntentWords.any { word -> lower.contains(word) }
+        if (hasCompoundIntent) {
+            return null
+        }
+
+        // 3. Longest partial match — only for simple, single-intent inputs
         return aliases.entries
             .filter { (key, _) -> lower.contains(key) }
             .maxByOrNull { it.key.length }
