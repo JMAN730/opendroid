@@ -6,9 +6,15 @@
 
 > **"Your Open Autonomous Android Agent"**
 
+<p align="center">
+  <a href="https://discord.gg/Q4ym5cxTe"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
 OpenDroid is a production-ready, autonomous, self-planning AI assistant for Android. Rather than acting as a simple chat interface, OpenDroid is a fully agentic system capable of breaking complex goals into sequential sub-tasks, executing them through direct device controls and accessibility automation, monitoring execution results, and dynamically replanning when steps fail or environment conditions change.
 
 Developed & Maintained by **[yashab-cyber](https://github.com/yashab-cyber)**.
+
+💬 **Join the Community:** [Discord Server](https://discord.gg/Q4ym5cxTe)
 
 ---
 
