@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -38,7 +39,7 @@ class TransportActions @Inject constructor() {
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Uber app opened with route from $pickup to $destination", null)
+                    ActionResult(true, "Getting you an Uber to $destination!", null)
                 } else {
                     // Fallback to web link
                     val webUri = Uri.parse("https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=$encPickup&dropoff[formatted_address]=$encDest")
@@ -46,10 +47,11 @@ class TransportActions @Inject constructor() {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(webIntent)
-                    ActionResult(true, "Uber app not installed. Opened mobile website as fallback.", null, true)
+                    ActionResult(true, "Uber isn't installed, but I opened the website for you!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Uber booking failed: ${e.localizedMessage}")
+                Log.e("BookUber", "Uber failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't book the Uber. Want to try again?")
             }
         }
     }
@@ -66,16 +68,17 @@ class TransportActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Ola app opened for drop: $destination", null)
+                    ActionResult(true, "Getting you an Ola to $destination!", null)
                 } else {
                     val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.olacabs.customer")).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(storeIntent)
-                    ActionResult(true, "Ola app not installed. Directed to Play Store as fallback.", null, true)
+                    ActionResult(true, "Ola isn't installed — I'll take you to the Play Store to get it!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Ola booking failed: ${e.localizedMessage}")
+                Log.e("BookOla", "Ola failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't book the Ola. Try again?")
             }
         }
     }
@@ -110,17 +113,18 @@ class TransportActions @Inject constructor() {
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Google Maps directions opened to $to", null)
+                    ActionResult(true, "Here are your directions to $to!", null)
                 } else {
                     // Browser fallback
                     val webIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(webIntent)
-                    ActionResult(true, "Google Maps app not found. Opened browser maps as fallback.", null, true)
+                    ActionResult(true, "Maps app isn't installed, but I opened it in your browser!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Get directions failed: ${e.localizedMessage}")
+                Log.e("GetDirections", "Directions failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't get directions right now. Try again?")
             }
         }
     }
@@ -141,9 +145,10 @@ class TransportActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Google Maps opened showing traffic information for: ${route.ifEmpty { "current location" }}", null)
+                ActionResult(true, "Here's the traffic for ${route.ifEmpty { "your area" }}!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Check traffic failed: ${e.localizedMessage}")
+                Log.e("CheckTraffic", "Traffic check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't check traffic right now.")
             }
         }
     }
@@ -158,9 +163,10 @@ class TransportActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened browser to track flight $flightNumber", null)
+                ActionResult(true, "Looking up flight $flightNumber for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Check flight failed: ${e.localizedMessage}")
+                Log.e("CheckFlight", "Flight check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't look up that flight. Try again?")
             }
         }
     }
@@ -182,9 +188,10 @@ class TransportActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened delivery tracking for $courier: $trackingNumber", null)
+                ActionResult(true, "Tracking your $courier package now!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Track delivery failed: ${e.localizedMessage}")
+                Log.e("TrackDelivery", "Tracking failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't track that delivery right now.")
             }
         }
     }

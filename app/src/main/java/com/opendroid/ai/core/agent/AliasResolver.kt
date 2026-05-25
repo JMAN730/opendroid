@@ -18,28 +18,35 @@ object AliasResolver {
     private val aliases: Map<String, ActionHint> = mapOf(
 
         // ── FLASHLIGHT (ambiguous = toggle, explicit = on/off) ──
-        "flash"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "flashlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "torch"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "torchlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "light"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "open flash"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "open torch"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
-        "open flashlight"   to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "toggle")),
+        // Toggle aliases — flip current state
+        "flash"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "flashlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "torch"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "torchlight"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "light"             to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "open flash"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "open torch"        to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
+        "open flashlight"   to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "toggle")),
         // Explicit on
-        "turn on flash"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "turn on torch"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "turn on flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "flash on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "torch on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
-        "flashlight on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "true")),
+        "turn on flash"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "turn on torch"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "turn on flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "flash on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "torch on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "flashlight on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "enable flash"      to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "enable torch"      to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         // Explicit off
-        "turn off flash"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "turn off torch"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "turn off flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "flash off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "torch off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
-        "flashlight off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("on" to "false")),
+        "turn off flash"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "turn off torch"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "turn off flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "flash off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "torch off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "flashlight off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "disable flash"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "disable torch"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "close flash"       to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "close torch"       to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
 
         // ── SCREENSHOT ──────────────────────────────────
         "screenshot"            to ActionHint("TAKE_SCREENSHOT", emptyMap()),
@@ -139,7 +146,7 @@ object AliasResolver {
     private val compoundIntentWords = setOf(
         "send", "message", "text", "msg", "call", "dial", "ring",
         "email", "mail", "navigate", "directions", "search", "find",
-        "play", "book", "order", "set alarm", "set timer", "remind"
+        "play", "book", "order", "remind"
     )
 
     /**
@@ -165,5 +172,50 @@ object AliasResolver {
             .filter { (key, _) -> lower.contains(key) }
             .maxByOrNull { it.key.length }
             ?.value
+    }
+
+    // ── Alarm shortcut helpers ──────────────────────────
+
+    private val alarmPhrases = listOf(
+        "set alarm", "set an alarm", "set a alarm",
+        "alarm at", "alarm for", "alarm to",
+        "wake me up at", "wake me at", "wake me up", "wake me",
+        "wakeup alarm", "wakeup at", "morning alarm",
+        "put alarm", "remind me to wake"
+    )
+
+    /**
+     * Check if input is an alarm request.
+     * Used by AgentLoop to fast-path alarm commands before LLM.
+     */
+    fun isAlarmRequest(input: String): Boolean {
+        val lower = input.lowercase().trim()
+        return alarmPhrases.any { lower.contains(it) }
+    }
+
+    /**
+     * Extract the time portion from an alarm request.
+     * Strips alarm trigger phrases to isolate the time string.
+     */
+    fun extractAlarmTime(input: String): String? {
+        var cleaned = input.lowercase().trim()
+
+        // Remove alarm trigger phrases (longest first to avoid partial removal)
+        val sortedPhrases = alarmPhrases.sortedByDescending { it.length }
+        for (phrase in sortedPhrases) {
+            cleaned = cleaned.replace(phrase, "")
+        }
+
+        // Remove filler words
+        cleaned = cleaned
+            .replace("for tomorrow", "")
+            .replace("tomorrow", "")
+            .replace("today", "")
+            .replace("for", "")
+            .replace("at", "")
+            .replace("to", "")
+            .trim()
+
+        return if (cleaned.isNotEmpty()) cleaned else null
     }
 }

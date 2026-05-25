@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -36,9 +37,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Searched the web for: '$query'", null)
+                ActionResult(true, "Here's what I found for '$query'!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Search failed: ${e.localizedMessage}")
+                Log.e("WebSearch", "Search failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't search right now. Try again?")
             }
         }
     }
@@ -53,9 +55,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened weather info for: $location", null)
+                ActionResult(true, "Here's the weather for $location!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to get weather: ${e.localizedMessage}")
+                Log.e("GetWeather", "Weather failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't check the weather right now.")
             }
         }
     }
@@ -70,9 +73,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Google News search for: $topic", null)
+                ActionResult(true, "Here's the latest on '$topic'!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "News query failed: ${e.localizedMessage}")
+                Log.e("GetNews", "News failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't fetch the news right now.")
             }
         }
     }
@@ -84,7 +88,7 @@ class InformationActions @Inject constructor() {
             return try {
                 val sanitized = expression.replace(" ", "")
                 val result = evaluateSimpleExpression(sanitized)
-                ActionResult(true, "Result of $expression is $result", null)
+                ActionResult(true, "$expression = $result", null)
             } catch (e: Exception) {
                 // Fallback: Web search calculation
                 val encExpr = URLEncoder.encode(expression, "UTF-8")
@@ -92,7 +96,7 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Could not evaluate locally. Opened Google search as fallback.", e.localizedMessage, true)
+                ActionResult(false, "Hmm, I couldn't calculate that directly. Let me Google it for you.", e.localizedMessage, true)
             }
         }
 
@@ -133,9 +137,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Google Translate from $from to $to", null)
+                ActionResult(true, "Opening Google Translate for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Translation failed: ${e.localizedMessage}")
+                Log.e("Translate", "Translation failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the translator right now.")
             }
         }
     }
@@ -150,9 +155,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Searched definition for word: $word", null)
+                ActionResult(true, "Here's the definition of '$word'!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to define word: ${e.localizedMessage}")
+                Log.e("DefineWord", "Definition failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't look that up right now.")
             }
         }
     }
@@ -169,9 +175,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened unit converter for $value $from to $to", null)
+                ActionResult(true, "Converting $value $from to $to for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to convert units: ${e.localizedMessage}")
+                Log.e("ConvertUnits", "Conversion failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't convert those units right now.")
             }
         }
     }
@@ -188,9 +195,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened currency converter for $amount $from to $to", null)
+                ActionResult(true, "Converting $amount $from to $to for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to convert currency: ${e.localizedMessage}")
+                Log.e("CurrencyConvert", "Currency failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't convert the currency right now.")
             }
         }
     }
@@ -205,9 +213,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened stock info for: $symbol", null)
+                ActionResult(true, "Here's the stock info for $symbol!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Stock check failed: ${e.localizedMessage}")
+                Log.e("CheckStock", "Stock check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't look up that stock right now.")
             }
         }
     }
@@ -221,9 +230,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened URL in browser: $url. Please read page content.", null)
+                ActionResult(true, "Opening that page for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open URL: ${e.localizedMessage}")
+                Log.e("SummarizeUrl", "URL failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open that link right now.")
             }
         }
     }
@@ -238,9 +248,10 @@ class InformationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Fact check search initiated for: '$claim'", null)
+                ActionResult(true, "Let me check that for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Fact check query failed: ${e.localizedMessage}")
+                Log.e("FactCheck", "Fact check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't check that right now.")
             }
         }
     }

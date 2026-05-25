@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import javax.inject.Inject
@@ -54,7 +55,72 @@ class ActionDispatcher @Inject constructor(
 
     suspend fun execute(actionName: String, params: Map<String, String>, context: Context): ActionResult {
 
-        // ── LAYER 2: Auto-map unknown actions before dispatch ──
+        // ── LAYER 1: Validate against ActionSchema ──
+        val (schemaValidation, enrichedParams) = ActionSchema.validateParams(actionName, params)
+
+        when (schemaValidation) {
+            is ActionSchema.ValidationResult.Valid -> {
+                // Schema says action is valid — execute with enriched params (defaults applied)
+                val handler = actionsMap[actionName]
+                if (handler != null) {
+                    // Convert enrichedParams back to Map<String, String> for Action.execute
+                    val stringParams = enrichedParams.mapValues { it.value.toString() }
+                    return try {
+                        handler.execute(stringParams, context)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Execution failed for $actionName: ${e.message}")
+                        ActionResult.Failure(
+                            errorMsg = e.message ?: "Execution failed",
+                            fallback = "Try alternative approach"
+                        )
+                    }
+                }
+                // Schema valid but no handler registered — should not happen normally
+                Log.w(TAG, "Schema-valid action $actionName has no handler, falling through to mapper")
+            }
+
+            is ActionSchema.ValidationResult.MissingParams -> {
+                // Check if ALL missing params have defaults — if so, apply and execute
+                val definition = ActionSchema.getAction(actionName)
+                val allHaveDefaults = schemaValidation.params.all { paramName ->
+                    definition?.params?.find { it.name == paramName }?.defaultValue != null
+                }
+
+                if (allHaveDefaults) {
+                    // Apply all defaults and execute — never ask user
+                    val withDefaults = ActionSchema.applyDefaults(actionName, params)
+                    val handler = actionsMap[actionName]
+                    if (handler != null) {
+                        val stringParams = withDefaults.mapValues { it.value.toString() }
+                        return try {
+                            handler.execute(stringParams, context)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Execution with defaults failed for $actionName: ${e.message}")
+                            ActionResult.Failure(
+                                errorMsg = e.message ?: "Execution failed",
+                                fallback = "Try alternative approach"
+                            )
+                        }
+                    }
+                }
+
+                // Only ask user if param truly has no default
+                val firstMissing = schemaValidation.params.first()
+                val paramDef = definition?.params?.find { it.name == firstMissing }
+                Log.d(TAG, "Missing required params for $actionName: ${schemaValidation.params}")
+                return ActionResult.NeedsInput(
+                    question = "I need the $firstMissing to complete this. ${paramDef?.description ?: ""}",
+                    options = paramDef?.enumValues ?: emptyList()
+                )
+            }
+
+            is ActionSchema.ValidationResult.InvalidAction -> {
+                // Action not in schema — try auto-mapper as fallback
+                Log.d(TAG, "Action $actionName not in schema, trying auto-mapper")
+            }
+        }
+
+        // ── LAYER 2: Auto-map unknown actions (fallback for hallucinations) ──
         val mapping = autoMapper.mapAction(
             action = actionName,
             params = params,
@@ -79,7 +145,7 @@ class ActionDispatcher @Inject constructor(
             logUnknownAction(actionName, "FAILED", wasAutoFixed = false, fixedWith = null)
             return ActionResult.UnknownAction(
                 attemptedAction = actionName,
-                availableActions = getAllRegisteredActions()
+                availableActions = ActionSchema.getAllActionNames()
             )
         }
 
@@ -92,15 +158,14 @@ class ActionDispatcher @Inject constructor(
             logUnknownAction(actionName, "AUTO_FIXED", wasAutoFixed = true, fixedWith = finalAction)
         }
 
-        // ── Execute the (possibly mapped) action ──
+        // ── Execute the mapped action ──
         val handler = actionsMap[finalAction]
         if (handler == null) {
-            // Mapper pointed to an action that isn't registered — shouldn't happen but safe
             Log.e(TAG, "Mapped action $finalAction is also not registered!")
             logUnknownAction(actionName, "FAILED", wasAutoFixed = false, fixedWith = finalAction)
             return ActionResult.UnknownAction(
                 attemptedAction = finalAction,
-                availableActions = getAllRegisteredActions()
+                availableActions = ActionSchema.getAllActionNames()
             )
         }
 

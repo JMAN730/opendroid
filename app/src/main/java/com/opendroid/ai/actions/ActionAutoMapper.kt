@@ -1,21 +1,16 @@
 package com.opendroid.ai.actions
 
 import android.util.Log
+import com.opendroid.ai.core.agent.ActionSchema
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Layer 2 defense against LLM action hallucination.
+ * Thin fallback layer for action hallucination.
  *
- * Intercepts every action BEFORE dispatch. If the action name is not
- * registered in ActionDispatcher, this mapper tries to convert it to
- * a known equivalent. This is the safety net that catches anything
- * Layer 1 (positive-only prompt) misses.
- *
- * The LLM constantly invents new action name variations:
- *   VERIFY_CONTACT → CONFIRM_CONTACT → VALIDATE_CONTACT → CHECK_CONTACT
- * Blocking individual names is whack-a-mole. This mapper catches ALL
- * variations via exact + fuzzy pattern matching.
+ * ActionSchema handles all validation. This mapper only handles edge cases
+ * where the LLM generates an action name that's NOT in the schema but can
+ * be mapped to a valid one. With the schema system, this should rarely fire.
  */
 @Singleton
 class ActionAutoMapper @Inject constructor() {
@@ -34,8 +29,8 @@ class ActionAutoMapper @Inject constructor() {
     )
 
     // ────────────────────────────────────────────────────────────────
-    //  Master mapping: hallucinated name → correct registered action
-    //  Add every hallucinated name you encounter. This list only grows.
+    //  Exact mapping table: hallucinated name → correct action
+    //  With ActionSchema in place, this should rarely be needed.
     // ────────────────────────────────────────────────────────────────
 
     private val actionMappings: Map<String, String> = mapOf(
@@ -66,18 +61,6 @@ class ActionAutoMapper @Inject constructor() {
         "USER_INPUT"              to "ASK_USER",
         "GET_INPUT"               to "ASK_USER",
 
-        // ── App verification variants → OPEN_APP ──
-        "VERIFY_APP"              to "OPEN_APP",
-        "CHECK_APP"               to "OPEN_APP",
-        "CHECK_APP_INSTALLED"     to "OPEN_APP",
-        "CONFIRM_APP"             to "OPEN_APP",
-        "VALIDATE_APP"            to "OPEN_APP",
-        "ENSURE_APP"              to "OPEN_APP",
-        "OPEN_APP_OR_WEBSITE"     to "OPEN_APP",
-        "LAUNCH_APP"              to "OPEN_APP",
-        "START_APP"               to "OPEN_APP",
-        "RUN_APP"                 to "OPEN_APP",
-
         // ── Security/privacy check variants → SKIP ──
         "SECURITY_CHECK"          to SKIP,
         "PRIVACY_CHECK"           to SKIP,
@@ -88,13 +71,21 @@ class ActionAutoMapper @Inject constructor() {
         "SAFETY_CHECK"            to SKIP,
         "VERIFY_PERMISSIONS"      to SKIP,
         "CHECK_PERMISSIONS"       to SKIP,
+        "CHECK_APP"               to SKIP,
+        "VERIFY_APP"              to SKIP,
+        "CHECK_APP_INSTALLED"     to SKIP,
+        "CONFIRM_APP"             to SKIP,
+        "VALIDATE_APP"            to SKIP,
+        "ENSURE_APP"              to SKIP,
+        "CHECK_HARDWARE"          to SKIP,
+        "CHECK_PERMISSION"        to SKIP,
+        "SHOW_WARNING"            to SKIP,
 
-        // ── Phone lookup variants → ASK_USER ──
-        "VERIFY_PHONE"            to "ASK_USER",
-        "CHECK_PHONE"             to "ASK_USER",
-        "LOOKUP_PHONE"            to "ASK_USER",
-        "GET_PHONE_NUMBER"        to "ASK_USER",
-        "FIND_PHONE_NUMBER"       to "ASK_USER",
+        // ── App opening variants → OPEN_APP ──
+        "OPEN_APP_OR_WEBSITE"     to "OPEN_APP",
+        "LAUNCH_APP"              to "OPEN_APP",
+        "START_APP"               to "OPEN_APP",
+        "RUN_APP"                 to "OPEN_APP",
 
         // ── Notification/message variants → CHAT ──
         "NOTIFY_USER"             to "CHAT",
@@ -105,10 +96,10 @@ class ActionAutoMapper @Inject constructor() {
         "SHOW_NOTIFICATION"       to "CHAT",
 
         // ── Web/browser variants ──
-        "OPEN_WEBSITE"            to "OPEN_BROWSER",
-        "NAVIGATE_TO"             to "OPEN_BROWSER",
-        "OPEN_URL"                to "OPEN_BROWSER",
-        "BROWSE"                  to "OPEN_BROWSER",
+        "OPEN_WEBSITE"            to "WEB_SEARCH",
+        "NAVIGATE_TO"             to "WEB_SEARCH",
+        "OPEN_URL"                to "WEB_SEARCH",
+        "BROWSE"                  to "WEB_SEARCH",
         "SEARCH_WEB"              to "WEB_SEARCH",
         "GOOGLE"                  to "WEB_SEARCH",
         "GOOGLE_SEARCH"           to "WEB_SEARCH",
@@ -147,7 +138,17 @@ class ActionAutoMapper @Inject constructor() {
         registeredActions: Set<String>
     ): MappingResult {
 
-        // Already registered → no mapping needed
+        // If valid in ActionSchema → pass through (primary check)
+        if (ActionSchema.isValid(action)) {
+            return MappingResult(
+                originalAction = action,
+                mappedAction = action,
+                wasMapped = false,
+                mappedParams = params
+            )
+        }
+
+        // Already registered (catches hallucination-trap handlers) → pass through
         if (action in registeredActions) {
             return MappingResult(
                 originalAction = action,
@@ -184,24 +185,24 @@ class ActionAutoMapper @Inject constructor() {
     }
 
     // ────────────────────────────────────────────────────────────────
-    //  Fuzzy pattern matching — catches variations we haven't seen yet
+    //  Fuzzy pattern matching — last resort for truly unknown actions
     // ────────────────────────────────────────────────────────────────
 
     private fun findFuzzyMatch(upper: String): String? {
+        // Anything with PERMISSION/REVIEW/AUDIT/SECURITY/PRIVACY → SKIP
+        val skipPatterns = listOf(
+            "PERMISSION", "REVIEW", "AUDIT", "SECURITY",
+            "PRIVACY", "PROTECT", "MONITOR", "RESTRICT",
+            "VERIFY", "VALIDATE", "CONFIRM", "CHECK_APP",
+            "SCAN", "ANALYZE_APP", "INSPECT"
+        )
+        if (skipPatterns.any { upper.contains(it) }) return SKIP
+
         // Pattern: anything with CONTACT → ASK_USER
         if ("CONTACT" in upper) return "ASK_USER"
 
-        // Pattern: anything with CONFIRM/VERIFY/VALIDATE → ASK_USER
-        if ("CONFIRM" in upper) return "ASK_USER"
-        if ("VERIFY" in upper) return "ASK_USER"
-        if ("VALIDATE" in upper) return "ASK_USER"
-
         // Pattern: anything with PROMPT → ASK_USER
         if ("PROMPT" in upper) return "ASK_USER"
-
-        // Pattern: anything with SECURITY/PRIVACY → SKIP
-        if ("SECURITY" in upper) return SKIP
-        if ("PRIVACY" in upper) return SKIP
 
         // Pattern: anything with SCREENSHOT → TAKE_SCREENSHOT
         if ("SCREENSHOT" in upper) return "TAKE_SCREENSHOT"
@@ -214,11 +215,11 @@ class ActionAutoMapper @Inject constructor() {
         // Pattern: SEARCH_* → WEB_SEARCH
         if (upper.startsWith("SEARCH_")) return "WEB_SEARCH"
 
-        // Pattern: CHECK_* → ASK_USER (generic check = ask user)
-        if (upper.startsWith("CHECK_")) return "ASK_USER"
+        // Pattern: CHECK_* → SKIP (generic checks are hallucinations)
+        if (upper.startsWith("CHECK_")) return SKIP
 
-        // Pattern: SEND_* → try to match a known send action
-        if (upper.startsWith("SEND_")) return "SEND_SMS" // safe default
+        // Pattern: SEND_* → SEND_SMS (safe default)
+        if (upper.startsWith("SEND_")) return "SEND_SMS"
 
         return null
     }

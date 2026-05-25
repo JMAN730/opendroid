@@ -89,7 +89,7 @@ class ReEvaluationEngine @Inject constructor(
     ): ReEvalResult {
         return try {
             val provider = llmProviderFactory.getActiveProvider()
-            val whitelist = actionDispatcher.get().getAllRegisteredActions()
+            val whitelist = ActionSchema.getAllActionNames()
             
             // Format details for the prompt
             val systemPrompt = """

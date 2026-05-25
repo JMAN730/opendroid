@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.CalendarContract
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.util.Calendar
@@ -47,7 +48,7 @@ class CalendarActions @Inject constructor() {
                 // Needs calendar permissions. If fails, fallback to calendar UI compose intent
                 val uri = cr.insert(CalendarContract.Events.CONTENT_URI, values)
                 if (uri != null) {
-                    ActionResult(true, "Event '$title' inserted into Calendar.", null)
+                    ActionResult(true, "Your event '$title' is on the calendar!", null)
                 } else {
                     throw IllegalStateException("Insert returned null URI")
                 }
@@ -59,7 +60,7 @@ class CalendarActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Calendar permission missing or write failed. Opened Calendar compose UI as fallback.", e.localizedMessage, true)
+                ActionResult(false, "Couldn't add it directly, but I opened the calendar for you to create it.", e.localizedMessage, true)
             }
         }
     }
@@ -67,25 +68,182 @@ class CalendarActions @Inject constructor() {
     private class SetAlarmAction : Action {
         override val name: String = "SET_ALARM"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val timeStr = params["time"] ?: return ActionResult(false, null, "time is missing (format HH:MM)")
+            val timeStr = params["time"]
+                ?: return ActionResult(false, null, "Time is required. Use format like '5 am' or '7:30'")
+
+            val label = params["label"]?.trim() ?: "OpenDroid Alarm"
+
+            // Parse time string to hour + minute
+            val parsed = parseTimeString(timeStr)
+                ?: return ActionResult(false, null,
+                    "Could not understand time '$timeStr'. Try formats like '5 am', '7:30', or '14:00'")
+
+            val (hour, minute) = parsed
+
+            // Try Method 1: AlarmClock Intent (most reliable)
+            val method1 = tryAlarmClockIntent(hour, minute, label, context)
+            if (method1 != null) return method1
+
+            // Try Method 2: Open clock app as fallback
+            val method2 = tryOpenClockApp(hour, minute, context)
+            if (method2 != null) return method2
+
+            // All methods failed
+            val timeFormatted = formatTime(hour, minute)
+            return ActionResult(false, null,
+                "Could not set alarm for $timeFormatted. Please open Clock app manually.")
+        }
+
+        private fun tryAlarmClockIntent(
+            hour: Int, minute: Int, label: String, context: Context
+        ): ActionResult? {
             return try {
-                val parts = timeStr.split(":")
-                val hour = parts[0].toInt()
-                val minutes = parts[1].toInt()
-                val label = params["label"] ?: "OpenDroid Alarm"
-                
                 val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                     putExtra(AlarmClock.EXTRA_HOUR, hour)
-                    putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                    putExtra(AlarmClock.EXTRA_MINUTES, minute)
                     putExtra(AlarmClock.EXTRA_MESSAGE, label)
                     putExtra(AlarmClock.EXTRA_SKIP_UI, true)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
-                ActionResult(true, "Alarm set for $timeStr - '$label'", null)
+
+                // Check if any app can handle this intent
+                val resolved = context.packageManager
+                    .resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+
+                if (resolved == null) {
+                    null // no clock app can handle it
+                } else {
+                    context.startActivity(intent)
+                    val timeFormatted = formatTime(hour, minute)
+                    ActionResult(true, "Your alarm is set for $timeFormatted!", null)
+                }
+            } catch (e: SecurityException) {
+                // Permission denied — try fallback
+                android.util.Log.e("SetAlarm", "SecurityException: ${e.message}")
+                null
+            } catch (e: android.content.ActivityNotFoundException) {
+                android.util.Log.e("SetAlarm", "No clock app: ${e.message}")
+                null
             } catch (e: Exception) {
-                ActionResult(false, null, "Alarm failed: ${e.localizedMessage}")
+                android.util.Log.e("SetAlarm", "Intent failed: ${e.message}")
+                null
             }
+        }
+
+        private fun tryOpenClockApp(
+            hour: Int, minute: Int, context: Context
+        ): ActionResult? {
+            return try {
+                // Try Google Clock, then AOSP Clock
+                val clockIntent = context.packageManager
+                    .getLaunchIntentForPackage("com.google.android.deskclock")
+                    ?: context.packageManager
+                        .getLaunchIntentForPackage("com.android.deskclock")
+
+                if (clockIntent != null) {
+                    clockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(clockIntent)
+                    val timeFormatted = formatTime(hour, minute)
+                    ActionResult(true,
+                        "I opened the Clock app — please set your alarm for $timeFormatted there.", null)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        /**
+         * Robust time parser — handles all common formats:
+         * "5 am", "5am", "5:30 pm", "17:00", "noon", "midnight",
+         * "half past 6", "quarter to 8", just "7", etc.
+         */
+        private fun parseTimeString(input: String): Pair<Int, Int>? {
+            val clean = input.lowercase().trim()
+                .replace("o'clock", "").replace("hours", "").trim()
+
+            // Natural language times
+            val naturalMap = mapOf(
+                "midnight" to Pair(0, 0),
+                "noon" to Pair(12, 0),
+                "midday" to Pair(12, 0),
+                "morning" to Pair(8, 0),
+                "afternoon" to Pair(14, 0),
+                "evening" to Pair(18, 0),
+                "night" to Pair(21, 0)
+            )
+            naturalMap[clean]?.let { return it }
+
+            // "5 am", "5am", "11 pm", "11pm"
+            val amPmSimple = Regex("""^(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)$""")
+            amPmSimple.find(clean)?.let { match ->
+                var hour = match.groupValues[1].toInt()
+                val amPm = match.groupValues[2]
+                val isPm = amPm.startsWith("p")
+                if (isPm && hour != 12) hour += 12
+                if (!isPm && hour == 12) hour = 0
+                if (hour > 23) return null
+                return Pair(hour, 0)
+            }
+
+            // "5:30 am", "5:30am", "11:45 pm"
+            val amPmWithMin = Regex("""^(\d{1,2})[:\.](\d{2})\s*(am|pm|a\.m\.|p\.m\.)$""")
+            amPmWithMin.find(clean)?.let { match ->
+                var hour = match.groupValues[1].toInt()
+                val minute = match.groupValues[2].toInt()
+                val amPm = match.groupValues[3]
+                val isPm = amPm.startsWith("p")
+                if (isPm && hour != 12) hour += 12
+                if (!isPm && hour == 12) hour = 0
+                if (hour > 23 || minute > 59) return null
+                return Pair(hour, minute)
+            }
+
+            // "17:30", "05:00", "9:45"
+            val military = Regex("""^(\d{1,2})[:\.](\d{2})$""")
+            military.find(clean)?.let { match ->
+                val hour = match.groupValues[1].toInt()
+                val minute = match.groupValues[2].toInt()
+                if (hour > 23 || minute > 59) return null
+                return Pair(hour, minute)
+            }
+
+            // Just a number: "5", "7", "22"
+            clean.toIntOrNull()?.let { hour ->
+                if (hour in 0..23) return Pair(hour, 0)
+            }
+
+            // "half past 5" → 5:30
+            Regex("""half past (\d{1,2})""").find(clean)?.let { match ->
+                val hour = match.groupValues[1].toInt()
+                if (hour in 0..23) return Pair(hour, 30)
+            }
+
+            // "quarter past 5" → 5:15
+            Regex("""quarter past (\d{1,2})""").find(clean)?.let { match ->
+                val hour = match.groupValues[1].toInt()
+                if (hour in 0..23) return Pair(hour, 15)
+            }
+
+            // "quarter to 6" → 5:45
+            Regex("""quarter to (\d{1,2})""").find(clean)?.let { match ->
+                var hour = match.groupValues[1].toInt() - 1
+                if (hour < 0) hour = 23
+                return Pair(hour, 45)
+            }
+
+            return null
+        }
+
+        private fun formatTime(hour: Int, minute: Int): String {
+            val amPm = if (hour < 12) "AM" else "PM"
+            val displayHour = when {
+                hour == 0 -> 12
+                hour > 12 -> hour - 12
+                else -> hour
+            }
+            return "$displayHour:${minute.toString().padStart(2, '0')} $amPm"
         }
     }
 
@@ -102,9 +260,10 @@ class CalendarActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Timer set for $durationSecs seconds", null)
+                ActionResult(true, "Timer's running! $durationSecs seconds.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Timer failed: ${e.localizedMessage}")
+                Log.e("SetTimer", "Timer failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't start the timer.")
             }
         }
     }
@@ -116,9 +275,10 @@ class CalendarActions @Inject constructor() {
             val content = params["content"] ?: ""
             return try {
                 // Return success immediately (can be stored in database as well)
-                ActionResult(true, "Note '$title' saved: '$content'", null)
+                ActionResult(true, "Got it! Note '$title' saved.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Save note failed: ${e.localizedMessage}")
+                Log.e("AddNote", "Note failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't save that note.")
             }
         }
     }
@@ -135,9 +295,10 @@ class CalendarActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened calendar to view today's events", null)
+                ActionResult(true, "Here's your calendar for today.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open calendar: ${e.localizedMessage}")
+                Log.e("ListCalendarToday", "Calendar failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open your calendar.")
             }
         }
     }
@@ -154,9 +315,10 @@ class CalendarActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened calendar to view this week's events", null)
+                ActionResult(true, "Here's your week at a glance.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open calendar: ${e.localizedMessage}")
+                Log.e("ListCalendarWeek", "Calendar failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open your calendar.")
             }
         }
     }
@@ -180,9 +342,10 @@ class CalendarActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Calendar event composer for reminder '$title'", null)
+                ActionResult(true, "I opened the calendar so you can set up your reminder '$title'.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open calendar composer for reminder: ${e.localizedMessage}")
+                Log.e("SetReminder", "Reminder failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't set up that reminder.")
             }
         }
     }
@@ -192,7 +355,7 @@ class CalendarActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val title = params["title"] ?: "New Task"
             val description = params["description"] ?: ""
-            return ActionResult(true, "Task '$title' created successfully. Details: $description", null)
+            return ActionResult(true, "Done! Task '$title' is created.", null)
         }
     }
 
@@ -200,7 +363,7 @@ class CalendarActions @Inject constructor() {
         override val name: String = "READ_NOTES"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val mockNotes = "1. Buy groceries\n2. Call doctor at 3 PM\n3. Finish Android development tasks"
-            return ActionResult(true, "Retrieved notes:\n$mockNotes", null)
+            return ActionResult(true, "Here are your notes:\n$mockNotes", null)
         }
     }
 }

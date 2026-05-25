@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -38,13 +39,14 @@ class SmartHomeActions @Inject constructor() {
                 if (homeIntent != null) {
                     homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(homeIntent)
-                    ActionResult(true, "Sent smart home action: '$action' on '$device' to Google Home", null)
+                    ActionResult(true, "Got it — telling Google Home to $action the $device!", null)
                 } else {
                     context.startActivity(intent)
-                    ActionResult(true, "Smart Home app not installed. Fired search intent fallback: 'turn $action $device $value'", null, true)
+                    ActionResult(true, "Google Home isn't installed, so I searched for it instead.", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Smart Home action failed: ${e.localizedMessage}")
+                Log.e("SmartHome", "Action failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't control that smart device right now.")
             }
         }
     }
@@ -67,9 +69,11 @@ class SmartHomeActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Executed Light command: $command", null)
+                val stateWord = if (on) "on" else "off"
+                ActionResult(true, "Turning the $room light $stateWord!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to toggle light: ${e.localizedMessage}")
+                Log.e("ToggleLight", "Light failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't control the light right now.")
             }
         }
     }
@@ -85,9 +89,10 @@ class SmartHomeActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Set Thermostat to $temp", null)
+                ActionResult(true, "Setting thermostat to $temp!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to set thermostat: ${e.localizedMessage}")
+                Log.e("SetThermostat", "Thermostat failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't set the thermostat right now.")
             }
         }
     }
@@ -103,9 +108,10 @@ class SmartHomeActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Lock door command sent for '$location'", null)
+                ActionResult(true, "Locking the $location!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to lock door: ${e.localizedMessage}")
+                Log.e("LockDoor", "Lock failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't lock the door right now.")
             }
         }
     }

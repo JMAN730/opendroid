@@ -108,6 +108,19 @@ class AgentLoop @Inject constructor(
                     return@launch
                 }
 
+                // 0b. Alarm shortcut — bypass LLM for alarm requests
+                if (AliasResolver.isAlarmRequest(query)) {
+                    val timeStr = AliasResolver.extractAlarmTime(query)
+                    if (timeStr != null) {
+                        val alarmHint = AliasResolver.ActionHint(
+                            "SET_ALARM",
+                            mapOf("time" to timeStr, "label" to "Alarm")
+                        )
+                        executeAliasDirect(alarmHint, query, context)
+                        return@launch
+                    }
+                }
+
                 // 1. Intent Classification
                 val requiresAction = intentClassifier.requiresAction(query)
                 if (requiresAction) {
@@ -131,7 +144,7 @@ class AgentLoop @Inject constructor(
         context: Context
     ) {
         try {
-            val speechText = "Executing: ${alias.action.lowercase().replace("_", " ")}"
+            val speechText = humanizePreSpeech(alias.action)
             onSpeakCallback?.invoke(speechText)
 
             // Save agent response
@@ -175,10 +188,13 @@ class AgentLoop @Inject constructor(
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
             
             val systemPrompt = """
-                You are OpenDroid, a professional and precise autonomous Android AI Assistant. 
-                Answer the user's question directly. Keep answers concise, clear, and professional.
+                You are OpenDroid, a friendly and helpful Android AI assistant.
+                Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
+                Keep your answers short and to the point, but feel free to be friendly.
                 
-                Note on capabilities: You have full access and capability to control this Android device and run action plans (like opening apps, setting alarms, toggling WiFi/Bluetooth/Flashlight, sending messages/emails, making calls, etc.). If the user asks you to perform an action directly, guide them to request it, or explain how you can perform it.
+                You can control this Android device: open apps, set alarms, toggle WiFi/Bluetooth/flashlight, send messages, make calls, and more. If someone asks you to do something, just do it or let them know you can help.
+                
+                Never dump raw error messages or technical details. If something goes wrong, say it simply and suggest what to do next.
                 
                 Context about user and device state:
                 $relevantContext
@@ -520,30 +536,30 @@ class AgentLoop @Inject constructor(
 
     private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean) {
         val summaryText = if (isSuccess) {
-            // Build a specific summary from step results
+            // Build a natural, human-sounding summary from step results
             val stepSummaries = plan.steps
                 .filter { it.status == StepStatus.COMPLETED && !it.result.isNullOrBlank() }
                 .mapNotNull { step ->
                     val result = step.result ?: return@mapNotNull null
-                    // Use the action result data directly if it's descriptive
                     when {
                         result.length > 5 && !result.startsWith("{") -> result
-                        else -> "${step.action}: Done"
+                        else -> null
                     }
                 }
             if (stepSummaries.isNotEmpty()) {
                 stepSummaries.joinToString(". ")
             } else {
-                "Done! Completed: '${plan.goal}'"
+                humanizeGoalDone(plan.goal)
             }
         } else {
+            // Log the technical errors but DON'T show them to the user
             val failedSteps = plan.steps.filter { it.status == StepStatus.FAILED }
-            if (failedSteps.isNotEmpty()) {
-                val errors = failedSteps.mapNotNull { it.error }.joinToString(". ")
-                "Could not complete '${plan.goal}': $errors"
-            } else {
-                "Failed to complete task: '${plan.goal}'."
+            failedSteps.forEach { step ->
+                android.util.Log.e("AgentLoop",
+                    "Step '${step.action}' failed: ${step.error ?: "unknown"}")
             }
+            // Show a short, friendly message instead
+            humanizeFailure(plan.goal)
         }
 
         val assistantMsg = ChatMessage(
@@ -582,5 +598,96 @@ class AgentLoop @Inject constructor(
             // Silently ignore parsing errors here and let downstream deserialization report them if needed
         }
         return content
+    }
+
+    /**
+     * Convert raw technical error messages into friendly, user-facing text.
+     * Prevents raw Java stack traces, permission denial strings, and
+     * intent resolution errors from being spoken to the user.
+     */
+    private fun formatErrorForUser(action: String, rawError: String): String {
+        // Log the technical error for debugging
+        android.util.Log.e("AgentLoop", "Action $action error: $rawError")
+
+        // Return only a short, friendly message
+        return when {
+            rawError.contains("Permission", ignoreCase = true) ||
+            rawError.contains("SecurityException", ignoreCase = true) ->
+                "I need a permission for that. Check your app settings and try again."
+
+            rawError.contains("ActivityNotFound", ignoreCase = true) ->
+                "Looks like the app I need isn't installed."
+
+            rawError.contains("IOException", ignoreCase = true) ->
+                "I'm having trouble connecting. Check your internet?"
+
+            else ->
+                "Something didn't work out. Mind trying again?"
+        }
+    }
+
+    /**
+     * Generate a natural pre-execution speech line based on the action.
+     */
+    private fun humanizePreSpeech(action: String): String {
+        return when (action) {
+            "TOGGLE_FLASHLIGHT" -> "Got it, toggling your flashlight."
+            "SET_ALARM" -> "Sure, setting that alarm for you."
+            "SET_TIMER" -> "Alright, starting a timer."
+            "TAKE_SCREENSHOT" -> "Taking a screenshot now."
+            "LOCK_SCREEN" -> "Locking your screen."
+            "TOGGLE_WIFI" -> "Alright, switching your WiFi."
+            "TOGGLE_BLUETOOTH" -> "On it, toggling Bluetooth."
+            "TOGGLE_DND" -> "Got it, changing Do Not Disturb."
+            "TOGGLE_HOTSPOT" -> "Sure, toggling your hotspot."
+            "TOGGLE_MOBILE_DATA" -> "Alright, switching mobile data."
+            "SET_VOLUME" -> "Got it, adjusting the volume."
+            "SET_BRIGHTNESS" -> "Sure, adjusting brightness."
+            "OPEN_APP" -> "Opening that for you."
+            "ANALYZE_SCREENSHOT" -> "Let me take a look at your screen."
+            "SET_RINGER_MODE" -> "Changing your ringer mode."
+            "PLAY_MUSIC" -> "Let me play that for you."
+            "MAKE_CALL" -> "Calling now."
+            else -> {
+                val readable = action.lowercase().replace("_", " ")
+                "On it! Let me $readable."
+            }
+        }
+    }
+
+    /**
+     * Generate a natural success message when no step result is available.
+     */
+    private fun humanizeGoalDone(goal: String): String {
+        val lower = goal.lowercase()
+        return when {
+            lower.contains("alarm") -> "All set! Your alarm is ready."
+            lower.contains("flash") || lower.contains("torch") -> "Done! Flashlight's been toggled."
+            lower.contains("wifi") -> "WiFi's been updated."
+            lower.contains("bluetooth") -> "Bluetooth's been switched."
+            lower.contains("volume") -> "Volume's adjusted."
+            lower.contains("brightness") -> "Brightness updated."
+            lower.contains("screenshot") -> "Screenshot taken!"
+            lower.contains("timer") -> "Timer's set and running."
+            lower.contains("open") -> "Done, it should be open now."
+            lower.contains("call") -> "Calling now."
+            lower.contains("message") || lower.contains("whatsapp") -> "Message sent!"
+            else -> "All done!"
+        }
+    }
+
+    /**
+     * Generate a natural failure message. Technical details go to logs only.
+     */
+    private fun humanizeFailure(goal: String): String {
+        val lower = goal.lowercase()
+        return when {
+            lower.contains("alarm") -> "Sorry, I couldn't set that alarm. Maybe check your Clock app?"
+            lower.contains("flash") || lower.contains("torch") -> "Hmm, the flashlight didn't work. Try again?"
+            lower.contains("call") -> "I wasn't able to make that call. Want to try again?"
+            lower.contains("message") || lower.contains("whatsapp") -> "The message didn't go through. Want me to retry?"
+            lower.contains("wifi") || lower.contains("bluetooth") -> "Couldn't change that setting. You might need to do it manually."
+            else -> "Sorry, that didn't work out. Want me to try again?"
+        }
     }
 }

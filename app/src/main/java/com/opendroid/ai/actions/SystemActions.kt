@@ -14,6 +14,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.provider.ContactsContract
 import android.provider.Settings
+import android.util.Log
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
@@ -64,14 +65,15 @@ class SystemActions @Inject constructor(
             return try {
                 @Suppress("DEPRECATION")
                 wifiManager.isWifiEnabled = on
-                ActionResult(true, "WiFi set to $on", null)
+                val stateWord = if (on) "on" else "off"
+                ActionResult(true, "WiFi's $stateWord now!", null)
             } catch (e: Exception) {
                 // Fallback: Launch wifi settings panel so user can toggle manually
                 val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Failed to toggle WiFi directly. Opened settings panel.", e.localizedMessage, true)
+                ActionResult(false, "Couldn't toggle WiFi directly, but I opened the settings for you.", e.localizedMessage, true)
             }
         }
     }
@@ -85,7 +87,10 @@ class SystemActions @Inject constructor(
 
         override val name: String = "TOGGLE_FLASHLIGHT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val onParam = params["on"] ?: "toggle"
+            // Read "state" param — default to "toggle" if missing
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
             // Register torch callback to track actual state (once)
@@ -114,22 +119,23 @@ class SystemActions @Inject constructor(
                 }
                 val cameraId = foundCameraId ?: cameraManager.cameraIdList.firstOrNull()
                 if (cameraId != null) {
-                    // Determine target state
-                    val targetOn = when (onParam) {
-                        "true" -> true
-                        "false" -> false
-                        "toggle" -> !isFlashlightOn
-                        else -> !isFlashlightOn
+                    // Determine target state — NEVER return NeedsInput
+                    val targetOn = when (requestedState) {
+                        "on", "true"   -> true
+                        "off", "false" -> false
+                        "toggle"       -> !isFlashlightOn
+                        else           -> !isFlashlightOn  // unknown = toggle
                     }
                     cameraManager.setTorchMode(cameraId, targetOn)
                     isFlashlightOn = targetOn
                     val stateWord = if (targetOn) "on" else "off"
-                    ActionResult(true, "Flashlight turned $stateWord", null)
+                    ActionResult(true, "Flashlight's $stateWord!", null)
                 } else {
                     ActionResult(false, null, "No camera with flashlight support was found.")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to toggle flashlight: ${e.localizedMessage}")
+                Log.e("Flashlight", "Toggle failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't toggle the flashlight.")
             }
         }
     }
@@ -149,9 +155,10 @@ class SystemActions @Inject constructor(
                 val maxVolume = audioManager.getStreamMaxVolume(streamType)
                 val targetVolume = (level * maxVolume) / 100
                 audioManager.setStreamVolume(streamType, targetVolume, AudioManager.FLAG_SHOW_UI)
-                ActionResult(true, "Volume for $typeStr set to $level%", null)
+                ActionResult(true, "$typeStr volume set to $level percent.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Volume adjustment failed: ${e.localizedMessage}")
+                Log.e("SetVolume", "Volume failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't change the volume.")
             }
         }
     }
@@ -164,7 +171,7 @@ class SystemActions @Inject constructor(
             return try {
                 if (Settings.System.canWrite(context)) {
                     Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, targetVal)
-                    ActionResult(true, "Brightness set to $level%", null)
+                    ActionResult(true, "Brightness is at $level percent now.", null)
                 } else {
                     val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
                         data = Uri.parse("package:${context.packageName}")
@@ -174,7 +181,8 @@ class SystemActions @Inject constructor(
                     ActionResult(false, "Write settings permission not granted. Prompted user.", "Permission required", true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Brightness adjustment failed: ${e.localizedMessage}")
+                Log.e("SetBrightness", "Brightness failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't change the brightness.")
             }
         }
     }
@@ -194,7 +202,7 @@ class SystemActions @Inject constructor(
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                    ActionResult(true, "Opened $appName ($appPackage)", null)
+                    ActionResult(true, "$appName is open!", null)
                 } else {
                     ActionResult(false, null, "Launcher intent not found for $appPackage")
                 }
@@ -238,13 +246,14 @@ class SystemActions @Inject constructor(
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                 @Suppress("DEPRECATION")
                 if (on) adapter.enable() else adapter.disable()
-                ActionResult(true, "Bluetooth set to $on", null)
+                val stateWord = if (on) "on" else "off"
+                ActionResult(true, "Bluetooth is $stateWord now!", null)
             } catch (e: Exception) {
                 val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Failed to toggle bluetooth directly. Opened settings panel.", e.localizedMessage, true)
+                ActionResult(false, "Couldn't toggle Bluetooth directly, but I opened the settings for you.", e.localizedMessage, true)
             }
         }
     }
@@ -258,7 +267,8 @@ class SystemActions @Inject constructor(
                 if (notificationManager.isNotificationPolicyAccessGranted) {
                     val filter = if (on) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL
                     notificationManager.setInterruptionFilter(filter)
-                    ActionResult(true, "DND set to $on", null)
+                    val stateWord = if (on) "on" else "off"
+                    ActionResult(true, "Do Not Disturb is $stateWord.", null)
                 } else {
                     val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -267,7 +277,8 @@ class SystemActions @Inject constructor(
                     ActionResult(false, "DND policy permission not granted. Prompted user.", "Permission required", true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to toggle DND: ${e.localizedMessage}")
+                Log.e("ToggleDND", "DND failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't change Do Not Disturb.")
             }
         }
     }
@@ -278,7 +289,7 @@ class SystemActions @Inject constructor(
             val service = OpenDroidAccessibilityService.getInstance()
             return if (service != null) {
                 val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT)
-                ActionResult(success, if (success) "Screenshot captured successfully." else "Failed to capture screenshot", null)
+                ActionResult(success, if (success) "Screenshot taken!" else "Couldn't capture screenshot.", null)
             } else {
                 ActionResult(false, null, "Accessibility Service is not running to trigger screenshot.")
             }
@@ -370,9 +381,11 @@ class SystemActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Mobile Network settings to toggle mobile data to $on", null)
+                val stateWord = if (on) "on" else "off"
+                ActionResult(true, "Opened mobile data settings to turn it $stateWord.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open Mobile Network settings: ${e.localizedMessage}")
+                Log.e("MobileData", "Settings failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open network settings.")
             }
         }
     }
@@ -387,7 +400,8 @@ class SystemActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Tethering and Hotspot settings to toggle hotspot to $on", null)
+                val stateWord = if (on) "on" else "off"
+                ActionResult(true, "Opened hotspot settings to turn it $stateWord.", null)
             } catch (e: Exception) {
                 try {
                     val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
@@ -410,9 +424,10 @@ class SystemActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Wallpaper settings/picker.", null)
+                ActionResult(true, "Opened the wallpaper picker for you.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open Wallpaper chooser: ${e.localizedMessage}")
+                Log.e("SetWallpaper", "Wallpaper failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the wallpaper picker.")
             }
         }
     }
@@ -434,7 +449,7 @@ class SystemActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened Google Play Store to install '$appName'", null)
+                ActionResult(true, "Opening Play Store to get '$appName' for you.", null)
             } catch (e: Exception) {
                 try {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=${Uri.encode(appName)}")).apply {
@@ -512,7 +527,8 @@ class SystemActions @Inject constructor(
                     ActionResult(false, "Permission $permissionName is not granted.", "Permission missing", true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to check permission '$permissionName': ${e.localizedMessage}")
+                Log.e("CheckPermission", "Permission check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't check that permission.")
             }
         }
     }
@@ -544,7 +560,8 @@ class SystemActions @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                return ActionResult(false, null, "Failed to read contacts: ${e.localizedMessage}")
+                Log.e("ReadContacts", "Contacts failed: ${e.localizedMessage}")
+                return ActionResult(false, null, "Couldn't read your contacts.")
             }
 
             val uniqueContacts = contacts.distinctBy { it.first + it.second }
@@ -671,7 +688,7 @@ class SystemActions @Inject constructor(
         override val name: String = "GET_SYSTEM_INFO"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val buildInfo = "OS Version: ${android.os.Build.VERSION.RELEASE}, Model: ${android.os.Build.MODEL}"
-            return ActionResult(true, "System Info retrieved: $buildInfo", null)
+            return ActionResult(true, "Here's your system info: $buildInfo", null)
         }
     }
 
@@ -702,7 +719,8 @@ class SystemActions @Inject constructor(
                 val analysis = visionEngine.get().analyzeCurrentScreen(question)
                 ActionResult(true, analysis, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Screenshot analysis failed: ${e.localizedMessage}")
+                Log.e("ScreenshotAnalysis", "Analysis failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't analyze the screen right now.")
             }
         }
     }

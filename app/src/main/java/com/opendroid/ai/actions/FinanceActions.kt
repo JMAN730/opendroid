@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -43,17 +44,18 @@ class FinanceActions @Inject constructor() {
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "UPI payment of INR $amount initiated to $to via $app", null)
+                    ActionResult(true, "Sending ₹$amount to $to!", null)
                 } else {
                     // Try without setting package to allow chooser
                     val chooserIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(chooserIntent)
-                    ActionResult(true, "Specific UPI app '$app' not installed. Opened default system UPI app chooser.", null, true)
+                    ActionResult(true, "$app isn't installed, so I opened the default payment app.", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "UPI transaction failed: ${e.localizedMessage}")
+                Log.e("PayUPI", "UPI failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Payment didn't go through. Try again?")
             }
         }
     }
@@ -70,12 +72,13 @@ class FinanceActions @Inject constructor() {
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                    ActionResult(true, "Cannot check balance directly due to PIN security. Opened Google Pay for manual inspection.", null, true)
+                    ActionResult(true, "I opened Google Pay — you'll need to check your balance there with your PIN.", null, true)
                 } else {
-                    ActionResult(false, null, "Google Pay is not installed. Balance check requires manual verification inside your banking app.")
+                    ActionResult(false, null, "Google Pay isn't installed. Check your balance in your banking app.")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Balance check failed: ${e.localizedMessage}")
+                Log.e("CheckBalance", "Balance check failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't check the balance right now.")
             }
         }
     }
@@ -124,7 +127,8 @@ class FinanceActions @Inject constructor() {
                               
                 ActionResult(true, summary, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to split bill: ${e.localizedMessage}")
+                Log.e("SplitBill", "Split failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't split the bill. Try again?")
             }
         }
     }

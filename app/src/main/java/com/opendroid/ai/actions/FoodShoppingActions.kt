@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -37,17 +38,18 @@ class FoodShoppingActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Opened $app for items: $items", null)
+                    ActionResult(true, "Searching for $items on $app!", null)
                 } else {
                     // Fallback to web search or Play Store
                     val playIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(playIntent)
-                    ActionResult(true, "$app app not found. Opened Play Store page for download as fallback.", null, true)
+                    ActionResult(true, "$app isn't installed — taking you to the Play Store!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Order food failed: ${e.localizedMessage}")
+                Log.e("OrderFood", "Order failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the food app. Try again?")
             }
         }
     }
@@ -69,16 +71,17 @@ class FoodShoppingActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Opened $app for groceries: $items", null)
+                    ActionResult(true, "Looking up $items on $app!", null)
                 } else {
                     val playIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(playIntent)
-                    ActionResult(true, "$app not installed. Opened Play Store page as fallback.", null, true)
+                    ActionResult(true, "$app isn't installed — taking you to the Play Store!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Order grocery failed: ${e.localizedMessage}")
+                Log.e("OrderGrocery", "Grocery failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the grocery app. Try again?")
             }
         }
     }
@@ -96,16 +99,17 @@ class FoodShoppingActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Opened Amazon App searching for '$query'", null)
+                    ActionResult(true, "Searching for '$query' on Amazon!", null)
                 } else {
                     val browserIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(browserIntent)
-                    ActionResult(true, "Amazon App not installed. Opened search in web browser.", null, true)
+                    ActionResult(true, "Amazon isn't installed, but I opened the search in your browser!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Amazon search failed: ${e.localizedMessage}")
+                Log.e("SearchAmazon", "Amazon failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't search Amazon right now.")
             }
         }
     }
@@ -123,16 +127,17 @@ class FoodShoppingActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Opened Flipkart App searching for '$query'", null)
+                    ActionResult(true, "Searching for '$query' on Flipkart!", null)
                 } else {
                     val browserIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(browserIntent)
-                    ActionResult(true, "Flipkart App not installed. Opened search in web browser.", null, true)
+                    ActionResult(true, "Flipkart isn't installed, but I opened it in your browser!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Flipkart search failed: ${e.localizedMessage}")
+                Log.e("SearchFlipkart", "Flipkart failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't search Flipkart right now.")
             }
         }
     }
@@ -152,9 +157,10 @@ class FoodShoppingActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened $app search to add '$product' to cart.", null)
+                ActionResult(true, "Looking up '$product' on $app for you!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Add to cart failed: ${e.localizedMessage}")
+                Log.e("AddToCart", "Cart failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't do that right now. Try again?")
             }
         }
     }

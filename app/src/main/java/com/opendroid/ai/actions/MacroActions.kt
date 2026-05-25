@@ -1,6 +1,7 @@
 package com.opendroid.ai.actions
 
 import android.content.Context
+import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.data.db.dao.MacroDao
@@ -32,7 +33,8 @@ class MacroActions @Inject constructor(
                     ActionResult(false, null, "Macro with name '$macroName' not found.")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to run macro: ${e.localizedMessage}")
+                Log.e("RunMacro", "Macro failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't run that macro right now.")
             }
         }
     }
@@ -52,9 +54,10 @@ class MacroActions @Inject constructor(
                     isEnabled = true
                 )
                 macroDao.insertMacro(entity)
-                ActionResult(true, "Macro '$name' created successfully with steps: $steps", null)
+                ActionResult(true, "Macro '$name' is ready to go!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to create macro: ${e.localizedMessage}")
+                Log.e("CreateMacro", "Create failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't create that macro.")
             }
         }
     }
@@ -69,7 +72,7 @@ class MacroActions @Inject constructor(
                 if (macro != null) {
                     val updated = macro.copy(trigger = "cron:$cronExpression")
                     macroDao.insertMacro(updated)
-                    ActionResult(true, "Scheduled macro '$macroName' with cron: '$cronExpression'", null)
+                    ActionResult(true, "Macro '$macroName' is scheduled!", null)
                 } else {
                     // Try creating a new empty macro with schedule
                     val entity = MacroEntity(
@@ -81,10 +84,11 @@ class MacroActions @Inject constructor(
                         isEnabled = true
                     )
                     macroDao.insertMacro(entity)
-                    ActionResult(true, "Created scheduled empty macro '$macroName' with cron: '$cronExpression'", null, true)
+                    ActionResult(true, "Created and scheduled macro '$macroName'!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to schedule macro: ${e.localizedMessage}")
+                Log.e("ScheduleMacro", "Schedule failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't schedule that macro.")
             }
         }
     }

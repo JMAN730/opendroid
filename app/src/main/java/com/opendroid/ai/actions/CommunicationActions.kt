@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.telephony.SmsManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
@@ -90,7 +91,7 @@ class CommunicationActions @Inject constructor() {
                 if (service != null) {
                     val autoSent = WhatsAppAutomator.automateSend(message)
                     if (autoSent) {
-                        return ActionResult(true, "WhatsApp message sent automatically to $contact via Accessibility service.", null)
+                        return ActionResult(true, "Sent your message to $contact!", null)
                     }
                     // Fallback: try simple click on send button
                     kotlinx.coroutines.delay(2000)
@@ -98,14 +99,15 @@ class CommunicationActions @Inject constructor() {
                                   service.findAndClick("send") || 
                                   service.findAndClick("SEND")
                     if (clicked) {
-                        return ActionResult(true, "WhatsApp message sent to $contact via send button click.", null)
+                        return ActionResult(true, "Message sent to $contact!", null)
                     }
                 }
                 
-                ActionResult(true, "WhatsApp chat opened with $contact. Message pre-filled. Accessibility service was not active to auto-click send.", null)
+                ActionResult(true, "I've opened the chat with $contact — just hit send!", null)
             } catch (e: Exception) {
                 // Fallback to sending standard SMS if WhatsApp is not installed
-                ActionResult(false, "WhatsApp not installed or failed. Triggering SMS fallback.", e.localizedMessage, true)
+                Log.e("SendWhatsApp", "WhatsApp failed: ${e.localizedMessage}")
+                ActionResult(false, "WhatsApp didn't work, let me try SMS instead.", e.localizedMessage, true)
             }
         }
     }
@@ -135,14 +137,14 @@ class CommunicationActions @Inject constructor() {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "Calling $contact ($cleanPhone)", null)
+                    ActionResult(true, "Calling $contact now!", null)
                 } else {
                     // Fallback to DIAL if CALL permission is missing
                     val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "Opened dialer for $contact ($cleanPhone). Tap call to proceed.", null, true)
+                    ActionResult(true, "I've opened the dialer for $contact — just tap call!", null, true)
                 }
             } catch (e: SecurityException) {
                 try {
@@ -150,12 +152,14 @@ class CommunicationActions @Inject constructor() {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(dialIntent)
-                    ActionResult(true, "Opened dialer for $cleanPhone", null, true)
+                    ActionResult(true, "Dialer is open — tap call to connect!", null, true)
                 } catch (e2: Exception) {
-                    ActionResult(false, null, "Call failed: ${e2.localizedMessage}")
+                    Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
+                    ActionResult(false, null, "Couldn't make that call. Want to try again?")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Call failed: ${e.localizedMessage}")
+                Log.e("MakeCall", "Call failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Something went wrong with the call. Try again?")
             }
         }
     }
@@ -186,7 +190,7 @@ class CommunicationActions @Inject constructor() {
                         val smsManager = context.getSystemService(SmsManager::class.java)
                         if (smsManager != null) {
                             smsManager.sendTextMessage(phone, null, message, null, null)
-                            return ActionResult(true, "SMS sent to $contact ($phone)", null)
+                            return ActionResult(true, "Text sent to $contact!", null)
                         }
                     } catch (_: Exception) {
                         // SmsManager failed (no telephony, etc.) — fall through to intent
@@ -199,7 +203,7 @@ class CommunicationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened SMS to $contact ($phone) with message pre-filled.", null)
+                ActionResult(true, "I've opened your message to $contact — just hit send!", null)
             } catch (e: Exception) {
                 // Last resort: try generic messaging app
                 try {
@@ -209,9 +213,10 @@ class CommunicationActions @Inject constructor() {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(fallbackIntent)
-                    ActionResult(true, "Opened messaging app for $contact", null, true)
+                    ActionResult(true, "Messaging app is open for $contact.", null, true)
                 } catch (e2: Exception) {
-                    ActionResult(false, null, "Could not open SMS: ${e2.localizedMessage}")
+                    Log.e("SendSMS", "SMS failed: ${e2.localizedMessage}")
+                    ActionResult(false, null, "Couldn't open messaging. Try again?")
                 }
             }
         }
@@ -232,9 +237,10 @@ class CommunicationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Email compose intent fired to $to", null)
+                ActionResult(true, "Email to $to is ready — just review and send!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Email failed: ${e.localizedMessage}")
+                Log.e("SendEmail", "Email failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the email app. Is one installed?")
             }
         }
     }
@@ -250,9 +256,10 @@ class CommunicationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened WhatsApp group search/chat for group '$groupName' with message '$message'", null)
+                ActionResult(true, "WhatsApp is open — find the '$groupName' group and send your message!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open WhatsApp group: ${e.localizedMessage}")
+                Log.e("WhatsAppGroup", "Group message failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open WhatsApp. Is it installed?")
             }
         }
     }
@@ -288,9 +295,10 @@ class CommunicationActions @Inject constructor() {
                         }
                     }
                 }
-                ActionResult(true, "Video call initiated to $contact ($phone) using $app", null)
+                ActionResult(true, "Video call to $contact is starting!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Video call failed: ${e.localizedMessage}")
+                Log.e("VideoCall", "Video call failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't start the video call. Try again?")
             }
         }
     }
@@ -309,12 +317,13 @@ class CommunicationActions @Inject constructor() {
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                    ActionResult(true, "Opened $app messaging app to read messages.", null)
+                    ActionResult(true, "Here are your messages!", null)
                 } else {
-                    ActionResult(false, null, "Could not open $app messaging app.")
+                    ActionResult(false, null, "Couldn't open the messaging app.")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to read messages: ${e.localizedMessage}")
+                Log.e("ReadMessages", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open your messages right now.")
             }
         }
     }
@@ -328,9 +337,10 @@ class CommunicationActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Opened default Email app.", null)
+                ActionResult(true, "Your email is open!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open email app: ${e.localizedMessage}")
+                Log.e("ReadEmails", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the email app.")
             }
         }
     }

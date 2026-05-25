@@ -1,127 +1,22 @@
 package com.opendroid.ai.core.llm.prompts
 
+import com.opendroid.ai.core.agent.ActionSchema
+
 object PlanningPrompts {
-    const val PLANNING_SYSTEM_PROMPT = """You are OpenDroid's Planning Engine. Your task is to analyze the user request and generate a structured JSON Plan to achieve their goal.
 
-You have access to the following Action Modules. You must select from these ACTION constants:
+    /**
+     * Builds the planning system prompt dynamically from ActionSchema.
+     * This ensures the planning prompt is ALWAYS in sync with the schema.
+     */
+    fun buildPlanningPrompt(): String {
+        val schema = ActionSchema.buildPlanningSchema()
+        val actionCount = ActionSchema.ALL_ACTIONS.size
 
-1. COMMUNICATION
-   - SEND_WHATSAPP {contact: String, message: String}
-   - SEND_WHATSAPP_GROUP {groupName: String, message: String}
-   - MAKE_CALL {contact: String}
-   - MAKE_VIDEO_CALL {contact: String, app: String}  (app: "whatsapp" | "meet" | "zoom")
-   - SEND_SMS {contact: String, message: String}
-   - SEND_EMAIL {to: String, cc: String, subject: String, body: String, attachments: String}
-   - READ_MESSAGES {app: String, count: String}
-   - READ_EMAILS {folder: String, count: String, filter: String}
+        return """You are OpenDroid's Planning Engine. Your task is to analyze the user request and generate a structured JSON Plan to achieve their goal.
 
-2. PRODUCTIVITY
-   - CREATE_CALENDAR_EVENT {title: String, date: String, time: String, duration: String, location: String, attendees: String}
-   - LIST_CALENDAR_TODAY {}
-   - LIST_CALENDAR_WEEK {}
-   - SET_ALARM {time: String, label: String, repeat: String} (time: "HH:mm")
-   - SET_REMINDER {text: String, datetime: String, repeat: String}
-   - ADD_NOTE {title: String, content: String, tags: String}
-   - CREATE_TASK {title: String, dueDate: String, priority: String, list: String}
-   - READ_NOTES {filter: String}
-   - SET_TIMER {duration: String, label: String} (duration: in seconds)
+You have access to exactly $actionCount actions. You MUST select from these ACTION constants ONLY:
 
-3. TRANSPORT
-   - BOOK_UBER {pickup: String, destination: String, rideType: String}
-   - BOOK_OLA {pickup: String, destination: String, rideType: String}
-   - GET_DIRECTIONS {from: String, to: String, mode: String} (mode: "walk" | "drive" | "transit" | "bike")
-   - CHECK_TRAFFIC {route: String}
-   - CHECK_FLIGHT {flightNumber: String}
-   - TRACK_DELIVERY {trackingNumber: String, courier: String}
-
-4. SYSTEM CONTROL
-   - TOGGLE_WIFI {on: String} ("true" | "false")
-   - TOGGLE_MOBILE_DATA {on: String} ("true" | "false")
-   - TOGGLE_BLUETOOTH {on: String} ("true" | "false")
-   - TOGGLE_HOTSPOT {on: String} ("true" | "false")
-   - TOGGLE_FLASHLIGHT {on: String} ("true" | "false")
-   - TOGGLE_DND {on: String} ("true" | "false")
-   - SET_BRIGHTNESS {level: String} (0-100)
-   - SET_VOLUME {type: String, level: String} (type: "media"|"ring"|"alarm", level: 0-100)
-   - SET_WALLPAPER {imageUrl: String}
-   - TAKE_SCREENSHOT {}
-   - RECORD_SCREEN {duration: String} (seconds)
-   - OPEN_APP {appName: String}
-   - INSTALL_APP {appName: String}
-   - LOCK_SCREEN {}
-   - RESTART_DEVICE {}
-   - GET_SYSTEM_INFO {}
-   - SET_RINGER_MODE {mode: String} ("normal" | "vibrate" | "silent")
-   - CLOSE_APP {}
-
-5. INFORMATION
-   - WEB_SEARCH {query: String}
-   - GET_WEATHER {location: String, days: String}
-   - GET_NEWS {topic: String, count: String, sources: String}
-   - CALCULATE {expression: String}
-   - TRANSLATE {text: String, from: String, to: String}
-   - DEFINE_WORD {word: String}
-   - CONVERT_UNITS {value: String, from: String, to: String}
-   - CURRENCY_CONVERT {amount: String, from: String, to: String}
-   - CHECK_STOCK {symbol: String}
-   - SUMMARIZE_URL {url: String}
-   - FACT_CHECK {claim: String}
-
-6. MEDIA
-   - PLAY_MUSIC {query: String, app: String} (app: "spotify" | "youtube" | "local")
-   - PAUSE_MUSIC {}
-   - RESUME_MUSIC {}
-   - NEXT_TRACK {}
-   - PREV_TRACK {}
-   - SET_VOLUME_MUSIC {level: String} (0-100)
-   - PLAY_YOUTUBE {query: String}
-   - TAKE_PHOTO {camera: String} ("front" | "back")
-   - RECORD_VIDEO {duration: String, camera: String}
-   - TAKE_PHOTO_BACKGROUND {}
-
-7. FOOD & SHOPPING
-   - ORDER_FOOD {items: String, app: String, address: String} (app: "zomato" | "swiggy")
-   - ORDER_GROCERY {items: String, app: String} (app: "blinkit" | "zepto" | "bigbasket")
-   - SEARCH_AMAZON {query: String}
-   - SEARCH_FLIPKART {query: String}
-   - ADD_TO_CART {product: String, app: String}
-
-8. SMART HOME
-   - SMART_HOME {device: String, action: String, value: String}
-   - TOGGLE_LIGHT {room: String, on: String, brightness: String, color: String}
-   - SET_THERMOSTAT {temperature: String}
-   - LOCK_DOOR {location: String}
-
-9. FINANCE
-   - PAY_UPI {to: String, amount: String, note: String, app: String} (app: "gpay" | "phonepe" | "paytm")
-   - CHECK_BALANCE {}
-   - SPLIT_BILL {totalAmount: String, people: String, description: String}
-
-10. AGENT MACROS
-    - RUN_MACRO {macroName: String}
-    - CREATE_MACRO {name: String, steps: String}
-    - SCHEDULE_MACRO {macroName: String, cronExpression: String}
-
-11. FILES CONTROL
-    - LIST_FILES {path: String}
-    - READ_FILE {filePath: String}
-    - WRITE_FILE {filePath: String, content: String}
-    - DELETE_FILE {filePath: String}
-    - CREATE_DIRECTORY {path: String}
-    - COPY_FILE {sourcePath: String, destPath: String}
-    - MOVE_FILE {sourcePath: String, destPath: String}
-    - ZIP_FILES {sourcePath: String, zipFilePath: String}
-    - UNZIP_FILE {zipFilePath: String, destDirPath: String}
-
-12. OTHER APPS CONTROL (ACCESSIBILITY AUTOMATION)
-    - LIST_INSTALLED_APPS {}
-    - CLICK_TEXT {text: String}
-    - CLICK_ID {viewId: String}
-    - TYPE_TEXT {searchText: String, content: String}
-    - TYPE_ID {viewId: String, content: String}
-    - SCROLL {direction: String} ("forward" | "backward")
-    - GET_SCREEN_TEXT {}
-    - CLICK_COORDINATES {x: String, y: String}
+$schema
 
 CRITICAL DEPENDENCY RULES:
 1. "dependsOn" defaults to [] (empty) for most steps. Steps already execute sequentially by order.
@@ -140,6 +35,8 @@ CRITICAL: NEVER generate OPEN_APP as a separate step before a self-contained act
   "open whatsapp and send hi to dad" = just SEND_WHATSAPP (1 step, not 2)
 
 Always return the structured PLAN JSON format, even if the user request can be accomplished in a single step (in which case, return a plan with a single step in the steps list). Avoid hardcoding variables when a previous step's output is required (e.g., dependsOn mapping). All parameter values in "params" must be Strings.
+
+ANY action NOT in the list above is INVALID and will be rejected by the system.
 
 PLAN JSON format:
 {
@@ -160,6 +57,11 @@ PLAN JSON format:
     }
   ]
 }"""
+    }
+
+    // Keep backward-compatible constant that delegates to the dynamic builder
+    val PLANNING_SYSTEM_PROMPT: String
+        get() = buildPlanningPrompt()
 
     const val CRITIC_SYSTEM_PROMPT = """You are OpenDroid's Safety and Security Critic.
 Analyze the user's objective and identify potential edge cases, safety concerns, security risks, required permissions, and action module limitations.

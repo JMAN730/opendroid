@@ -1,9 +1,9 @@
 package com.opendroid.ai.core.llm
 
 import com.opendroid.ai.actions.ActionDispatcher
+import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.IntentClassifier
 import com.opendroid.ai.core.agent.QueryComplexity
-import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.llm.prompts.SystemPrompts
 import com.opendroid.ai.core.llm.providers.*
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -133,7 +133,7 @@ class WrappedLLMProvider(
     override suspend fun isAvailable(): Boolean = delegate.isAvailable()
 
     private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {
-        if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains(PlanningPrompts.PLANNING_SYSTEM_PROMPT)) {
+        if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains("AVAILABLE ACTIONS")) {
             val userMessageText = request.messages.lastOrNull()?.text ?: ""
             val complexity = intentClassifier.get().classifyComplexity(userMessageText)
             val maxSteps = when (complexity) {

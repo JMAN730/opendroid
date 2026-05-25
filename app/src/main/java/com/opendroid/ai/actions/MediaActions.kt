@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import android.view.KeyEvent
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
@@ -55,9 +56,10 @@ class MediaActions @Inject constructor() {
                     }
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Music playback started for '$query' on $app", null)
+                ActionResult(true, if (query.isNotEmpty()) "Playing '$query' for you!" else "Music is playing!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to play music: ${e.localizedMessage}")
+                Log.e("PlayMusic", "Music failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't play that right now. Try again?")
             }
         }
     }
@@ -67,9 +69,10 @@ class MediaActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 sendMediaKeyEvent(context, KeyEvent.KEYCODE_MEDIA_PAUSE)
-                ActionResult(true, "Paused music playback", null)
+                ActionResult(true, "Music paused!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to pause music: ${e.localizedMessage}")
+                Log.e("PauseMusic", "Pause failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't pause the music.")
             }
         }
     }
@@ -79,9 +82,10 @@ class MediaActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 sendMediaKeyEvent(context, KeyEvent.KEYCODE_MEDIA_PLAY)
-                ActionResult(true, "Resumed music playback", null)
+                ActionResult(true, "Music resumed!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to resume music: ${e.localizedMessage}")
+                Log.e("ResumeMusic", "Resume failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't resume the music.")
             }
         }
     }
@@ -91,9 +95,10 @@ class MediaActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 sendMediaKeyEvent(context, KeyEvent.KEYCODE_MEDIA_NEXT)
-                ActionResult(true, "Skipped to next track", null)
+                ActionResult(true, "Skipped to the next song!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to skip track: ${e.localizedMessage}")
+                Log.e("NextTrack", "Skip failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't skip the track.")
             }
         }
     }
@@ -103,9 +108,10 @@ class MediaActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 sendMediaKeyEvent(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-                ActionResult(true, "Went back to previous track", null)
+                ActionResult(true, "Going back to the previous song!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to go back: ${e.localizedMessage}")
+                Log.e("PrevTrack", "Back failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't go back.")
             }
         }
     }
@@ -119,9 +125,10 @@ class MediaActions @Inject constructor() {
                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 val targetVolume = (level * maxVolume) / 100
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, AudioManager.FLAG_SHOW_UI)
-                ActionResult(true, "Music stream volume set to $level%", null)
+                ActionResult(true, "Music volume is at $level% now.", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Volume adjustment failed: ${e.localizedMessage}")
+                Log.e("SetVolumeMusic", "Volume failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't change the music volume.")
             }
         }
     }
@@ -139,16 +146,17 @@ class MediaActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "YouTube opened for query '$query'", null)
+                    ActionResult(true, if (query.isNotEmpty()) "Playing '$query' on YouTube!" else "YouTube is open!", null)
                 } else {
                     val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(browserIntent)
-                    ActionResult(true, "YouTube app not installed. Opened in browser as fallback.", null, true)
+                    ActionResult(true, "YouTube app isn't installed, but I opened it in your browser!", null, true)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to play YouTube: ${e.localizedMessage}")
+                Log.e("PlayYoutube", "YouTube failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open YouTube right now.")
             }
         }
     }
@@ -170,9 +178,10 @@ class MediaActions @Inject constructor() {
                     }
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Camera opened in photo mode using $camera camera", null)
+                ActionResult(true, "Camera is ready — snap away!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open camera: ${e.localizedMessage}")
+                Log.e("TakePhoto", "Camera failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the camera.")
             }
         }
     }
@@ -191,9 +200,10 @@ class MediaActions @Inject constructor() {
                     }
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Camera opened in video recording mode", null)
+                ActionResult(true, "Camera is ready for video!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to open video camera: ${e.localizedMessage}")
+                Log.e("RecordVideo", "Video camera failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the video camera.")
             }
         }
     }

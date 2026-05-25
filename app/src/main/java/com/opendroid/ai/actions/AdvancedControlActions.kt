@@ -108,7 +108,7 @@ class AdvancedControlActions @Inject constructor() {
 
                 ActionResult(true, info, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to get system info: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't get system info right now.")
             }
         }
     }
@@ -125,13 +125,13 @@ class AdvancedControlActions @Inject constructor() {
             }
             return try {
                 audioManager.ringerMode = targetMode
-                ActionResult(true, "Ringer mode set to $modeStr", null)
+                ActionResult(true, "Ringer is on $modeStr now!", null)
             } catch (e: Exception) {
                 val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Failed to set ringer mode to $modeStr directly. Prompted for DND permission.", e.localizedMessage, true)
+                ActionResult(false, "Couldn't change the ringer directly. I opened the settings for you.", e.localizedMessage, true)
             }
         }
     }
@@ -156,7 +156,7 @@ class AdvancedControlActions @Inject constructor() {
                 }
                 ActionResult(true, if (fileList.isEmpty()) "Directory is empty." else fileList, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to list files: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't list those files.")
             }
         }
     }
@@ -180,7 +180,7 @@ class AdvancedControlActions @Inject constructor() {
                 val text = file.readText()
                 ActionResult(true, text, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to read file: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't read that file.")
             }
         }
     }
@@ -195,9 +195,9 @@ class AdvancedControlActions @Inject constructor() {
                 val file = File(filePath)
                 file.parentFile?.mkdirs()
                 file.writeText(content)
-                ActionResult(true, "Successfully wrote content to $filePath", null)
+                ActionResult(true, "File saved!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to write file: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't write to that file.")
             }
         }
     }
@@ -214,12 +214,12 @@ class AdvancedControlActions @Inject constructor() {
                 }
                 val deleted = file.deleteRecursively()
                 if (deleted) {
-                    ActionResult(true, "Successfully deleted $filePath", null)
+                    ActionResult(true, "Deleted!", null)
                 } else {
                     ActionResult(false, null, "Failed to delete path (unknown reason)")
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to delete file: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't delete that.")
             }
         }
     }
@@ -246,12 +246,12 @@ class AdvancedControlActions @Inject constructor() {
                 val photoFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "background_photo_${System.currentTimeMillis()}.jpg")
                 val success = captureStillImage(context, cameraManager, cameraId, photoFile)
                 if (success) {
-                    ActionResult(true, "Photo captured and saved to: ${photoFile.absolutePath}", null)
+                    ActionResult(true, "Photo saved!", null)
                 } else {
                     launchCameraIntentFallback(context, "Background capture failed. Launched camera app instead.")
                 }
             } catch (e: Exception) {
-                launchCameraIntentFallback(context, "Background capture error: ${e.localizedMessage}. Launched camera app instead.")
+                launchCameraIntentFallback(context, "Couldn't take a background photo, so I opened the camera app.")
             }
         }
 
@@ -263,7 +263,7 @@ class AdvancedControlActions @Inject constructor() {
                 context.startActivity(intent)
                 ActionResult(true, "$msg Camera app opened.", null, true)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to launch camera app fallback: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the camera app.")
             }
         }
 
@@ -384,7 +384,7 @@ class AdvancedControlActions @Inject constructor() {
                 }.sorted().joinToString("\n")
                 ActionResult(true, appList, null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to list installed apps: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't list the apps right now.")
             }
         }
     }
@@ -393,7 +393,7 @@ class AdvancedControlActions @Inject constructor() {
         override val name: String = "CLOSE_APP"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val success = GenericAppAutomator.pressHome()
-            return ActionResult(success, if (success) "App closed (navigated to home screen)" else "Failed to close app", null)
+            return ActionResult(success, if (success) "Done, went to the home screen." else "Couldn't close the app.", null)
         }
     }
 
@@ -402,7 +402,7 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val text = params["text"] ?: return ActionResult(false, null, "text parameter is missing")
             val success = GenericAppAutomator.clickText(text)
-            return ActionResult(success, if (success) "Clicked text '$text'" else "Text '$text' not found or not clickable", null)
+            return ActionResult(success, if (success) "Tapped on '$text'!" else "Couldn't find '$text' to tap on.", null)
         }
     }
 
@@ -411,7 +411,7 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val viewId = params["viewId"] ?: return ActionResult(false, null, "viewId parameter is missing")
             val success = GenericAppAutomator.clickId(viewId)
-            return ActionResult(success, if (success) "Clicked element with ID '$viewId'" else "Element with ID '$viewId' not found or not clickable", null)
+            return ActionResult(success, if (success) "Tapped the element!" else "Couldn't find that element.", null)
         }
     }
 
@@ -421,7 +421,7 @@ class AdvancedControlActions @Inject constructor() {
             val searchText = params["searchText"] ?: return ActionResult(false, null, "searchText parameter is missing")
             val content = params["content"] ?: ""
             val success = GenericAppAutomator.typeText(searchText, content)
-            return ActionResult(success, if (success) "Typed '$content' into field containing '$searchText'" else "Field with '$searchText' not found or not editable", null)
+            return ActionResult(success, if (success) "Typed it in!" else "Couldn't find that text field.", null)
         }
     }
 
@@ -431,7 +431,7 @@ class AdvancedControlActions @Inject constructor() {
             val viewId = params["viewId"] ?: return ActionResult(false, null, "viewId parameter is missing")
             val content = params["content"] ?: ""
             val success = GenericAppAutomator.typeId(viewId, content)
-            return ActionResult(success, if (success) "Typed '$content' into field with ID '$viewId'" else "Field with ID '$viewId' not found or not editable", null)
+            return ActionResult(success, if (success) "Typed it in!" else "Couldn't find that field.", null)
         }
     }
 
@@ -441,7 +441,7 @@ class AdvancedControlActions @Inject constructor() {
             val direction = params["direction"] ?: "forward"
             val forward = direction.lowercase() == "forward"
             val success = GenericAppAutomator.scroll(forward)
-            return ActionResult(success, if (success) "Scrolled screen $direction" else "Screen is not scrollable", null)
+            return ActionResult(success, if (success) "Scrolled $direction!" else "Can't scroll here.", null)
         }
     }
 
@@ -459,7 +459,7 @@ class AdvancedControlActions @Inject constructor() {
             val x = params["x"]?.toFloatOrNull() ?: return ActionResult(false, null, "x coordinate is missing or invalid")
             val y = params["y"]?.toFloatOrNull() ?: return ActionResult(false, null, "y coordinate is missing or invalid")
             val success = GenericAppAutomator.clickCoordinates(x, y)
-            return ActionResult(success, if (success) "Clicked at coordinates ($x, $y)" else "Failed to click at coordinates", null)
+            return ActionResult(success, if (success) "Tapped there!" else "Couldn't tap at that spot.", null)
         }
     }
 
@@ -472,20 +472,20 @@ class AdvancedControlActions @Inject constructor() {
                 val dir = File(pathStr)
                 if (dir.exists()) {
                     if (dir.isDirectory) {
-                        ActionResult(true, "Directory already exists: $pathStr", null)
+                        ActionResult(true, "That folder already exists.", null)
                     } else {
                         ActionResult(false, null, "Path exists but is a file, not a directory: $pathStr")
                     }
                 } else {
                     val created = dir.mkdirs()
                     if (created) {
-                        ActionResult(true, "Successfully created directory: $pathStr", null)
+                        ActionResult(true, "Folder created!", null)
                     } else {
                         ActionResult(false, null, "Failed to create directory: $pathStr")
                     }
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to create directory: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't create that folder.")
             }
         }
     }
@@ -503,9 +503,9 @@ class AdvancedControlActions @Inject constructor() {
                     return ActionResult(false, null, "Source path does not exist: $srcPath")
                 }
                 copyRecursively(src, dest)
-                ActionResult(true, "Successfully copied $srcPath to $destPath", null)
+                ActionResult(true, "Copied!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to copy: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't copy that file.")
             }
         }
 
@@ -543,14 +543,14 @@ class AdvancedControlActions @Inject constructor() {
                 dest.parentFile?.mkdirs()
                 val renamed = src.renameTo(dest)
                 if (renamed) {
-                    ActionResult(true, "Successfully moved/renamed $srcPath to $destPath", null)
+                    ActionResult(true, "Moved!", null)
                 } else {
                     copyRecursively(src, dest)
                     deleteRecursively(src)
-                    ActionResult(true, "Successfully moved $srcPath to $destPath via copy-and-delete", null)
+                    ActionResult(true, "Moved!", null)
                 }
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to move: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't move that file.")
             }
         }
 
@@ -596,9 +596,9 @@ class AdvancedControlActions @Inject constructor() {
                 java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(zipFile.outputStream())).use { zos ->
                     zipRecursively(src, src, zos)
                 }
-                ActionResult(true, "Successfully zipped $srcPath into $zipFilePath", null)
+                ActionResult(true, "Zipped!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to zip: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't zip those files.")
             }
         }
 
@@ -650,9 +650,9 @@ class AdvancedControlActions @Inject constructor() {
                         entry = zis.nextEntry
                     }
                 }
-                ActionResult(true, "Successfully unzipped $zipFilePath into $destDirPath", null)
+                ActionResult(true, "Unzipped!", null)
             } catch (e: Exception) {
-                ActionResult(false, null, "Failed to unzip: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't unzip that file.")
             }
         }
     }
