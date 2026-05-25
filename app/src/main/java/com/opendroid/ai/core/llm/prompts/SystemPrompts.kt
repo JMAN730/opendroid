@@ -259,6 +259,18 @@ $schema
             - User Memory Context: $memoryContext
             - Current Date/Time: $currentDateTime
             - Device State: $deviceState
+
+            ${if (deviceState.contains("NOT AVAILABLE")) """
+            IMPORTANT: Internet is NOT available right now.
+            Do NOT attempt these actions: WEB_SEARCH, GET_WEATHER, GET_NEWS, BOOK_UBER, BOOK_OLA, OPEN_BROWSER, PLAY_YOUTUBE, TRANSLATE, CURRENCY_CONVERT
+            Instead use CHAT to tell user internet connection is needed.
+            """ else ""}
+
+            ${if (deviceState.contains("Location: Unknown") || deviceState.contains("Location: Permission needed") || deviceState.contains("Location: Location disabled")) """
+            IMPORTANT: Location is not available.
+            For GET_WEATHER, use ASK_USER to ask for city name.
+            Do NOT assume the user's location.
+            """ else ""}
         """.trimIndent()
     }
 }

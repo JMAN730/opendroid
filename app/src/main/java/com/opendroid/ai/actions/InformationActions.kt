@@ -48,7 +48,46 @@ class InformationActions @Inject constructor() {
     private class GetWeatherAction : Action {
         override val name: String = "GET_WEATHER"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val location = params["location"] ?: "current location"
+            var location = params["location"]
+
+            // If no location provided or it's a generic placeholder, try to resolve from device
+            if (location == null || location == "current location" || location.isBlank()) {
+                try {
+                    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+                    val hasLocationPermission = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                        context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (hasLocationPermission && locationManager != null) {
+                        val lastLocation = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                            ?: locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+
+                        if (lastLocation != null) {
+                            // Reverse geocode to city name
+                            try {
+                                val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+                                @Suppress("DEPRECATION")
+                                val addresses = geocoder.getFromLocation(lastLocation.latitude, lastLocation.longitude, 1)
+                                location = addresses?.firstOrNull()?.locality
+                                    ?: addresses?.firstOrNull()?.subAdminArea
+                                    ?: addresses?.firstOrNull()?.adminArea
+                            } catch (e: Exception) {
+                                // Geocoder failed, use coordinates
+                                location = "${lastLocation.latitude},${lastLocation.longitude}"
+                            }
+                        }
+                    }
+                } catch (e: SecurityException) {
+                    Log.w("GetWeather", "Location permission denied: ${e.message}")
+                } catch (e: Exception) {
+                    Log.w("GetWeather", "Location resolution failed: ${e.message}")
+                }
+            }
+
+            // Final fallback
+            if (location == null || location.isBlank()) {
+                location = "my location"
+            }
+
             return try {
                 val query = URLEncoder.encode("weather in $location", "UTF-8")
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
@@ -58,7 +97,7 @@ class InformationActions @Inject constructor() {
                 ActionResult(true, "Here's the weather for $location!", null)
             } catch (e: Exception) {
                 Log.e("GetWeather", "Weather failed: ${e.localizedMessage}")
-                ActionResult(false, null, "Couldn't check the weather right now.")
+                ActionResult(false, null, "Couldn't check the weather right now. Please check your internet connection.")
             }
         }
     }

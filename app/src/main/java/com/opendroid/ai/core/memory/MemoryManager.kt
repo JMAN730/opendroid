@@ -77,7 +77,7 @@ class MemoryManager @Inject constructor(
             
             [Working Session State]
             $activePlanStr
-            Device State: Location=${workingMemory.location}, Battery=${workingMemory.batteryLevel}%, WiFi=${workingMemory.wifiState}, Connection=${workingMemory.connectivity}
+            Device State: Location=${workingMemory.locationContext}, Battery=${workingMemory.batteryLevel}%, WiFi=${workingMemory.wifiState}, Connection=${workingMemory.connectivity}, Internet=${if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE"}
         """.trimIndent()
     }
 

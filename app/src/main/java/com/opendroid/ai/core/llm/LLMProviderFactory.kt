@@ -2,6 +2,7 @@ package com.opendroid.ai.core.llm
 
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.agent.ActionSchema
+import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.core.agent.IntentClassifier
 import com.opendroid.ai.core.agent.QueryComplexity
 import com.opendroid.ai.core.llm.prompts.SystemPrompts
@@ -28,7 +29,8 @@ class LLMProviderFactory @Inject constructor(
     private val copilotProvider: Provider<CopilotProvider>,
     private val settingsRepository: SettingsRepository,
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
-    private val intentClassifier: dagger.Lazy<IntentClassifier>
+    private val intentClassifier: dagger.Lazy<IntentClassifier>,
+    private val deviceStateProvider: DeviceStateProvider
 ) {
 
     fun getProviderByName(name: String): LLMProvider {
@@ -46,7 +48,7 @@ class LLMProviderFactory @Inject constructor(
             "Copilot API" -> copilotProvider.get()
             else -> geminiProvider.get()
         }
-        return WrappedLLMProvider(rawProvider, actionDispatcher, intentClassifier)
+        return WrappedLLMProvider(rawProvider, actionDispatcher, intentClassifier, deviceStateProvider)
     }
 
     private fun getFallbackChain(primaryName: String): List<LLMProvider> {
@@ -115,7 +117,8 @@ class LLMProviderFactory @Inject constructor(
 class WrappedLLMProvider(
     private val delegate: LLMProvider,
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
-    private val intentClassifier: dagger.Lazy<IntentClassifier>
+    private val intentClassifier: dagger.Lazy<IntentClassifier>,
+    private val deviceStateProvider: DeviceStateProvider
 ) : LLMProvider {
     override val name: String get() = delegate.name
     override val availableModels: List<String> get() = delegate.availableModels
@@ -149,7 +152,7 @@ class WrappedLLMProvider(
             }
 
             val currentDateTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-            val deviceState = "Battery: 80%, WiFi: Connected, Location: Enabled"
+            val deviceState = deviceStateProvider.getFullStateString()
 
             val registeredActions = actionDispatcher.get().getAllRegisteredActions()
 

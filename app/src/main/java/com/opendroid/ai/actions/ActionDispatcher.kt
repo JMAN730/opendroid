@@ -5,6 +5,7 @@ import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ActionSchema
+import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import javax.inject.Inject
@@ -24,11 +25,29 @@ class ActionDispatcher @Inject constructor(
     private val macroActions: MacroActions,
     private val advancedControlActions: AdvancedControlActions,
     private val autoMapper: ActionAutoMapper,
-    private val unknownActionDao: UnknownActionDao
+    private val unknownActionDao: UnknownActionDao,
+    private val deviceStateProvider: DeviceStateProvider
 ) {
 
     companion object {
         private const val TAG = "ActionDispatcher"
+
+        // Actions that require internet connectivity
+        private val internetRequiredActions = setOf(
+            "WEB_SEARCH",
+            "GET_WEATHER",
+            "GET_NEWS",
+            "OPEN_BROWSER",
+            "BOOK_UBER",
+            "BOOK_OLA",
+            "GET_DIRECTIONS",
+            "CURRENCY_CONVERT",
+            "TRANSLATE",
+            "PLAY_YOUTUBE",
+            "CHECK_STOCK",
+            "SUMMARIZE_URL",
+            "FACT_CHECK"
+        )
     }
 
     private val actionsMap: Map<String, Action> = buildMap {
@@ -54,6 +73,17 @@ class ActionDispatcher @Inject constructor(
     fun getActionCount(): Int = actionsMap.size
 
     suspend fun execute(actionName: String, params: Map<String, String>, context: Context): ActionResult {
+
+        // ── LAYER 0: Internet pre-check for web-dependent actions ──
+        if (internetRequiredActions.contains(actionName)) {
+            if (!deviceStateProvider.isInternetAvailable()) {
+                Log.d(TAG, "Blocking $actionName — no internet")
+                return ActionResult.Failure(
+                    errorMsg = "No internet connection available",
+                    fallback = "Connect to WiFi or mobile data to use $actionName"
+                )
+            }
+        }
 
         // ── LAYER 1: Validate against ActionSchema ──
         val (schemaValidation, enrichedParams) = ActionSchema.validateParams(actionName, params)

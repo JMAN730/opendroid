@@ -213,7 +213,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         StateItem("Battery Level", "${workingMemory.batteryLevel}%", AccentNeonGreen)
-                        StateItem("WiFi State", if (workingMemory.wifiState) "Active" else "Inactive", if (workingMemory.wifiState) AccentNeonGreen else AccentRed)
+                        StateItem("WiFi State", workingMemory.wifiState, if (workingMemory.wifiState == "Active") AccentNeonGreen else if (workingMemory.wifiState == "Inactive") AccentRed else TextSecondary)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -221,7 +221,14 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         StateItem("Connectivity", workingMemory.connectivity, AccentCyan)
-                        StateItem("Location Context", workingMemory.location, TextSecondary)
+                        StateItem("Internet", if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE", if (workingMemory.isInternetAvailable) AccentNeonGreen else AccentRed)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        StateItem("Location Context", workingMemory.locationContext, TextSecondary)
                     }
                 }
             }
