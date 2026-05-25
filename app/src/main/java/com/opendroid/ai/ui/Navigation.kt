@@ -41,7 +41,7 @@ fun OpenDroidNavigation(
             val context = LocalContext.current
             SplashScreen(
                 onNavigateNext = {
-                    val sharedPrefs = context.getSharedPreferences("opendroid_prefs", android.content.Context.MODE_PRIVATE)
+                    val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
                     val isOnboardingCompleted = sharedPrefs.getBoolean("onboarding_completed", false)
                     val hasAudioPermission = ContextCompat.checkSelfPermission(
                         context,

@@ -51,8 +51,8 @@ class MemoryManager @Inject constructor(
             .filter { memoryExtractor.shouldStoreInSemanticMemory(it.key) && memoryExtractor.shouldStoreInSemanticMemory(it.value) }
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
-        // Read user info from SharedPreferences
-        val sharedPrefs = context.getSharedPreferences("opendroid_prefs", Context.MODE_PRIVATE)
+        // Read user info from EncryptedSharedPreferences
+        val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
         val userName = sharedPrefs.getString("user_name", "") ?: ""
         val userDob = sharedPrefs.getString("user_dob", "") ?: ""
 

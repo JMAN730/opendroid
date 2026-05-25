@@ -195,7 +195,7 @@ fun PrivacyPolicyScreen(
             item {
                 PolicySection(
                     title = "7. SECURITY",
-                    content = "• API keys are stored in Android SharedPreferences on your device.\n" +
+                    content = "• API keys are stored using Android EncryptedSharedPreferences (AES-256 encryption) on your device.\n" +
                             "• All LLM API communication uses HTTPS encryption.\n" +
                             "• The accessibility service only activates when explicitly enabled by you.\n" +
                             "• Destructive actions (device restart, file deletion) require user confirmation."

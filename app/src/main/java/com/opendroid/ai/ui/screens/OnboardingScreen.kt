@@ -46,7 +46,7 @@ enum class OnboardingStage {
 @Composable
 fun OnboardingScreen(onFinished: () -> Unit) {
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("opendroid_prefs", Context.MODE_PRIVATE) }
+    val sharedPrefs = remember { com.opendroid.ai.core.security.SecurePrefs.get(context) }
 
     var stage by remember { mutableStateOf(OnboardingStage.INTRODUCTION) }
     var name by remember { mutableStateOf(sharedPrefs.getString("user_name", "") ?: "") }
