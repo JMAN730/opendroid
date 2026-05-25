@@ -149,6 +149,24 @@ fun PrivacyPolicyScreen(
                 )
             }
 
+            // Section: Accessibility Service Declaration
+            item {
+                PolicySection(
+                    title = "4b. ACCESSIBILITY SERVICE",
+                    content = "OpenDroid uses Android Accessibility Service to automate app interactions " +
+                            "(such as sending WhatsApp messages) when you explicitly request it.\n\n" +
+                            "The Accessibility Service:\n\n" +
+                            "• Only activates when you enable it in Android Settings\n" +
+                            "• Only acts when you give OpenDroid a command\n" +
+                            "• Does NOT run in the background without your command\n" +
+                            "• Does NOT read passwords or banking information\n" +
+                            "• Does NOT record or log screen content passively\n" +
+                            "• Does NOT collect, store, or transmit any data observed through the Accessibility Service to external servers\n\n" +
+                            "The service is used solely to perform on-screen actions you request, such as tapping buttons or typing text in other apps. " +
+                            "You can revoke Accessibility Service access at any time from Android Settings > Accessibility > OpenDroid."
+                )
+            }
+
             // Section: Data Storage
             item {
                 PolicySection(
