@@ -83,6 +83,8 @@ object AliasResolver {
         "turn off wifi"     to ActionHint("TOGGLE_WIFI", mapOf("on" to "false")),
         "enable wifi"       to ActionHint("TOGGLE_WIFI", mapOf("on" to "true")),
         "disable wifi"      to ActionHint("TOGGLE_WIFI", mapOf("on" to "false")),
+        "open wifi"         to ActionHint("TOGGLE_WIFI", mapOf("on" to "true")),
+        "start wifi"        to ActionHint("TOGGLE_WIFI", mapOf("on" to "true")),
         "internet on"       to ActionHint("TOGGLE_WIFI", mapOf("on" to "true")),
         "internet off"      to ActionHint("TOGGLE_WIFI", mapOf("on" to "false")),
 
@@ -93,6 +95,11 @@ object AliasResolver {
         "bt off"            to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "false")),
         "turn on bluetooth" to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "true")),
         "turn off bluetooth" to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "false")),
+        "open bluetooth"    to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "true")),
+        "start bluetooth"   to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "true")),
+        "enable bluetooth"  to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "true")),
+        "disable bluetooth" to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "false")),
+        "close bluetooth"   to ActionHint("TOGGLE_BLUETOOTH", mapOf("on" to "false")),
 
         // ── VOLUME ───────────────────────────────────────
         "mute"              to ActionHint("SET_VOLUME", mapOf("type" to "ring", "level" to "0")),
@@ -114,9 +121,20 @@ object AliasResolver {
         // ── BRIGHTNESS ───────────────────────────────────
         "bright"            to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
         "dim"               to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
+        "dim screen"        to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
         "max brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
         "min brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "0")),
         "full brightness"   to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
+        "set brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "50")),
+        "brightness"        to ActionHint("SET_BRIGHTNESS", mapOf("level" to "50")),
+
+        // ── RINGER MODE ─────────────────────────────────
+        "vibrate"           to ActionHint("SET_RINGER_MODE", mapOf("mode" to "vibrate")),
+        "vibrate mode"      to ActionHint("SET_RINGER_MODE", mapOf("mode" to "vibrate")),
+        "vibration mode"    to ActionHint("SET_RINGER_MODE", mapOf("mode" to "vibrate")),
+        "normal mode"       to ActionHint("SET_RINGER_MODE", mapOf("mode" to "normal")),
+        "normal ringer"     to ActionHint("SET_RINGER_MODE", mapOf("mode" to "normal")),
+        "ringer normal"     to ActionHint("SET_RINGER_MODE", mapOf("mode" to "normal")),
 
         // ── DND / HOTSPOT ────────────────────────────────
         "dnd"               to ActionHint("TOGGLE_DND", mapOf("on" to "true")),

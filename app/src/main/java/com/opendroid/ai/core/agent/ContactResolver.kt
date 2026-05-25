@@ -98,20 +98,35 @@ object ContactResolver {
         }
 
         try {
+            val candidates = mutableListOf<Pair<String, String>>()
             context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                    val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (nameIdx >= 0 && numIdx >= 0) {
-                        val displayName = cursor.getString(nameIdx) ?: name
+                val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                if (nameIdx >= 0 && numIdx >= 0) {
+                    while (cursor.moveToNext()) {
+                        val displayName = cursor.getString(nameIdx) ?: continue
                         val number = cursor.getString(numIdx)?.replace(Regex("[^0-9+]"), "")
                         if (!number.isNullOrBlank()) {
-                            Log.d(TAG, "Found contact: $displayName → $number")
-                            return ContactResult.Found(displayName, number)
+                            candidates.add(displayName to number)
                         }
                     }
                 }
             }
+
+            if (candidates.isEmpty()) return null
+
+            // Rank candidates: prefer exact case-insensitive match, then shortest name
+            val bestMatch = candidates
+                .sortedWith(compareBy(
+                    // Priority 1: exact match (case-insensitive) gets 0, partial gets 1
+                    { if (it.first.equals(name, ignoreCase = true)) 0 else 1 },
+                    // Priority 2: shorter names are more likely the intended contact
+                    { it.first.length }
+                ))
+                .first()
+
+            Log.d(TAG, "Found contact: ${bestMatch.first} → ${bestMatch.second} (from ${candidates.size} candidates)")
+            return ContactResult.Found(bestMatch.first, bestMatch.second)
         } catch (e: Exception) {
             Log.e(TAG, "Contact search failed: ${e.message}")
         }
