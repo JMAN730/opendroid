@@ -155,7 +155,31 @@ object AliasResolver {
         "maps"              to ActionHint("OPEN_APP", mapOf("appName" to "Google Maps")),
         "open maps"         to ActionHint("OPEN_APP", mapOf("appName" to "Google Maps")),
         "whatsapp"          to ActionHint("OPEN_APP", mapOf("appName" to "WhatsApp")),
-        "open whatsapp"     to ActionHint("OPEN_APP", mapOf("appName" to "WhatsApp"))
+        "open whatsapp"     to ActionHint("OPEN_APP", mapOf("appName" to "WhatsApp")),
+
+        // ── CLIPBOARD ────────────────────────────────────
+        "clear clipboard"   to ActionHint("CLEAR_CLIPBOARD", emptyMap()),
+        "empty clipboard"   to ActionHint("CLEAR_CLIPBOARD", emptyMap()),
+        "erase clipboard"   to ActionHint("CLEAR_CLIPBOARD", emptyMap()),
+        "show clipboard"    to ActionHint("GET_CLIPBOARD", emptyMap()),
+        "read clipboard"    to ActionHint("GET_CLIPBOARD", emptyMap()),
+        "what's in clipboard" to ActionHint("GET_CLIPBOARD", emptyMap()),
+        "clipboard"         to ActionHint("GET_CLIPBOARD", emptyMap()),
+
+        // ── BROWSER ─────────────────────────────────────
+        "open browser"      to ActionHint("OPEN_BROWSER", emptyMap()),
+        "open chrome"       to ActionHint("OPEN_BROWSER", emptyMap()),
+        "launch browser"    to ActionHint("OPEN_BROWSER", emptyMap()),
+        "private browsing"  to ActionHint("ENABLE_PRIVATE_MODE", emptyMap()),
+        "incognito mode"    to ActionHint("ENABLE_PRIVATE_MODE", emptyMap()),
+        "open incognito"    to ActionHint("ENABLE_PRIVATE_MODE", emptyMap()),
+        "private mode"      to ActionHint("ENABLE_PRIVATE_MODE", emptyMap()),
+        "incognito"         to ActionHint("ENABLE_PRIVATE_MODE", emptyMap()),
+        "clear browser history" to ActionHint("CLEAR_BROWSER_DATA", emptyMap()),
+        "clear browser data" to ActionHint("CLEAR_BROWSER_DATA", emptyMap()),
+        "clear browsing data" to ActionHint("CLEAR_BROWSER_DATA", emptyMap()),
+        "clear cache"       to ActionHint("CLEAR_BROWSER_DATA", emptyMap()),
+        "delete browser data" to ActionHint("CLEAR_BROWSER_DATA", emptyMap())
     )
 
     /**

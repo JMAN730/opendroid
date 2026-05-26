@@ -149,4 +149,64 @@ class MemoryManager @Inject constructor(
         // Also clean expired memories
         memoryRepository.deleteExpiredMemories()
     }
+
+    // ── Contact preference methods ──────────────────────────
+
+    /**
+     * Store which contact the user chose for a query.
+     * e.g., "dad" → "Dad||+919876543210"
+     * Next time the user says "call dad", we skip the picker.
+     */
+    suspend fun storeContactPreference(
+        query: String,
+        contact: com.opendroid.ai.core.agent.Contact
+    ) {
+        val key = "contact_pref_${query.lowercase().trim()}"
+        memoryRepository.saveMemory(
+            Memory(
+                key = key,
+                value = "${contact.name}||${contact.phoneNumber}",
+                type = MemoryType.SEMANTIC
+            )
+        )
+        Log.d("Memory", "Stored contact preference: '$query' → ${contact.name}")
+    }
+
+    /**
+     * Recall a stored contact preference.
+     * Returns a Contact if the user previously chose one for this query.
+     */
+    suspend fun recallContactPreference(
+        query: String
+    ): com.opendroid.ai.core.agent.Contact? {
+        val key = "contact_pref_${query.lowercase().trim()}"
+        val memories = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
+        val memory = memories.find { it.key == key } ?: return null
+
+        val parts = memory.value.split("||")
+        if (parts.size < 2) return null
+
+        return com.opendroid.ai.core.agent.Contact(
+            name = parts[0],
+            phoneNumber = parts[1],
+            source = "memory"
+        )
+    }
+
+    /**
+     * Get all saved contact preferences (for UI display).
+     */
+    suspend fun getAllContactPreferences(): List<Pair<String, com.opendroid.ai.core.agent.Contact>> {
+        val allMemories = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
+        return allMemories
+            .filter { it.key.startsWith("contact_pref_") }
+            .mapNotNull { entity ->
+                val parts = entity.value.split("||")
+                if (parts.size >= 2) {
+                    val queryStr = entity.key.removePrefix("contact_pref_")
+                    Pair(queryStr, com.opendroid.ai.core.agent.Contact(parts[0], parts[1]))
+                } else null
+            }
+    }
 }
+

@@ -38,7 +38,8 @@ sealed class ActionResult {
     @Serializable
     data class NeedsInput(
         val question: String,
-        val options: List<String> = emptyList()
+        val options: List<String> = emptyList(),
+        val metadata: Map<String, String> = emptyMap()
     ) : ActionResult() {
         override val success: Boolean get() = false
         override val data: String? get() = null

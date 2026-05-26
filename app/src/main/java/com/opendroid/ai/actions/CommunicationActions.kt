@@ -12,17 +12,26 @@ import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.ContactResolution
+import com.opendroid.ai.core.agent.ContactResolver
+import com.opendroid.ai.core.agent.maskPhone
 import android.provider.ContactsContract
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CommunicationActions @Inject constructor() {
+class CommunicationActions @Inject constructor(
+    private val contactResolver: ContactResolver
+) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     fun getActions(): List<Action> = listOf(
-        SendWhatsAppAction(),
         MakeCallAction(),
+        SendWhatsAppAction(),
         SendSmsAction(),
         SendEmailAction(),
         SendWhatsAppGroupAction(),
@@ -33,138 +42,97 @@ class CommunicationActions @Inject constructor() {
 
     companion object {
         /**
-         * Resolve a contact name/number to a phone number.
-         * Throws IllegalArgumentException if the contact cannot be found.
+         * Legacy static resolve for backward compat.
+         * Used by actions that don't yet support disambiguation.
          */
         private fun resolveContactToPhoneNumber(context: Context, contact: String): String {
             if (contact.startsWith("$")) {
                 throw IllegalArgumentException("Unresolved contact placeholder: $contact")
             }
             val cleaned = contact.replace(" ", "").replace("-", "")
-            // If it's already a phone number, return it directly
             if (cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })) {
                 return cleaned
             }
-
-            // Use ContactResolver for full fuzzy matching (exact → partial → relationship aliases)
-            val result = com.opendroid.ai.core.agent.ContactResolver.resolve(context, contact)
-            if (result is com.opendroid.ai.core.agent.ContactResolver.ContactResult.Found) {
+            val result = ContactResolver.resolve(context, contact)
+            if (result is ContactResolver.ContactResult.Found) {
                 return result.phoneNumber
             }
-
-            // Contact not found — throw so the action can report a clear error
             throw IllegalArgumentException("Contact '$contact' not found in your contacts")
         }
     }
 
-    private class SendWhatsAppAction : Action {
-        override val name: String = "SEND_WHATSAPP"
-        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val contact = params["contact"] ?: return ActionResult(false, null, "contact is missing")
-            val message = params["message"] ?: return ActionResult(false, null, "message is missing")
-            
-            val phone: String
-            try {
-                phone = resolveContactToPhoneNumber(context, contact)
-            } catch (e: IllegalArgumentException) {
-                return ActionResult(false, null, e.message ?: "Contact '$contact' not found")
-            }
-
-            return try {
-                // Step 1: Open WhatsApp chat via deep link (self-contained — no need for separate OPEN_APP)
-                val encodedMsg = URLEncoder.encode(message, "UTF-8")
-                val whatsappUri = if (phone.matches(Regex("\\+?[0-9]+"))) {
-                    // Phone number — use direct API link
-                    Uri.parse("https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg")
-                } else {
-                    // Name — use generic WhatsApp send
-                    Uri.parse("whatsapp://send?text=$encodedMsg")
-                }
-                val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
-                    setPackage("com.whatsapp")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-
-                // Step 2: Use WhatsAppAutomator for full send automation via Accessibility
-                val service = OpenDroidAccessibilityService.getInstance()
-                if (service != null) {
-                    val autoSent = WhatsAppAutomator.automateSend(message)
-                    if (autoSent) {
-                        return ActionResult(true, "Sent your message to $contact!", null)
-                    }
-                    // Fallback: try simple click on send button
-                    kotlinx.coroutines.delay(2000)
-                    val clicked = service.findAndClick("Send") || 
-                                  service.findAndClick("send") || 
-                                  service.findAndClick("SEND")
-                    if (clicked) {
-                        return ActionResult(true, "Message sent to $contact!", null)
-                    }
-                }
-                
-                ActionResult(true, "I've opened the chat with $contact — just hit send!", null)
-            } catch (e: Exception) {
-                // Fallback to sending standard SMS if WhatsApp is not installed
-                Log.e("SendWhatsApp", "WhatsApp failed: ${e.localizedMessage}")
-                ActionResult(false, "WhatsApp didn't work, let me try SMS instead.", e.localizedMessage, true)
-            }
-        }
+    /**
+     * Build a NeedsInput with contact picker metadata.
+     * Metadata stores match data as JSON so it survives serialization.
+     */
+    private fun buildContactPickerResult(
+        contactQuery: String,
+        matches: List<com.opendroid.ai.core.agent.Contact>,
+        action: String,
+        extraMeta: Map<String, String> = emptyMap()
+    ): ActionResult.NeedsInput {
+        val matchesJson = json.encodeToString(
+            matches.map { mapOf("name" to it.name, "phone" to it.phoneNumber, "type" to it.type) }
+        )
+        return ActionResult.NeedsInput(
+            question = "Which '$contactQuery' do you mean?",
+            options = matches.mapIndexed { i, c ->
+                "${i + 1}. ${c.name} (${c.type}: ${maskPhone(c.phoneNumber)})"
+            },
+            metadata = mapOf(
+                "type" to "contact_picker",
+                "query" to contactQuery,
+                "action" to action,
+                "matches" to matchesJson
+            ) + extraMeta
+        )
     }
 
-    private class MakeCallAction : Action {
+    // ── MAKE_CALL with disambiguation ────────────────────────
+
+    private inner class MakeCallAction : Action {
         override val name: String = "MAKE_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            // Accept contact, number, phone, or phoneNumber params
             val contact = params["contact"]
                 ?: params["number"]
                 ?: params["phone"]
                 ?: params["phoneNumber"]
                 ?: return ActionResult(false, null, "contact or number parameter missing")
 
-            val cleanPhone: String
-            try {
-                val phone = resolveContactToPhoneNumber(context, contact)
-                cleanPhone = phone.replace(Regex("[\\s\\-\\(\\)]"), "").trim()
-            } catch (e: IllegalArgumentException) {
-                return ActionResult(false, null, e.message ?: "Contact '$contact' not found")
-            }
-
-            return try {
-                val callUri = Uri.parse("tel:$cleanPhone")
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                    val intent = Intent(Intent.ACTION_CALL, callUri).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ActionResult(true, "Calling $contact now!", null)
-                } else {
-                    // Fallback to DIAL if CALL permission is missing
-                    val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ActionResult(true, "I've opened the dialer for $contact — just tap call!", null, true)
-                }
-            } catch (e: SecurityException) {
-                try {
-                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(dialIntent)
-                    ActionResult(true, "Dialer is open — tap call to connect!", null, true)
-                } catch (e2: Exception) {
-                    Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
-                    ActionResult(false, null, "Couldn't make that call. Want to try again?")
-                }
-            } catch (e: Exception) {
-                Log.e("MakeCall", "Call failed: ${e.localizedMessage}")
-                ActionResult(false, null, "Something went wrong with the call. Try again?")
+            return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
+                is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, contact, context)
+                is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_CALL")
+                is ContactResolution.NotFound -> ActionResult.NeedsInput(
+                    question = "I couldn't find '$contact' in your contacts. What's their number?"
+                )
             }
         }
     }
 
-    private class SendSmsAction : Action {
+    // ── SEND_WHATSAPP with disambiguation ────────────────────
+
+    private inner class SendWhatsAppAction : Action {
+        override val name: String = "SEND_WHATSAPP"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val contact = params["contact"] ?: return ActionResult(false, null, "contact is missing")
+            val message = params["message"] ?: return ActionResult(false, null, "message is missing")
+
+            return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
+                is ContactResolution.Found -> executeWhatsApp(resolved.contact.phoneNumber, contact, message, context)
+                is ContactResolution.Ambiguous -> buildContactPickerResult(
+                    contact, resolved.matches, "SEND_WHATSAPP",
+                    mapOf("message" to message)
+                )
+                is ContactResolution.NotFound -> ActionResult.NeedsInput(
+                    question = "I couldn't find '$contact'. What's their WhatsApp number?"
+                )
+            }
+        }
+    }
+
+    // ── SEND_SMS with disambiguation ─────────────────────────
+
+    private inner class SendSmsAction : Action {
         override val name: String = "SEND_SMS"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"]
@@ -175,52 +143,129 @@ class CommunicationActions @Inject constructor() {
                 ?: params["text"]
                 ?: params["body"]
                 ?: return ActionResult(false, null, "message parameter missing")
-            val phone: String
-            try {
-                phone = resolveContactToPhoneNumber(context, contact)
-            } catch (e: IllegalArgumentException) {
-                return ActionResult(false, null, e.message ?: "Contact '$contact' not found")
-            }
 
-            // Always try to open SMS compose intent first (works on all devices)
-            // Direct SmsManager.sendTextMessage can fail on devices without telephony
-            return try {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
-                    try {
-                        val smsManager = context.getSystemService(SmsManager::class.java)
-                        if (smsManager != null) {
-                            smsManager.sendTextMessage(phone, null, message, null, null)
-                            return ActionResult(true, "Text sent to $contact!", null)
-                        }
-                    } catch (_: Exception) {
-                        // SmsManager failed (no telephony, etc.) — fall through to intent
-                    }
-                }
-                // Fallback: open SMS compose intent (always works)
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("smsto:$phone")
-                    putExtra("sms_body", message)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "I've opened your message to $contact — just hit send!", null)
-            } catch (e: Exception) {
-                // Last resort: try generic messaging app
-                try {
-                    val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse("sms:$phone")
-                        putExtra("sms_body", message)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(fallbackIntent)
-                    ActionResult(true, "Messaging app is open for $contact.", null, true)
-                } catch (e2: Exception) {
-                    Log.e("SendSMS", "SMS failed: ${e2.localizedMessage}")
-                    ActionResult(false, null, "Couldn't open messaging. Try again?")
-                }
+            return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
+                is ContactResolution.Found -> executeSms(resolved.contact.phoneNumber, contact, message, context)
+                is ContactResolution.Ambiguous -> buildContactPickerResult(
+                    contact, resolved.matches, "SEND_SMS",
+                    mapOf("message" to message)
+                )
+                is ContactResolution.NotFound -> ActionResult.NeedsInput(
+                    question = "I couldn't find '$contact'. What's their phone number?"
+                )
             }
         }
     }
+
+    // ── Execution helpers ────────────────────────────────────
+
+    private fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
+        val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
+        return try {
+            val callUri = Uri.parse("tel:$cleanPhone")
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                val intent = Intent(Intent.ACTION_CALL, callUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "Calling $contactLabel now!", null)
+            } else {
+                val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "I've opened the dialer for $contactLabel — just tap call!", null, true)
+            }
+        } catch (e: SecurityException) {
+            try {
+                val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(dialIntent)
+                ActionResult(true, "Dialer is open — tap call to connect!", null, true)
+            } catch (e2: Exception) {
+                Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
+                ActionResult(false, null, "Couldn't make that call. Want to try again?")
+            }
+        } catch (e: Exception) {
+            Log.e("MakeCall", "Call failed: ${e.localizedMessage}")
+            ActionResult(false, null, "Something went wrong with the call. Try again?")
+        }
+    }
+
+    private suspend fun executeWhatsApp(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
+        return try {
+            val encodedMsg = URLEncoder.encode(message, "UTF-8")
+            val whatsappUri = if (phone.matches(Regex("\\+?[0-9]+"))) {
+                Uri.parse("https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg")
+            } else {
+                Uri.parse("whatsapp://send?text=$encodedMsg")
+            }
+            val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+
+            val service = OpenDroidAccessibilityService.getInstance()
+            if (service != null) {
+                val autoSent = WhatsAppAutomator.automateSend(message)
+                if (autoSent) {
+                    return ActionResult(true, "Sent your message to $contactLabel!", null)
+                }
+                kotlinx.coroutines.delay(2000)
+                val clicked = service.findAndClick("Send") ||
+                              service.findAndClick("send") ||
+                              service.findAndClick("SEND")
+                if (clicked) {
+                    return ActionResult(true, "Message sent to $contactLabel!", null)
+                }
+            }
+
+            ActionResult(true, "I've opened the chat with $contactLabel — just hit send!", null)
+        } catch (e: Exception) {
+            Log.e("SendWhatsApp", "WhatsApp failed: ${e.localizedMessage}")
+            ActionResult(false, "WhatsApp didn't work, let me try SMS instead.", e.localizedMessage, true)
+        }
+    }
+
+    private fun executeSms(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
+        return try {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                try {
+                    val smsManager = context.getSystemService(SmsManager::class.java)
+                    if (smsManager != null) {
+                        smsManager.sendTextMessage(phone, null, message, null, null)
+                        return ActionResult(true, "Text sent to $contactLabel!", null)
+                    }
+                } catch (_: Exception) {
+                    // SmsManager failed — fall through to intent
+                }
+            }
+            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.parse("smsto:$phone")
+                putExtra("sms_body", message)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ActionResult(true, "I've opened your message to $contactLabel — just hit send!", null)
+        } catch (e: Exception) {
+            try {
+                val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("sms:$phone")
+                    putExtra("sms_body", message)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+                ActionResult(true, "Messaging app is open for $contactLabel.", null, true)
+            } catch (e2: Exception) {
+                Log.e("SendSMS", "SMS failed: ${e2.localizedMessage}")
+                ActionResult(false, null, "Couldn't open messaging. Try again?")
+            }
+        }
+    }
+
+    // ── Non-disambiguated actions (unchanged) ────────────────
 
     private class SendEmailAction : Action {
         override val name: String = "SEND_EMAIL"
@@ -264,7 +309,7 @@ class CommunicationActions @Inject constructor() {
         }
     }
 
-    private class MakeVideoCallAction : Action {
+    private inner class MakeVideoCallAction : Action {
         override val name: String = "MAKE_VIDEO_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")

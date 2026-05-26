@@ -399,7 +399,13 @@ class AgentLoop @Inject constructor(
             }
 
             // Execute the action dispatcher
-            val actionResult = actionDispatcher.execute(nextStep.action, resolvedParams, context)
+            var actionResult = actionDispatcher.execute(nextStep.action, resolvedParams, context)
+
+            // ── Handle contact disambiguation picker ──
+            if (actionResult is ActionResult.NeedsInput && 
+                actionResult.metadata["type"] == "contact_picker") {
+                actionResult = handleContactPicker(actionResult, nextStep.action, resolvedParams, context)
+            }
 
             if (actionResult.success) {
                 planManager.updateStepStatus(
@@ -532,6 +538,124 @@ class AgentLoop @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Handle contact disambiguation when an action returns NeedsInput with contact_picker metadata.
+     * Shows options to user, waits for selection, stores preference, re-executes action.
+     */
+    private suspend fun handleContactPicker(
+        pickerResult: ActionResult.NeedsInput,
+        actionName: String,
+        originalParams: Map<String, String>,
+        context: Context
+    ): ActionResult {
+        val meta = pickerResult.metadata
+        val matchesJson = meta["matches"] ?: return pickerResult
+        val query = meta["query"] ?: ""
+
+        // Parse the matches back from JSON
+        val matches: List<Map<String, String>> = try {
+            Json { ignoreUnknownKeys = true }
+                .decodeFromString<List<Map<String, String>>>(matchesJson)
+        } catch (e: Exception) {
+            android.util.Log.e("AgentLoop", "Failed to parse contact matches: ${e.message}")
+            return pickerResult
+        }
+
+        if (matches.isEmpty()) return pickerResult
+
+        // Show picker question to user via chat
+        val optionsText = pickerResult.options.joinToString("\n")
+        val pickerMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = "${pickerResult.question}\n\n$optionsText",
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(pickerMsg)
+        onSpeakCallback?.invoke(pickerResult.question)
+
+        // Wait for user response
+        val userSelection = awaitUserResponse()
+
+        // Save user's response as a chat message
+        val userPickMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = userSelection,
+            sender = ChatMessage.Sender.USER
+        )
+        conversationRepository.insertMessage(userPickMsg)
+
+        // Resolve user selection to a contact
+        val selectedContact = when {
+            // User typed a number: "1", "2", "3"
+            userSelection.trim().toIntOrNull() != null -> {
+                val index = userSelection.trim().toInt() - 1
+                matches.getOrNull(index)
+            }
+
+            // User said "first", "second", "third"
+            userSelection.lowercase().contains("first") -> matches.getOrNull(0)
+            userSelection.lowercase().contains("second") -> matches.getOrNull(1)
+            userSelection.lowercase().contains("third") -> matches.getOrNull(2)
+            userSelection.lowercase().contains("fourth") -> matches.getOrNull(3)
+            userSelection.lowercase().contains("fifth") -> matches.getOrNull(4)
+
+            // User typed the name
+            else -> {
+                matches.find { contact ->
+                    userSelection.contains(contact["name"] ?: "", ignoreCase = true)
+                } ?: matches.find { contact ->
+                    (contact["name"] ?: "").contains(userSelection.trim(), ignoreCase = true)
+                }
+            }
+        }
+
+        if (selectedContact == null) {
+            // Couldn't match — tell user and fail gracefully
+            val failMsg = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = "I didn't catch that. Please try again with the contact's name.",
+                sender = ChatMessage.Sender.AGENT,
+                modelBadge = "System"
+            )
+            conversationRepository.insertMessage(failMsg)
+            return ActionResult.Failure(
+                errorMsg = "Contact selection not understood",
+                fallback = "Please try the command again"
+            )
+        }
+
+        val phone = selectedContact["phone"] ?: return ActionResult.Failure(
+            errorMsg = "No phone number for selected contact",
+            fallback = "Try again"
+        )
+        val name = selectedContact["name"] ?: "Contact"
+
+        // Remember this choice for next time
+        memoryManager.storeContactPreference(
+            query = query,
+            contact = Contact(name = name, phoneNumber = phone)
+        )
+
+        // Confirm selection to user
+        val confirmMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = "Got it! Using $name.",
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(confirmMsg)
+
+        // Re-execute the original action with resolved contact
+        val resolvedParams = originalParams.toMutableMap()
+        resolvedParams["contact"] = phone
+        if (meta.containsKey("message")) {
+            resolvedParams["message"] = meta["message"]!!
+        }
+
+        return actionDispatcher.execute(actionName, resolvedParams, context)
     }
 
     private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean) {

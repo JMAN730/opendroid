@@ -42,6 +42,9 @@ interface MemoryDao {
               AND (timestamp + (ttlHours * 3600000)) <= :now""")
     suspend fun deleteExpiredMemories(now: Long = System.currentTimeMillis())
 
+    @Query("SELECT * FROM memories WHERE `key` LIKE :prefix || '%'")
+    suspend fun getMemoriesByKeyPrefix(prefix: String): List<MemoryEntity>
+
     @Delete
     suspend fun deleteMemoryEntity(memory: MemoryEntity)
 }

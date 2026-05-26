@@ -187,6 +187,61 @@ object ActionSchema {
             category = ActionCategory.SYSTEM
         ),
 
+        // ── CLIPBOARD ───────────────────────────────────
+
+        ActionDefinition(
+            name = "CLEAR_CLIPBOARD",
+            description = "Clears the device clipboard content",
+            params = emptyList(),
+            examples = listOf("clear clipboard", "empty clipboard", "erase clipboard"),
+            category = ActionCategory.SYSTEM
+        ),
+        ActionDefinition(
+            name = "COPY_TO_CLIPBOARD",
+            description = "Copies text to the device clipboard",
+            params = listOf(ParamDefinition("text", ParamType.STRING, true, "Text to copy to clipboard")),
+            examples = listOf("copy this to clipboard", "copy text", "clipboard copy"),
+            category = ActionCategory.SYSTEM
+        ),
+        ActionDefinition(
+            name = "GET_CLIPBOARD",
+            description = "Gets the current clipboard content",
+            params = emptyList(),
+            examples = listOf("what's in clipboard", "show clipboard", "paste clipboard", "read clipboard"),
+            category = ActionCategory.SYSTEM
+        ),
+
+        // ── BROWSER ─────────────────────────────────────
+
+        ActionDefinition(
+            name = "OPEN_BROWSER",
+            description = "Opens the default web browser",
+            params = emptyList(),
+            examples = listOf("open browser", "open chrome", "launch browser"),
+            category = ActionCategory.SYSTEM
+        ),
+        ActionDefinition(
+            name = "OPEN_URL",
+            description = "Opens a specific URL in the browser",
+            params = listOf(ParamDefinition("url", ParamType.STRING, true, "URL to open")),
+            examples = listOf("open google.com", "go to youtube.com", "visit github.com"),
+            category = ActionCategory.SYSTEM
+        ),
+        ActionDefinition(
+            name = "ENABLE_PRIVATE_MODE",
+            description = "Opens an incognito/private browsing window in Chrome",
+            params = emptyList(),
+            examples = listOf("private browsing", "incognito mode", "open incognito", "private mode"),
+            category = ActionCategory.SYSTEM
+        ),
+        ActionDefinition(
+            name = "CLEAR_BROWSER_DATA",
+            description = "Opens browser settings to clear browsing data (history, cache, cookies)",
+            params = emptyList(),
+            examples = listOf("clear browser history", "clear cache", "clear browsing data", "delete browser data"),
+            category = ActionCategory.SYSTEM
+        ),
+
         // ── COMMUNICATION ───────────────────────────────
 
         ActionDefinition(

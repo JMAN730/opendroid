@@ -55,7 +55,16 @@ class SystemActions @Inject constructor(
         GetSystemInfoAction(),
         SetRingerModeAction(),
         AskUserAction(agentLoop),
-        AnalyzeScreenshotAction(visionEngine)
+        AnalyzeScreenshotAction(visionEngine),
+        // Clipboard
+        ClearClipboardAction(),
+        CopyToClipboardAction(),
+        GetClipboardAction(),
+        // Browser
+        OpenBrowserAction(),
+        OpenUrlAction(),
+        EnablePrivateModeAction(),
+        ClearBrowserDataAction()
     )
 
     private class ToggleWifiAction : Action {
@@ -768,6 +777,185 @@ class SystemActions @Inject constructor(
             } catch (e: Exception) {
                 Log.e("SetRingerMode", "Ringer mode failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't change the ringer mode right now.")
+            }
+        }
+    }
+
+    // ── CLIPBOARD ACTIONS ────────────────────────────────────
+
+    private class ClearClipboardAction : Action {
+        override val name: String = "CLEAR_CLIPBOARD"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    clipboard.clearPrimaryClip()
+                } else {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                }
+                ActionResult(true, "Clipboard cleared!", null)
+            } catch (e: Exception) {
+                Log.e("ClearClipboard", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't clear the clipboard.")
+            }
+        }
+    }
+
+    private class CopyToClipboardAction : Action {
+        override val name: String = "COPY_TO_CLIPBOARD"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val text = params["text"] ?: return ActionResult(false, null, "No text provided to copy")
+            return try {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("OpenDroid", text)
+                clipboard.setPrimaryClip(clip)
+                ActionResult(true, "Copied to clipboard: \"${text.take(50)}${if (text.length > 50) "..." else ""}\"", null)
+            } catch (e: Exception) {
+                Log.e("CopyToClipboard", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't copy to clipboard.")
+            }
+        }
+    }
+
+    private class GetClipboardAction : Action {
+        override val name: String = "GET_CLIPBOARD"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clipData = clipboard.primaryClip
+                if (clipData != null && clipData.itemCount > 0) {
+                    val content = clipData.getItemAt(0).text?.toString() ?: "Empty clipboard"
+                    ActionResult(true, "Clipboard contains: \"$content\"", null)
+                } else {
+                    ActionResult(true, "Clipboard is empty.", null)
+                }
+            } catch (e: Exception) {
+                Log.e("GetClipboard", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't read the clipboard.")
+            }
+        }
+    }
+
+    // ── BROWSER ACTIONS ──────────────────────────────────────
+
+    private class OpenBrowserAction : Action {
+        override val name: String = "OPEN_BROWSER"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                // Try Chrome first, then fallback to default browser
+                val chromeIntent = context.packageManager.getLaunchIntentForPackage("com.android.chrome")
+                if (chromeIntent != null) {
+                    chromeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(chromeIntent)
+                } else {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }
+                ActionResult(true, "Browser is open!", null)
+            } catch (e: Exception) {
+                Log.e("OpenBrowser", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open the browser.")
+            }
+        }
+    }
+
+    private class OpenUrlAction : Action {
+        override val name: String = "OPEN_URL"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val url = params["url"] ?: return ActionResult(false, null, "No URL provided")
+            return try {
+                // Ensure URL has a scheme
+                val fullUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    "https://$url"
+                } else url
+
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fullUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "Opening $fullUrl", null)
+            } catch (e: Exception) {
+                Log.e("OpenUrl", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open that URL.")
+            }
+        }
+    }
+
+    private class EnablePrivateModeAction : Action {
+        override val name: String = "ENABLE_PRIVATE_MODE"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                // Chrome incognito intent
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                    setPackage("com.android.chrome")
+                    putExtra("com.android.browser.application_id", "com.android.chrome")
+                    putExtra("create_new_tab", true)
+                    putExtra("com.google.android.apps.chrome.EXTRA_OPEN_NEW_INCOGNITO_TAB", true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                // Check if Chrome is available
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                    ActionResult(true, "Opened Chrome in incognito mode!", null)
+                } else {
+                    // Fallback: try to open any browser and tell user
+                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(fallback)
+                    ActionResult(true, "Browser is open — you can switch to private/incognito mode manually.", null, true)
+                }
+            } catch (e: Exception) {
+                Log.e("PrivateMode", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open private browsing. Try opening Chrome manually.")
+            }
+        }
+    }
+
+    private class ClearBrowserDataAction : Action {
+        override val name: String = "CLEAR_BROWSER_DATA"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                // Open Chrome's clear browsing data settings directly
+                val intent = Intent("android.settings.MANAGE_APPLICATIONS_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                // Try Chrome-specific settings first
+                val chromeSettingsIntent = Intent().apply {
+                    action = Intent.ACTION_VIEW
+                    setPackage("com.android.chrome")
+                    data = Uri.parse("chrome://settings/clearBrowserData")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                try {
+                    if (chromeSettingsIntent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(chromeSettingsIntent)
+                        ActionResult(true, "Chrome's clear data page is open — select what to clear and confirm.", null)
+                    } else {
+                        throw Exception("Chrome settings not available")
+                    }
+                } catch (_: Exception) {
+                    // Fallback: open app info for Chrome
+                    val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:com.android.chrome")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        context.startActivity(appInfoIntent)
+                        ActionResult(true, "Chrome app settings are open — tap 'Clear Data' to clear browser data.", null, true)
+                    } catch (_: Exception) {
+                        context.startActivity(intent)
+                        ActionResult(true, "App settings are open — find your browser and clear its data.", null, true)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ClearBrowserData", "Failed: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open browser settings.")
             }
         }
     }
