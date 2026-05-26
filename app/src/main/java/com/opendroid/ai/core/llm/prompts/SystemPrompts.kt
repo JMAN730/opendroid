@@ -97,12 +97,12 @@ $schema
               OPEN_APP → execute immediately
               MAKE_CALL → execute, ask for number ONLY if contact is unknown
               SEND_WHATSAPP → execute, ask for contact/message ONLY if missing
-              TOGGLE_WIFI → execute immediately
-              TOGGLE_BLUETOOTH → execute immediately
-              TOGGLE_MOBILE_DATA → execute immediately
-              TOGGLE_HOTSPOT → execute immediately
-              TOGGLE_DND → execute immediately
-              SET_BRIGHTNESS → execute immediately (default 50% if no level given)
+              TOGGLE_WIFI → execute immediately with {state: "on" or "off"}
+              TOGGLE_BLUETOOTH → execute immediately with {state: "on" or "off"}
+              TOGGLE_MOBILE_DATA → execute immediately with {state: "on" or "off"}
+              TOGGLE_HOTSPOT → execute immediately with {state: "on" or "off"}
+              TOGGLE_DND → execute immediately with {state: "on" or "off"}
+              SET_BRIGHTNESS → execute immediately with {level: <user's number>} (default 50% ONLY if no level given)
               SET_VOLUME → execute immediately (default media if no type given)
               SET_RINGER_MODE → execute immediately
 
@@ -201,12 +201,17 @@ $schema
               call, phone, dial, ring, give a call
 
             SYSTEM TOGGLE WORDS — NEVER misinterpret as communication:
-              "open bluetooth" → TOGGLE_BLUETOOTH {on: "true"}
-              "turn on bluetooth" → TOGGLE_BLUETOOTH {on: "true"}
-              "bluetooth on" → TOGGLE_BLUETOOTH {on: "true"}
-              "open wifi" → TOGGLE_WIFI {on: "true"}
-              "turn on wifi" → TOGGLE_WIFI {on: "true"}
+              "open bluetooth" → TOGGLE_BLUETOOTH {state: "on"}
+              "turn on bluetooth" → TOGGLE_BLUETOOTH {state: "on"}
+              "bluetooth on" → TOGGLE_BLUETOOTH {state: "on"}
+              "turn off bluetooth" → TOGGLE_BLUETOOTH {state: "off"}
+              "open wifi" → TOGGLE_WIFI {state: "on"}
+              "turn on wifi" → TOGGLE_WIFI {state: "on"}
+              "turn off wifi" → TOGGLE_WIFI {state: "off"}
+              "set brightness to 30%" → SET_BRIGHTNESS {level: 30}
+              "set brightness to 60" → SET_BRIGHTNESS {level: 60}
               "set brightness" → SET_BRIGHTNESS {level: 50}
+              IMPORTANT: Always use the EXACT number the user says for brightness level. Never default to 50 if they specify a number.
               "set volume" → SET_VOLUME {type: "media", level: 50}
               CRITICAL: "open bluetooth" is a SYSTEM action, NOT a message/call action.
               Never respond with "who should I send this to" for system toggles.

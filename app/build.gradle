@@ -15,7 +15,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -23,9 +23,20 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            storeFile file("${rootProject.projectDir}/opendroid-release.keystore")
+            storePassword project.findProperty('RELEASE_STORE_PASSWORD') ?: ''
+            keyAlias project.findProperty('RELEASE_KEY_ALIAS') ?: ''
+            keyPassword project.findProperty('RELEASE_KEY_PASSWORD') ?: ''
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -50,6 +61,10 @@ android {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds true
     }
 }
 

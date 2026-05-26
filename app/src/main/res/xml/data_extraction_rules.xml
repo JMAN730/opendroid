@@ -3,9 +3,15 @@
     <cloud-backup>
         <include domain="sharedpref" path="."/>
         <include domain="database" path="."/>
+        <!-- Exclude encrypted API key storage from cloud backup -->
+        <exclude domain="sharedpref" path="encrypted_api_keys.xml"/>
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="."/>
         <include domain="database" path="."/>
+        <!-- Exclude encrypted API key storage from device transfer -->
+        <exclude domain="sharedpref" path="encrypted_api_keys.xml"/>
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
     </device-transfer>
 </data-extraction-rules>

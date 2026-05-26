@@ -114,9 +114,9 @@ object ActionSchema {
         ),
         ActionDefinition(
             name = "SET_BRIGHTNESS",
-            description = "Sets screen brightness level. If no level given, defaults to 50%.",
-            params = listOf(ParamDefinition("level", ParamType.INT, false, "Brightness 0-100", defaultValue = 50)),
-            examples = listOf("set brightness", "brightness 50", "set brightness to 80%", "max brightness", "set brightness to 100", "dim screen", "brightness low"),
+            description = "Sets screen brightness level. ALWAYS use the exact percentage the user specifies. Only default to 50% if NO number is given.",
+            params = listOf(ParamDefinition("level", ParamType.INT, false, "Brightness 0-100. Use the exact number the user says.", defaultValue = 50)),
+            examples = listOf("set brightness to 30", "brightness 60", "set brightness to 80%", "max brightness", "set brightness to 100", "dim screen", "brightness low"),
             category = ActionCategory.SYSTEM
         ),
         ActionDefinition(

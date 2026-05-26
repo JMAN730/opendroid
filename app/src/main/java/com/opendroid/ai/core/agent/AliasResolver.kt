@@ -118,15 +118,17 @@ object AliasResolver {
         "screen off"        to ActionHint("LOCK_SCREEN", emptyMap()),
         "sleep"             to ActionHint("LOCK_SCREEN", emptyMap()),
 
-        // ── BRIGHTNESS ───────────────────────────────────
+        // ── BRIGHTNESS (only fixed-level aliases; dynamic levels handled in resolve()) ──
         "bright"            to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
         "dim"               to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
         "dim screen"        to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
         "max brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
         "min brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "0")),
         "full brightness"   to ActionHint("SET_BRIGHTNESS", mapOf("level" to "100")),
-        "set brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "50")),
-        "brightness"        to ActionHint("SET_BRIGHTNESS", mapOf("level" to "50")),
+        "brightness low"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
+        "brightness high"   to ActionHint("SET_BRIGHTNESS", mapOf("level" to "80")),
+        "low brightness"    to ActionHint("SET_BRIGHTNESS", mapOf("level" to "20")),
+        "high brightness"   to ActionHint("SET_BRIGHTNESS", mapOf("level" to "80")),
 
         // ── RINGER MODE ─────────────────────────────────
         "vibrate"           to ActionHint("SET_RINGER_MODE", mapOf("mode" to "vibrate")),
@@ -177,7 +179,30 @@ object AliasResolver {
         // 1. Exact match (always wins)
         aliases[lower]?.let { return it }
 
-        // 2. Skip partial matching if input has compound intent
+        // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
+        //    This runs BEFORE compound-intent guard so the LLM doesn't need to handle it.
+        if (lower.contains("brightness")) {
+            val numberMatch = Regex("""\d+""").find(lower)
+            if (numberMatch != null) {
+                val level = numberMatch.value.toIntOrNull()?.coerceIn(0, 100) ?: 50
+                return ActionHint("SET_BRIGHTNESS", mapOf("level" to level.toString()))
+            }
+            // Bare "brightness" or "set brightness" with no number → default 50%
+            if (lower == "brightness" || lower == "set brightness") {
+                return ActionHint("SET_BRIGHTNESS", mapOf("level" to "50"))
+            }
+        }
+
+        // 3. Dynamic volume extraction — "set volume to 40", "volume 70", etc.
+        if (lower.contains("volume") && !lower.contains("music")) {
+            val numberMatch = Regex("""\d+""").find(lower)
+            if (numberMatch != null) {
+                val level = numberMatch.value.toIntOrNull()?.coerceIn(0, 100) ?: 50
+                return ActionHint("SET_VOLUME", mapOf("type" to "media", "level" to level.toString()))
+            }
+        }
+
+        // 4. Skip partial matching if input has compound intent
         //    e.g., "open whatsapp and send message to dad" should NOT match "open whatsapp"
         //    — it needs the LLM to generate SEND_WHATSAPP with contact+message params
         val hasCompoundIntent = compoundIntentWords.any { word -> lower.contains(word) }
@@ -185,7 +210,7 @@ object AliasResolver {
             return null
         }
 
-        // 3. Longest partial match — only for simple, single-intent inputs
+        // 5. Longest partial match — only for simple, single-intent inputs
         return aliases.entries
             .filter { (key, _) -> lower.contains(key) }
             .maxByOrNull { it.key.length }

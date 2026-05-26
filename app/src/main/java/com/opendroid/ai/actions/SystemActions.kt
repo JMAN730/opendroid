@@ -61,7 +61,7 @@ class SystemActions @Inject constructor(
     private class ToggleWifiAction : Action {
         override val name: String = "TOGGLE_WIFI"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val on = resolveToggleState(params)
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             return try {
                 @Suppress("DEPRECATION")
@@ -260,7 +260,7 @@ class SystemActions @Inject constructor(
     private class ToggleBluetoothAction : Action {
         override val name: String = "TOGGLE_BLUETOOTH"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val on = resolveToggleState(params)
             return try {
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                 @Suppress("DEPRECATION")
@@ -280,7 +280,7 @@ class SystemActions @Inject constructor(
     private class ToggleDndAction : Action {
         override val name: String = "TOGGLE_DND"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val on = resolveToggleState(params)
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             return try {
                 if (notificationManager.isNotificationPolicyAccessGranted) {
@@ -394,7 +394,7 @@ class SystemActions @Inject constructor(
     private class ToggleMobileDataAction : Action {
         override val name: String = "TOGGLE_MOBILE_DATA"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val on = resolveToggleState(params)
             return try {
                 val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -412,7 +412,7 @@ class SystemActions @Inject constructor(
     private class ToggleHotspotAction : Action {
         override val name: String = "TOGGLE_HOTSPOT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = params["on"]?.toBoolean() ?: true
+            val on = resolveToggleState(params)
             return try {
                 val intent = Intent().apply {
                     action = "android.settings.TETHER_SETTINGS"
@@ -768,6 +768,22 @@ class SystemActions @Inject constructor(
             } catch (e: Exception) {
                 Log.e("SetRingerMode", "Ringer mode failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't change the ringer mode right now.")
+            }
+        }
+    }
+
+    companion object {
+        /**
+         * Resolves the toggle state from params, supporting both "state" (ActionSchema)
+         * and legacy "on" param keys. Handles "on"/"off"/"true"/"false" values.
+         */
+        fun resolveToggleState(params: Map<String, String>): Boolean {
+            // Prefer "state" (matches ActionSchema), fall back to "on" (legacy/alias)
+            val raw = (params["state"] ?: params["on"])?.lowercase()?.trim()
+            return when (raw) {
+                "on", "true", "enable", "yes" -> true
+                "off", "false", "disable", "no" -> false
+                else -> true // default to on if ambiguous
             }
         }
     }

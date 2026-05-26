@@ -4,32 +4,61 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.0 (Updated) — Stability and Multimodal Release
+## v1.0.0 — Production Release
 
-This update introduces critical bug fixes, reliability hardening, and the official deployment of the Multimodal Vision Engine.
+First official production release of OpenDroid, targeting Google Play Store, Amazon Appstore, Samsung Galaxy Store, and other Android app marketplaces.
 
-### 🚀 Key Improvements
+### 🚀 Key Features
+
+#### 🤖 Multi-Provider LLM Agent
+*   Supports **11 LLM providers**: OpenAI, Claude, Gemini, Mistral, DeepSeek, Groq, Cohere, Together AI, OpenRouter, Ollama (local), and Copilot.
+*   Autonomous multi-step task planning with schema-enforced action execution.
+*   Real-time plan visualization and re-evaluation engine.
 
 #### 📸 Multimodal Vision Engine & Screenshot Fallback
 *   Integrated **`ANALYZE_SCREENSHOT`** to capture active layouts.
-*   **Dual-Tier fallback framework**: If the system's hardware screen capture (`takeScreenshotAndEncode()`) fails (e.g. on older Android APIs or due to secure windows), the engine automatically falls back to layout text-scraping (`getScreenText()`) to feed UI information to the LLM.
+*   **Dual-Tier fallback framework**: hardware screen capture → layout text-scraping fallback.
 *   Guides the user with clear instructions to re-enable accessibility services if both methods fail.
 
 #### 🛡️ Intent Safeguards & Compound Phrase Guard
-*   **AliasResolver Guard**: Implemented word-guarding (`send`, `message`, `call`, etc.) to prevent partial alias matching. For example, a command like *"open whatsapp and send a message"* is correctly delegated to the LLM planner rather than triggering a simple `OPEN_APP` launch.
+*   **AliasResolver Guard**: word-guarding to prevent partial alias matching.
+*   **ActionSchema enforcement**: hardcoded action schema system eliminates LLM action hallucinations.
 
 #### 📞 Hardened Call & SMS Intents (Zero-Refusal Policies)
-*   **`SEND_SMS` Fallback**: Overhauled direct carrier sending. If cellular/telephony capabilities are missing or disabled, the action gracefully launches the native SMS composer intent (`ACTION_SENDTO`) pre-filled with the contact's number and message.
-*   **`MAKE_CALL` Fallback**: Handles direct dialing restrictions. If background dialing permissions (`CALL_PHONE`) are denied, it falls back to the dialer screen (`ACTION_DIAL`) with the number pre-populated.
-*   **Contact Resolver Safety**: Replaced empty fallbacks with clear, informative errors when a contact cannot be found in the user's address book (e.g., `Contact 'dad' not found in your contacts`) instead of failing silently or launching empty windows.
+*   **`SEND_SMS` Fallback**: carrier sending → SMS composer intent fallback.
+*   **`MAKE_CALL` Fallback**: direct dialing → dialer screen fallback.
+*   **Contact Resolver Safety**: informative errors when contacts not found.
 
-#### 🔦 Flashlight Control Toggling
-*   Overhauled the **`TOGGLE_FLASHLIGHT`** state tracker. The action now correctly monitors the physical hardware states via `TorchCallback` (correctly toggles the light `on` or `off` based on current hardware status instead of blindly forcing it to `on`).
+#### 🔦 Device Control
+*   Flashlight toggle with hardware state tracking via `TorchCallback`.
+*   Bluetooth, WiFi, brightness, volume, and Do Not Disturb controls.
+*   Alarm, timer, reminder, and calendar event management.
 
-#### 📝 Honest Success & Planning Reports
-*   Refactored `AgentLoop.speakAndSaveSummary()` to extract descriptive results directly from individual Action executions instead of delivering generic "successfully executed plan" notifications.
+#### 🏠 Smart Home & Transport
+*   Smart home device control (lights, thermostat, door locks).
+*   Ride booking (Uber, Ola) and navigation/directions.
+
+#### 🧠 Memory & Macros
+*   Persistent memory system for learning user preferences.
+*   Macro recording and scheduled execution.
+
+#### 🔐 Security
+*   Encrypted API key storage using AndroidX Security Crypto.
+*   Scoped network security — cleartext HTTP restricted to localhost only.
+*   Backup exclusion for encrypted preferences.
 
 ---
 
 ### 📦 Release Assets
-*   **`app-debug.apk`** — Debug build of the Android agent.
+*   **`app-release.apk`** — Signed production APK (for sideloading and non-Play stores).
+*   **`app-release.aab`** — Signed Android App Bundle (for Google Play Store upload).
+
+### 🔑 Build Configuration
+*   **Package**: `com.opendroid.ai`
+*   **Version Code**: 1
+*   **Version Name**: 1.0.0
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 34 (Android 14)
+*   **R8 minification**: Enabled
+*   **Resource shrinking**: Enabled
+*   **Signing**: APK Signature Scheme v2

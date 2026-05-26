@@ -2,4 +2,7 @@
 <full-backup-content>
     <include domain="sharedpref" path="."/>
     <include domain="database" path="."/>
+    <!-- Exclude encrypted API key storage from backup (security best practice) -->
+    <exclude domain="sharedpref" path="encrypted_api_keys.xml"/>
+    <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
 </full-backup-content>
