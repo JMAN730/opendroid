@@ -11,6 +11,19 @@ import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Central action execution engine.
+ *
+ * Pipeline for every action:
+ *   1. Normalize the raw action name
+ *   2. Check internet pre-requisites
+ *   3. Validate against ActionSchema (with default param injection)
+ *   4. If not in schema → resolve via ActionAutoMapper (alias + semantic)
+ *   5. Execute the resolved handler
+ *   6. Log all resolutions for analytics
+ *
+ * NEVER crashes on unknown actions — always returns graceful failure.
+ */
 @Singleton
 class ActionDispatcher @Inject constructor(
     private val systemActions: SystemActions,
@@ -38,6 +51,7 @@ class ActionDispatcher @Inject constructor(
             "GET_WEATHER",
             "GET_NEWS",
             "OPEN_BROWSER",
+            "OPEN_URL",
             "BOOK_UBER",
             "BOOK_OLA",
             "GET_DIRECTIONS",
@@ -50,6 +64,7 @@ class ActionDispatcher @Inject constructor(
         )
     }
 
+    // ── Centralized Action Registry ─────────────────────────────────
     private val actionsMap: Map<String, Action> = buildMap {
         putAll(systemActions.getActions().associateBy { it.name })
         putAll(communicationActions.getActions().associateBy { it.name })
@@ -64,7 +79,8 @@ class ActionDispatcher @Inject constructor(
         putAll(advancedControlActions.getActions().associateBy { it.name })
     }
 
-    fun hasAction(actionName: String): Boolean = actionsMap.containsKey(actionName)
+    fun hasAction(actionName: String): Boolean =
+        actionsMap.containsKey(actionName) || actionsMap.containsKey(autoMapper.normalizeActionName(actionName))
 
     fun isRegistered(actionName: String): Boolean = hasAction(actionName)
 
@@ -72,94 +88,51 @@ class ActionDispatcher @Inject constructor(
 
     fun getActionCount(): Int = actionsMap.size
 
+    // ════════════════════════════════════════════════════════════════
+    //  EXECUTE — full resolution + execution pipeline
+    // ════════════════════════════════════════════════════════════════
+
     suspend fun execute(actionName: String, params: Map<String, String>, context: Context): ActionResult {
 
-        // ── LAYER 0: Internet pre-check for web-dependent actions ──
-        if (internetRequiredActions.contains(actionName)) {
+        // ── STEP 0: Normalize the raw action name ──
+        val normalized = autoMapper.normalizeActionName(actionName)
+
+        Log.d(TAG, "╔══ Action Execution Pipeline ══════════")
+        Log.d(TAG, "║ Raw input:    $actionName")
+        Log.d(TAG, "║ Normalized:   $normalized")
+
+        // ── STEP 1: Internet pre-check ──
+        if (internetRequiredActions.contains(normalized)) {
             if (!deviceStateProvider.isInternetAvailable()) {
-                Log.d(TAG, "Blocking $actionName — no internet")
+                Log.d(TAG, "║ BLOCKED — no internet for $normalized")
+                Log.d(TAG, "╚═══════════════════════════════════════")
                 return ActionResult.Failure(
                     errorMsg = "No internet connection available",
-                    fallback = "Connect to WiFi or mobile data to use $actionName"
+                    fallback = "Connect to WiFi or mobile data to use $normalized"
                 )
             }
         }
 
-        // ── LAYER 1: Validate against ActionSchema ──
-        val (schemaValidation, enrichedParams) = ActionSchema.validateParams(actionName, params)
-
-        when (schemaValidation) {
-            is ActionSchema.ValidationResult.Valid -> {
-                // Schema says action is valid — execute with enriched params (defaults applied)
-                val handler = actionsMap[actionName]
-                if (handler != null) {
-                    // Convert enrichedParams back to Map<String, String> for Action.execute
-                    val stringParams = enrichedParams.mapValues { it.value.toString() }
-                    return try {
-                        handler.execute(stringParams, context)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Execution failed for $actionName: ${e.message}")
-                        ActionResult.Failure(
-                            errorMsg = e.message ?: "Execution failed",
-                            fallback = "Try alternative approach"
-                        )
-                    }
-                }
-                // Schema valid but no handler registered — should not happen normally
-                Log.w(TAG, "Schema-valid action $actionName has no handler, falling through to mapper")
-            }
-
-            is ActionSchema.ValidationResult.MissingParams -> {
-                // Check if ALL missing params have defaults — if so, apply and execute
-                val definition = ActionSchema.getAction(actionName)
-                val allHaveDefaults = schemaValidation.params.all { paramName ->
-                    definition?.params?.find { it.name == paramName }?.defaultValue != null
-                }
-
-                if (allHaveDefaults) {
-                    // Apply all defaults and execute — never ask user
-                    val withDefaults = ActionSchema.applyDefaults(actionName, params)
-                    val handler = actionsMap[actionName]
-                    if (handler != null) {
-                        val stringParams = withDefaults.mapValues { it.value.toString() }
-                        return try {
-                            handler.execute(stringParams, context)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Execution with defaults failed for $actionName: ${e.message}")
-                            ActionResult.Failure(
-                                errorMsg = e.message ?: "Execution failed",
-                                fallback = "Try alternative approach"
-                            )
-                        }
-                    }
-                }
-
-                // Only ask user if param truly has no default
-                val firstMissing = schemaValidation.params.first()
-                val paramDef = definition?.params?.find { it.name == firstMissing }
-                Log.d(TAG, "Missing required params for $actionName: ${schemaValidation.params}")
-                return ActionResult.NeedsInput(
-                    question = "I need the $firstMissing to complete this. ${paramDef?.description ?: ""}",
-                    options = paramDef?.enumValues ?: emptyList()
-                )
-            }
-
-            is ActionSchema.ValidationResult.InvalidAction -> {
-                // Action not in schema — try auto-mapper as fallback
-                Log.d(TAG, "Action $actionName not in schema, trying auto-mapper")
-            }
+        // ── STEP 2: Try direct schema validation + execution ──
+        val directResult = trySchemaExecution(normalized, params, context)
+        if (directResult != null) {
+            Log.d(TAG, "║ Resolved via: SCHEMA_DIRECT")
+            Log.d(TAG, "║ Final action: $normalized")
+            Log.d(TAG, "╚═══════════════════════════════════════")
+            return directResult
         }
 
-        // ── LAYER 2: Auto-map unknown actions (fallback for hallucinations) ──
+        // ── STEP 3: Resolve via ActionAutoMapper (alias + semantic) ──
         val mapping = autoMapper.mapAction(
             action = actionName,
             params = params,
             registeredActions = actionsMap.keys
         )
 
-        // If action should be skipped (security/privacy hallucination)
+        // Handle SKIP
         if (mapping.mappedAction == null && mapping.wasMapped) {
-            Log.d(TAG, "Skipping hallucinated step: $actionName (mapped to SKIP)")
+            Log.d(TAG, "║ Resolved via: SKIP (hallucinated step)")
+            Log.d(TAG, "╚═══════════════════════════════════════")
             logUnknownAction(actionName, "AUTO_FIXED", wasAutoFixed = true, fixedWith = "SKIP")
             return ActionResult.Success(
                 dataMap = mapOf(
@@ -169,45 +142,142 @@ class ActionDispatcher @Inject constructor(
             )
         }
 
-        // If truly unknown after mapping — no mapping found
-        if (mapping.mappedAction == null && !mapping.wasMapped) {
-            Log.e(TAG, "Unknown action after mapping: $actionName")
-            logUnknownAction(actionName, "FAILED", wasAutoFixed = false, fixedWith = null)
-            return ActionResult.UnknownAction(
-                attemptedAction = actionName,
-                availableActions = ActionSchema.getAllActionNames()
-            )
-        }
+        // Handle successful mapping
+        if (mapping.mappedAction != null && mapping.wasMapped) {
+            val finalAction = mapping.mappedAction
+            val finalParams = mapping.mappedParams
 
-        val finalAction = mapping.mappedAction!!
-        val finalParams = mapping.mappedParams
+            Log.d(TAG, "║ Resolved via: ${if (actionName != finalAction) "ALIAS/SEMANTIC" else "DIRECT"}")
+            Log.d(TAG, "║ Final action: $finalAction")
+            Log.d(TAG, "║ Mapped:       $actionName → $finalAction")
 
-        // Log if mapping occurred
-        if (mapping.wasMapped) {
-            Log.d(TAG, "Auto-mapped: $actionName → $finalAction")
             logUnknownAction(actionName, "AUTO_FIXED", wasAutoFixed = true, fixedWith = finalAction)
+
+            // Internet check on the RESOLVED action
+            if (internetRequiredActions.contains(finalAction) && !deviceStateProvider.isInternetAvailable()) {
+                Log.d(TAG, "║ BLOCKED — no internet for $finalAction")
+                Log.d(TAG, "╚═══════════════════════════════════════")
+                return ActionResult.Failure(
+                    errorMsg = "No internet connection available",
+                    fallback = "Connect to WiFi or mobile data to use $finalAction"
+                )
+            }
+
+            // Try schema execution on the resolved action
+            val resolvedResult = trySchemaExecution(finalAction, finalParams, context)
+            if (resolvedResult != null) {
+                Log.d(TAG, "╚═══════════════════════════════════════")
+                return resolvedResult
+            }
+
+            // Direct handler execution (for non-schema actions like CHAT)
+            val handler = actionsMap[finalAction]
+            if (handler != null) {
+                Log.d(TAG, "║ Executing:    $finalAction (direct handler)")
+                Log.d(TAG, "╚═══════════════════════════════════════")
+                return safeExecute(handler, finalParams, context, finalAction)
+            }
         }
 
-        // ── Execute the mapped action ──
-        val handler = actionsMap[finalAction]
-        if (handler == null) {
-            Log.e(TAG, "Mapped action $finalAction is also not registered!")
-            logUnknownAction(actionName, "FAILED", wasAutoFixed = false, fixedWith = finalAction)
-            return ActionResult.UnknownAction(
-                attemptedAction = finalAction,
-                availableActions = ActionSchema.getAllActionNames()
-            )
+        // Handle unmapped passthrough (was already valid)
+        if (mapping.mappedAction != null && !mapping.wasMapped) {
+            val handler = actionsMap[mapping.mappedAction]
+            if (handler != null) {
+                Log.d(TAG, "║ Resolved via: PASSTHROUGH")
+                Log.d(TAG, "║ Final action: ${mapping.mappedAction}")
+                Log.d(TAG, "╚═══════════════════════════════════════")
+                return safeExecute(handler, mapping.mappedParams, context, mapping.mappedAction)
+            }
         }
 
+        // ── STEP 4: Truly unknown — graceful failure ──
+        Log.e(TAG, "║ FAILED — no handler for: $actionName (normalized: $normalized)")
+        Log.e(TAG, "║ Closest:     ${suggestClosest(normalized)}")
+        Log.e(TAG, "╚═══════════════════════════════════════")
+
+        logUnknownAction(actionName, "FAILED", wasAutoFixed = false, fixedWith = null)
+
+        return ActionResult.UnknownAction(
+            attemptedAction = actionName,
+            availableActions = ActionSchema.getAllActionNames()
+        )
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Schema-based execution (validates + applies defaults)
+    // ════════════════════════════════════════════════════════════════
+
+    private suspend fun trySchemaExecution(
+        actionName: String,
+        params: Map<String, String>,
+        context: Context
+    ): ActionResult? {
+        val (validation, enrichedParams) = ActionSchema.validateParams(actionName, params)
+
+        return when (validation) {
+            is ActionSchema.ValidationResult.Valid -> {
+                val handler = actionsMap[actionName] ?: return null
+                val stringParams = enrichedParams.mapValues { it.value.toString() }
+                safeExecute(handler, stringParams, context, actionName)
+            }
+
+            is ActionSchema.ValidationResult.MissingParams -> {
+                val definition = ActionSchema.getAction(actionName)
+                val allHaveDefaults = validation.params.all { paramName ->
+                    definition?.params?.find { it.name == paramName }?.defaultValue != null
+                }
+
+                if (allHaveDefaults) {
+                    val handler = actionsMap[actionName] ?: return null
+                    val withDefaults = ActionSchema.applyDefaults(actionName, params)
+                    val stringParams = withDefaults.mapValues { it.value.toString() }
+                    safeExecute(handler, stringParams, context, actionName)
+                } else {
+                    val firstMissing = validation.params.first()
+                    val paramDef = definition?.params?.find { it.name == firstMissing }
+                    Log.d(TAG, "║ Missing:      $firstMissing for $actionName")
+                    ActionResult.NeedsInput(
+                        question = "I need the $firstMissing to complete this. ${paramDef?.description ?: ""}",
+                        options = paramDef?.enumValues ?: emptyList()
+                    )
+                }
+            }
+
+            is ActionSchema.ValidationResult.InvalidAction -> null
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Safe execution wrapper
+    // ════════════════════════════════════════════════════════════════
+
+    private suspend fun safeExecute(
+        handler: Action,
+        params: Map<String, String>,
+        context: Context,
+        actionName: String
+    ): ActionResult {
         return try {
-            handler.execute(finalParams, context)
+            handler.execute(params, context)
         } catch (e: Exception) {
-            Log.e(TAG, "Execution failed for $finalAction: ${e.message}")
+            Log.e(TAG, "Execution failed for $actionName: ${e.message}")
             ActionResult.Failure(
                 errorMsg = e.message ?: "Execution failed",
                 fallback = "Try alternative approach"
             )
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Utilities
+    // ════════════════════════════════════════════════════════════════
+
+    private fun suggestClosest(normalized: String): String {
+        val allActions = ActionSchema.getAllActionNames()
+        val words = normalized.split("_")
+        return allActions
+            .maxByOrNull { action -> words.count { word -> action.contains(word) } }
+            ?: "CHAT"
     }
 
     private suspend fun logUnknownAction(

@@ -281,9 +281,12 @@ object ActionSchema {
         ),
         ActionDefinition(
             name = "OPEN_URL",
-            description = "Opens a specific URL in the browser",
-            params = listOf(ParamDefinition("url", ParamType.STRING, true, "URL to open")),
-            examples = listOf("open google.com", "go to youtube.com", "visit github.com"),
+            description = """Opens a specific URL/website/link in the browser.
+                Use this for ANY URL navigation task. Do NOT use made-up actions
+                like NAVIGATE_TO_URL, GO_TO_URL, BROWSE_WEBSITE, VISIT_WEBSITE — 
+                use OPEN_URL instead.""",
+            params = listOf(ParamDefinition("url", ParamType.STRING, true, "URL to open (e.g. google.com, https://example.com)")),
+            examples = listOf("open google.com", "go to youtube.com", "visit github.com", "navigate to example.com", "browse website"),
             category = ActionCategory.SYSTEM
         ),
         ActionDefinition(
