@@ -140,7 +140,42 @@ class ActionAutoMapper @Inject constructor() {
         "OPEN_MESSAGES"           to "SEND_SMS",
         "OPEN_SMS"                to "SEND_SMS",
         "SMS_SEND"                to "SEND_SMS",
-        "TEXT_MESSAGE"            to "SEND_SMS"
+        "TEXT_MESSAGE"            to "SEND_SMS",
+
+        // ── Call-specific hallucinations → MAKE_CALL ──
+        "CALL"                    to "MAKE_CALL",
+        "PHONE_CALL"              to "MAKE_CALL",
+        "DIAL"                    to "MAKE_CALL",
+        "DIAL_NUMBER"             to "MAKE_CALL",
+        "CALL_CONTACT"            to "MAKE_CALL",
+        "PLACE_CALL"              to "MAKE_CALL",
+        "OPEN_DIALER"             to "MAKE_CALL",
+        "OPEN_PHONE"              to "MAKE_CALL",
+        "RING"                    to "MAKE_CALL",
+
+        // ── Contact-related hallucinations ──
+        "RESOLVE_CONTACT"         to SKIP,
+        "LOOKUP_CONTACT"          to SKIP,
+        "FIND_CONTACT"            to SKIP,
+        "SEARCH_CONTACT"          to SKIP,
+        "GET_CONTACT"             to SKIP,
+        "SELECT_CONTACT"          to SKIP,
+
+        // ── Weather/Search/Browser hallucinations ──
+        "CHECK_WEATHER"           to "GET_WEATHER",
+        "WEATHER"                 to "GET_WEATHER",
+        "SHOW_WEATHER"            to "GET_WEATHER",
+        "FETCH_WEATHER"           to "GET_WEATHER",
+        "SEARCH"                  to "WEB_SEARCH",
+        "GOOGLE_SEARCH"           to "WEB_SEARCH",
+        "SEARCH_WEB"              to "WEB_SEARCH",
+        "SEARCH_GOOGLE"           to "WEB_SEARCH",
+        "FIND_INFORMATION"        to "WEB_SEARCH",
+        "LOOK_UP"                 to "WEB_SEARCH",
+        "BROWSE"                  to "OPEN_BROWSER",
+        "OPEN_GOOGLE"             to "OPEN_BROWSER",
+        "LAUNCH_BROWSER"          to "OPEN_BROWSER",
+        "OPEN_CHROME"             to "OPEN_BROWSER"
     )
 
     // ────────────────────────────────────────────────────────────────
@@ -217,17 +252,14 @@ class ActionAutoMapper @Inject constructor() {
         )
         if (skipPatterns.any { upper.contains(it) }) return SKIP
 
-        // Pattern: anything with CONTACT → ASK_USER
-        if ("CONTACT" in upper) return "ASK_USER"
-
         // Pattern: anything with PROMPT → ASK_USER
         if ("PROMPT" in upper) return "ASK_USER"
 
         // Pattern: anything with SCREENSHOT → TAKE_SCREENSHOT
         if ("SCREENSHOT" in upper) return "TAKE_SCREENSHOT"
 
-        // Pattern: OPEN_*/LAUNCH_*/START_* → OPEN_APP (but NOT communication apps)
-        val communicationKeywords = listOf("WHATSAPP", "SMS", "MESSAGE", "EMAIL", "CALL", "DIALER")
+        // Pattern: OPEN_*/LAUNCH_*/START_* → OPEN_APP (but NOT communication apps or browser)
+        val communicationKeywords = listOf("WHATSAPP", "SMS", "MESSAGE", "EMAIL", "CALL", "DIALER", "BROWSER", "CHROME")
         if ((upper.startsWith("OPEN_") || upper.startsWith("LAUNCH_") || upper.startsWith("START_")) &&
             communicationKeywords.none { upper.contains(it) }) return "OPEN_APP"
 
@@ -235,11 +267,21 @@ class ActionAutoMapper @Inject constructor() {
         if (upper.contains("WHATSAPP")) return "SEND_WHATSAPP"
         if (upper.contains("SMS") || upper.contains("MESSAGE")) return "SEND_SMS"
 
-        // Pattern: SEARCH_* → WEB_SEARCH
-        if (upper.startsWith("SEARCH_")) return "WEB_SEARCH"
+        // Pattern: anything with WEATHER → GET_WEATHER
+        if (upper.contains("WEATHER")) return "GET_WEATHER"
 
-        // Pattern: CHECK_* → SKIP (generic checks are hallucinations)
-        if (upper.startsWith("CHECK_")) return SKIP
+        // Pattern: anything with CALL/DIAL/PHONE (not recall) → MAKE_CALL
+        if ((upper.contains("CALL") || upper.contains("DIAL") || upper.contains("PHONE")) &&
+            !upper.contains("RECALL")) return "MAKE_CALL"
+
+        // Pattern: anything with BROWSE/CHROME → OPEN_BROWSER
+        if (upper.contains("BROWSER") || upper.contains("CHROME")) return "OPEN_BROWSER"
+
+        // Pattern: SEARCH_* or anything with SEARCH → WEB_SEARCH
+        if (upper.startsWith("SEARCH_") || upper.contains("SEARCH")) return "WEB_SEARCH"
+
+        // Pattern: CHECK_* → SKIP (generic checks are hallucinations, but not weather/stock)
+        if (upper.startsWith("CHECK_") && !upper.contains("WEATHER") && !upper.contains("STOCK")) return SKIP
 
         // Pattern: SEND_* → SEND_SMS (safe default)
         if (upper.startsWith("SEND_")) return "SEND_SMS"

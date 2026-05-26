@@ -29,6 +29,24 @@ class IntentClassifier @Inject constructor(
         )
         val hasActionKeyword = actionKeywords.any { query.contains(it, ignoreCase = true) }
 
+        // FORCED action queries — these should NEVER be treated as conversational
+        // even if the LLM classifier says so. They always need device actions.
+        val forcedActionPatterns = listOf(
+            "weather", "search", "search for", "google", "look up", "find",
+            "call", "dial", "ring", "phone",
+            "message", "text", "sms", "whatsapp", "send",
+            "open", "launch",
+            "navigate", "directions", "take me to",
+            "play", "music", "youtube",
+            "set alarm", "set timer", "set reminder",
+            "screenshot", "flashlight", "torch", "flash",
+            "wifi", "bluetooth", "brightness", "volume", "dnd", "hotspot",
+            "news", "translate", "convert", "calculate",
+            "book uber", "book ola"
+        )
+        val isForcedAction = forcedActionPatterns.any { query.contains(it, ignoreCase = true) }
+        if (isForcedAction) return true
+
         return try {
             val provider = llmProviderFactory.get().getActiveProvider()
             val prompt = """
