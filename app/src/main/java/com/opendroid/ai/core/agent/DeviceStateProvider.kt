@@ -387,15 +387,24 @@ class DeviceStateProvider @Inject constructor(
         val location = getLocationContext()
         val timezone = TimeZone.getDefault().id
 
+        // Current date/time — essential for LLM temporal awareness
+        val dateFormat = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
+        val timeFormat = java.text.SimpleDateFormat("h:mm a", Locale.getDefault())
+        val now = java.util.Date()
+        val currentDate = dateFormat.format(now)
+        val currentTime = timeFormat.format(now)
+
         val internetStr = if (internetAvailable) connectivity else "NOT AVAILABLE"
 
         return buildString {
+            append("Date: $currentDate, ")
+            append("Time: $currentTime, ")
+            append("Timezone: $timezone, ")
             append("Battery: $batteryStr$charging, ")
             append("WiFi: $wifi, ")
             append("Internet: $internetStr, ")
             append("Bluetooth: $bluetooth, ")
-            append("Location: $location, ")
-            append("Timezone: $timezone")
+            append("Location: $location")
         }
     }
 }

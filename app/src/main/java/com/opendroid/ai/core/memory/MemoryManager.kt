@@ -71,7 +71,18 @@ class MemoryManager @Inject constructor(
         // Context from working memory
         val activePlanStr = workingMemory.activePlan?.let { "Active Plan Goal: ${it.goal}" } ?: "No active plan."
         
+        // Current date/time
+        val dateFormat = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", java.util.Locale.getDefault())
+        val timeFormat = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+        val now = java.util.Date()
+        val currentDate = dateFormat.format(now)
+        val currentTime = timeFormat.format(now)
+
         return """
+            [Current Date & Time]
+            Date: $currentDate
+            Time: $currentTime
+
             [Facts about User]
             $factsContext
             
