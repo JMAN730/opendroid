@@ -79,38 +79,97 @@ object ActionSchema {
         ),
         ActionDefinition(
             name = "TOGGLE_WIFI",
-            description = "Turns WiFi on or off",
-            params = listOf(ParamDefinition("state", ParamType.ENUM, true, "WiFi state", listOf("on", "off"))),
-            examples = listOf("wifi on", "turn off wifi", "enable wifi"),
-            category = ActionCategory.SYSTEM
+            description = """Turns WiFi on, off, or toggles.
+                'toggle' flips current state automatically.
+                No need to ask user for state when using
+                'wifi', 'open wifi' commands.""",
+            params = listOf(
+                ParamDefinition(
+                    name = "state",
+                    type = ParamType.ENUM,
+                    required = false,
+                    description = "Desired WiFi state",
+                    enumValues = listOf("on", "off", "toggle"),
+                    defaultValue = "toggle"
+                )
+            ),
+            examples = listOf("wifi on", "turn off wifi", "enable wifi", "open wifi"),
+            category = ActionCategory.SYSTEM,
+            isSimple = true
         ),
         ActionDefinition(
             name = "TOGGLE_BLUETOOTH",
-            description = "Turns Bluetooth on or off",
-            params = listOf(ParamDefinition("state", ParamType.ENUM, true, "Bluetooth state", listOf("on", "off"))),
-            examples = listOf("bluetooth on", "turn off bluetooth"),
-            category = ActionCategory.SYSTEM
+            description = """Turns Bluetooth on, off, or toggles.
+                'toggle' flips current state automatically.
+                No need to ask user for state when using
+                'bluetooth', 'open bluetooth' commands.""",
+            params = listOf(
+                ParamDefinition(
+                    name = "state",
+                    type = ParamType.ENUM,
+                    required = false,
+                    description = "Desired Bluetooth state",
+                    enumValues = listOf("on", "off", "toggle"),
+                    defaultValue = "toggle"
+                )
+            ),
+            examples = listOf("bluetooth on", "turn off bluetooth", "open bluetooth"),
+            category = ActionCategory.SYSTEM,
+            isSimple = true
         ),
         ActionDefinition(
             name = "TOGGLE_MOBILE_DATA",
-            description = "Turns mobile data on or off",
-            params = listOf(ParamDefinition("state", ParamType.ENUM, true, "Mobile data state", listOf("on", "off"))),
-            examples = listOf("data on", "turn off mobile data"),
-            category = ActionCategory.SYSTEM
+            description = """Turns mobile data on, off, or toggles.
+                'toggle' flips current state automatically.""",
+            params = listOf(
+                ParamDefinition(
+                    name = "state",
+                    type = ParamType.ENUM,
+                    required = false,
+                    description = "Desired mobile data state",
+                    enumValues = listOf("on", "off", "toggle"),
+                    defaultValue = "toggle"
+                )
+            ),
+            examples = listOf("data on", "turn off mobile data", "mobile data"),
+            category = ActionCategory.SYSTEM,
+            isSimple = true
         ),
         ActionDefinition(
             name = "TOGGLE_HOTSPOT",
-            description = "Turns hotspot on or off",
-            params = listOf(ParamDefinition("state", ParamType.ENUM, true, "Hotspot state", listOf("on", "off"))),
-            examples = listOf("hotspot on", "turn on personal hotspot"),
-            category = ActionCategory.SYSTEM
+            description = """Turns hotspot on, off, or toggles.
+                'toggle' flips current state automatically.""",
+            params = listOf(
+                ParamDefinition(
+                    name = "state",
+                    type = ParamType.ENUM,
+                    required = false,
+                    description = "Desired hotspot state",
+                    enumValues = listOf("on", "off", "toggle"),
+                    defaultValue = "toggle"
+                )
+            ),
+            examples = listOf("hotspot on", "turn on personal hotspot", "hotspot"),
+            category = ActionCategory.SYSTEM,
+            isSimple = true
         ),
         ActionDefinition(
             name = "TOGGLE_DND",
-            description = "Turns Do Not Disturb mode on or off",
-            params = listOf(ParamDefinition("state", ParamType.ENUM, true, "DND state", listOf("on", "off"))),
-            examples = listOf("dnd on", "do not disturb", "silent mode"),
-            category = ActionCategory.SYSTEM
+            description = """Turns Do Not Disturb mode on, off, or toggles.
+                'toggle' flips current state automatically.""",
+            params = listOf(
+                ParamDefinition(
+                    name = "state",
+                    type = ParamType.ENUM,
+                    required = false,
+                    description = "Desired DND state",
+                    enumValues = listOf("on", "off", "toggle"),
+                    defaultValue = "toggle"
+                )
+            ),
+            examples = listOf("dnd on", "do not disturb", "silent mode", "dnd"),
+            category = ActionCategory.SYSTEM,
+            isSimple = true
         ),
         ActionDefinition(
             name = "SET_BRIGHTNESS",

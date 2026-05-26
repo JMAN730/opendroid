@@ -97,11 +97,11 @@ $schema
               OPEN_APP → execute immediately
               MAKE_CALL → execute, ask for number ONLY if contact is unknown
               SEND_WHATSAPP → execute, ask for contact/message ONLY if missing
-              TOGGLE_WIFI → execute immediately with {state: "on" or "off"}
-              TOGGLE_BLUETOOTH → execute immediately with {state: "on" or "off"}
-              TOGGLE_MOBILE_DATA → execute immediately with {state: "on" or "off"}
-              TOGGLE_HOTSPOT → execute immediately with {state: "on" or "off"}
-              TOGGLE_DND → execute immediately with {state: "on" or "off"}
+              TOGGLE_WIFI → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
+              TOGGLE_BLUETOOTH → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
+              TOGGLE_MOBILE_DATA → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
+              TOGGLE_HOTSPOT → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
+              TOGGLE_DND → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
               SET_BRIGHTNESS → execute immediately with {level: <user's number>} (default 50% ONLY if no level given)
               SET_VOLUME → execute immediately (default media if no type given)
               SET_RINGER_MODE → execute immediately

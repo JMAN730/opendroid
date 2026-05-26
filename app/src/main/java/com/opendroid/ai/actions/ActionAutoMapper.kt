@@ -80,6 +80,11 @@ class ActionAutoMapper @Inject constructor() {
         "CHECK_HARDWARE"          to SKIP,
         "CHECK_PERMISSION"        to SKIP,
         "SHOW_WARNING"            to SKIP,
+        "CONFIRM_DETAILS"         to SKIP,
+        "CONFIRM_RECIPIENT"       to SKIP,
+        "CONFIRM_MESSAGE"         to SKIP,
+        "VERIFY_DETAILS"          to SKIP,
+        "VALIDATE_INPUT"          to SKIP,
 
         // ── App opening variants → OPEN_APP ──
         "OPEN_APP_OR_WEBSITE"     to "OPEN_APP",
@@ -121,7 +126,21 @@ class ActionAutoMapper @Inject constructor() {
         "TEXT"                    to "SEND_SMS",
         "SEND_TEXT"               to "SEND_SMS",
         "SEND_MESSAGE"            to "SEND_WHATSAPP",
-        "MESSAGE"                 to "SEND_WHATSAPP"
+        "MESSAGE"                 to "SEND_WHATSAPP",
+
+        // ── WhatsApp-specific hallucinations → SEND_WHATSAPP ──
+        "OPEN_WHATSAPP"           to "SEND_WHATSAPP",
+        "OPEN_WHATSAPP_CHAT"      to "SEND_WHATSAPP",
+        "WHATSAPP_MESSAGE"        to "SEND_WHATSAPP",
+        "WHATSAPP_SEND"           to "SEND_WHATSAPP",
+        "SEND_WHATSAPP_MESSAGE"   to "SEND_WHATSAPP",
+        "LAUNCH_WHATSAPP"         to "SEND_WHATSAPP",
+
+        // ── SMS-specific hallucinations → SEND_SMS ──
+        "OPEN_MESSAGES"           to "SEND_SMS",
+        "OPEN_SMS"                to "SEND_SMS",
+        "SMS_SEND"                to "SEND_SMS",
+        "TEXT_MESSAGE"            to "SEND_SMS"
     )
 
     // ────────────────────────────────────────────────────────────────
@@ -207,10 +226,14 @@ class ActionAutoMapper @Inject constructor() {
         // Pattern: anything with SCREENSHOT → TAKE_SCREENSHOT
         if ("SCREENSHOT" in upper) return "TAKE_SCREENSHOT"
 
-        // Pattern: OPEN_*/LAUNCH_*/START_* → OPEN_APP
-        if (upper.startsWith("OPEN_") ||
-            upper.startsWith("LAUNCH_") ||
-            upper.startsWith("START_")) return "OPEN_APP"
+        // Pattern: OPEN_*/LAUNCH_*/START_* → OPEN_APP (but NOT communication apps)
+        val communicationKeywords = listOf("WHATSAPP", "SMS", "MESSAGE", "EMAIL", "CALL", "DIALER")
+        if ((upper.startsWith("OPEN_") || upper.startsWith("LAUNCH_") || upper.startsWith("START_")) &&
+            communicationKeywords.none { upper.contains(it) }) return "OPEN_APP"
+
+        // Communication OPEN_* patterns → correct action
+        if (upper.contains("WHATSAPP")) return "SEND_WHATSAPP"
+        if (upper.contains("SMS") || upper.contains("MESSAGE")) return "SEND_SMS"
 
         // Pattern: SEARCH_* → WEB_SEARCH
         if (upper.startsWith("SEARCH_")) return "WEB_SEARCH"

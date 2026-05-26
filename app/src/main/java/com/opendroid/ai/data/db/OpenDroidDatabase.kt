@@ -2,6 +2,8 @@ package com.opendroid.ai.data.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.opendroid.ai.data.db.dao.ConversationDao
 import com.opendroid.ai.data.db.dao.MacroDao
 import com.opendroid.ai.data.db.dao.MemoryDao
@@ -25,7 +27,7 @@ import com.opendroid.ai.data.db.entities.UnknownActionEntity
         MacroEntity::class,
         UnknownActionEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class OpenDroidDatabase : RoomDatabase() {
@@ -35,4 +37,12 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun taskHistoryDao(): TaskHistoryDao
     abstract fun macroDao(): MacroDao
     abstract fun unknownActionDao(): UnknownActionDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE conversations ADD COLUMN contactPickerData TEXT DEFAULT NULL")
+            }
+        }
+    }
 }

@@ -571,7 +571,8 @@ class AgentLoop @Inject constructor(
             id = UUID.randomUUID().toString(),
             text = "${pickerResult.question}\n\n$optionsText",
             sender = ChatMessage.Sender.AGENT,
-            modelBadge = "System"
+            modelBadge = "System",
+            contactPickerData = matchesJson
         )
         conversationRepository.insertMessage(pickerMsg)
         onSpeakCallback?.invoke(pickerResult.question)

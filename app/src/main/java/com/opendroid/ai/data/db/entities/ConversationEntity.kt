@@ -9,5 +9,6 @@ data class ConversationEntity(
     val text: String,
     val sender: String, // "USER" or "AGENT"
     val timestamp: Long,
-    val modelBadge: String? = null
+    val modelBadge: String? = null,
+    val contactPickerData: String? = null
 )

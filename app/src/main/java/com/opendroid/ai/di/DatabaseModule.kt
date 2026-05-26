@@ -29,6 +29,7 @@ object DatabaseModule {
             OpenDroidDatabase::class.java,
             "opendroid_database"
         )
+        .addMigrations(OpenDroidDatabase.MIGRATION_1_2)
         .fallbackToDestructiveMigration()
         .build()
     }

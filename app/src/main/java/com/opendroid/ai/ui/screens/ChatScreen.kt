@@ -40,9 +40,11 @@ import androidx.core.content.ContextCompat
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.ui.components.ContactPickerCard
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -149,7 +151,7 @@ fun ChatScreen(
                     contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
                 ) {
                     items(history) { msg ->
-                        ChatBubble(msg)
+                        ChatBubble(msg, viewModel, context)
                     }
                     
                     // Show a typing/thinking bubble if thinking
@@ -325,12 +327,39 @@ fun AgentStatusSubtitle(state: AgentState) {
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
+fun ChatBubble(message: ChatMessage, viewModel: ChatViewModel? = null, context: android.content.Context? = null) {
     val isAgent = message.sender == ChatMessage.Sender.AGENT
     val alignment = if (isAgent) Alignment.Start else Alignment.End
     val bubbleColor = if (isAgent) CardBackground else AccentPurple.copy(alpha = 0.25f)
     val textColor = TextPrimary
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+    // If this is a contact picker message, render the ContactPickerCard instead
+    if (isAgent && message.contactPickerData != null) {
+        val matches: List<Map<String, String>> = try {
+            Json { ignoreUnknownKeys = true }
+                .decodeFromString<List<Map<String, String>>>(message.contactPickerData)
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        if (matches.isNotEmpty()) {
+            // Extract query from text ("Which 'dad' do you mean?" → "dad")
+            val query = Regex("Which '(.*?)'").find(message.text)?.groupValues?.getOrNull(1) ?: "contact"
+
+            ContactPickerCard(
+                query = query,
+                matches = matches,
+                onContactSelected = { selected ->
+                    val index = matches.indexOf(selected) + 1
+                    if (viewModel != null && context != null) {
+                        viewModel.sendMessage(index.toString(), context)
+                    }
+                }
+            )
+            return
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),

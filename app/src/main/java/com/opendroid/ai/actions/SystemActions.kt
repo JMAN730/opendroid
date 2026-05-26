@@ -70,20 +70,46 @@ class SystemActions @Inject constructor(
     private class ToggleWifiAction : Action {
         override val name: String = "TOGGLE_WIFI"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = resolveToggleState(params)
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+            // Determine target state
+            @Suppress("DEPRECATION")
+            val currentlyOn = wifiManager.isWifiEnabled
+            val targetOn = when (requestedState) {
+                "on", "true", "enable", "yes"    -> true
+                "off", "false", "disable", "no"  -> false
+                "toggle"                         -> !currentlyOn
+                else                             -> !currentlyOn
+            }
+
+            // Already in desired state?
+            if (targetOn == currentlyOn) {
+                val stateWord = if (currentlyOn) "on" else "off"
+                return ActionResult(true, "WiFi is already $stateWord!", null)
+            }
+
+            val stateWord = if (targetOn) "on" else "off"
+
+            // Method 1: Direct toggle (works on API < 29)
             return try {
                 @Suppress("DEPRECATION")
-                wifiManager.isWifiEnabled = on
-                val stateWord = if (on) "on" else "off"
+                wifiManager.isWifiEnabled = targetOn
                 ActionResult(true, "WiFi's $stateWord now!", null)
             } catch (e: Exception) {
-                // Fallback: Launch wifi settings panel so user can toggle manually
-                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Method 2: Fallback to WiFi settings panel
+                try {
+                    val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    ActionResult(true, "I opened WiFi settings for you — toggle it $stateWord from there.", null)
+                } catch (ex: Exception) {
+                    Log.e("ToggleWifi", "Settings launch failed: ${ex.message}")
+                    ActionResult(false, null, "Couldn't toggle WiFi or open settings.")
                 }
-                context.startActivity(intent)
-                ActionResult(false, "Couldn't toggle WiFi directly, but I opened the settings for you.", e.localizedMessage, true)
             }
         }
     }
@@ -269,19 +295,71 @@ class SystemActions @Inject constructor(
     private class ToggleBluetoothAction : Action {
         override val name: String = "TOGGLE_BLUETOOTH"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = resolveToggleState(params)
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+                ?: return openBluetoothSettings(context, "Device doesn't have Bluetooth hardware, but I opened the settings for you.")
+
+            // Determine target state
+            val currentlyOn = try { adapter.isEnabled } catch (_: SecurityException) { false }
+            val targetOn = when (requestedState) {
+                "on", "true", "enable", "yes"    -> true
+                "off", "false", "disable", "no"  -> false
+                "toggle"                         -> !currentlyOn
+                else                             -> !currentlyOn  // unknown = toggle
+            }
+
+            // Already in desired state?
+            if (targetOn == currentlyOn) {
+                val stateWord = if (currentlyOn) "on" else "off"
+                return ActionResult(true, "Bluetooth is already $stateWord!", null)
+            }
+
+            val stateWord = if (targetOn) "on" else "off"
+
+            // ── Method 1: Direct adapter enable/disable (works on API < 33) ──
+            if (android.os.Build.VERSION.SDK_INT < 33) {
+                try {
+                    @Suppress("DEPRECATION")
+                    val result = if (targetOn) adapter.enable() else adapter.disable()
+                    if (result) {
+                        return ActionResult(true, "Bluetooth is $stateWord now!", null)
+                    }
+                } catch (e: SecurityException) {
+                    Log.w("ToggleBluetooth", "Direct toggle denied: ${e.message}")
+                } catch (e: Exception) {
+                    Log.w("ToggleBluetooth", "Direct toggle failed: ${e.message}")
+                }
+            }
+
+            // ── Method 2: Intent-based enable (Android 12+) ──
+            if (targetOn) {
+                try {
+                    val enableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(enableIntent)
+                    return ActionResult(true, "I've prompted Bluetooth to turn on — please accept the dialog.", null)
+                } catch (e: Exception) {
+                    Log.w("ToggleBluetooth", "Enable intent failed: ${e.message}")
+                }
+            }
+
+            // ── Method 3: Fallback — open Bluetooth settings ──
+            return openBluetoothSettings(context, "I opened Bluetooth settings for you — toggle it $stateWord from there.")
+        }
+
+        private fun openBluetoothSettings(context: Context, message: String): ActionResult {
             return try {
-                val adapter = BluetoothAdapter.getDefaultAdapter()
-                @Suppress("DEPRECATION")
-                if (on) adapter.enable() else adapter.disable()
-                val stateWord = if (on) "on" else "off"
-                ActionResult(true, "Bluetooth is $stateWord now!", null)
-            } catch (e: Exception) {
                 val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(false, "Couldn't toggle Bluetooth directly, but I opened the settings for you.", e.localizedMessage, true)
+                ActionResult(true, message, null)
+            } catch (e: Exception) {
+                Log.e("ToggleBluetooth", "Settings launch failed: ${e.message}")
+                ActionResult(false, null, "Couldn't toggle Bluetooth or open settings.")
             }
         }
     }
@@ -289,21 +367,39 @@ class SystemActions @Inject constructor(
     private class ToggleDndAction : Action {
         override val name: String = "TOGGLE_DND"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = resolveToggleState(params)
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
             return try {
-                if (notificationManager.isNotificationPolicyAccessGranted) {
-                    val filter = if (on) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL
-                    notificationManager.setInterruptionFilter(filter)
-                    val stateWord = if (on) "on" else "off"
-                    ActionResult(true, "Do Not Disturb is $stateWord.", null)
-                } else {
+                if (!notificationManager.isNotificationPolicyAccessGranted) {
                     val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(false, "DND policy permission not granted. Prompted user.", "Permission required", true)
+                    return ActionResult(false, "DND policy permission not granted. I've opened the settings — please grant access and try again.", "Permission required", true)
                 }
+
+                // Determine target state
+                val currentlyOn = notificationManager.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
+                val targetOn = when (requestedState) {
+                    "on", "true", "enable", "yes"    -> true
+                    "off", "false", "disable", "no"  -> false
+                    "toggle"                         -> !currentlyOn
+                    else                             -> !currentlyOn
+                }
+
+                // Already in desired state?
+                if (targetOn == currentlyOn) {
+                    val stateWord = if (currentlyOn) "on" else "off"
+                    return ActionResult(true, "Do Not Disturb is already $stateWord!", null)
+                }
+
+                val filter = if (targetOn) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL
+                notificationManager.setInterruptionFilter(filter)
+                val stateWord = if (targetOn) "on" else "off"
+                ActionResult(true, "Do Not Disturb is $stateWord.", null)
             } catch (e: Exception) {
                 Log.e("ToggleDND", "DND failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't change Do Not Disturb.")
@@ -403,14 +499,21 @@ class SystemActions @Inject constructor(
     private class ToggleMobileDataAction : Action {
         override val name: String = "TOGGLE_MOBILE_DATA"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = resolveToggleState(params)
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
+            val stateWord = when (requestedState) {
+                "on", "true", "enable", "yes"    -> "on"
+                "off", "false", "disable", "no"  -> "off"
+                else                             -> "on/off"
+            }
+
             return try {
                 val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                val stateWord = if (on) "on" else "off"
-                ActionResult(true, "Opened mobile data settings to turn it $stateWord.", null)
+                ActionResult(true, "I opened mobile data settings — toggle it $stateWord from there.", null)
             } catch (e: Exception) {
                 Log.e("MobileData", "Settings failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't open network settings.")
@@ -421,22 +524,29 @@ class SystemActions @Inject constructor(
     private class ToggleHotspotAction : Action {
         override val name: String = "TOGGLE_HOTSPOT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val on = resolveToggleState(params)
+            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+                .lowercase().trim()
+
+            val stateWord = when (requestedState) {
+                "on", "true", "enable", "yes"    -> "on"
+                "off", "false", "disable", "no"  -> "off"
+                else                             -> "on/off"
+            }
+
             return try {
                 val intent = Intent().apply {
                     action = "android.settings.TETHER_SETTINGS"
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                val stateWord = if (on) "on" else "off"
-                ActionResult(true, "Opened hotspot settings to turn it $stateWord.", null)
+                ActionResult(true, "I opened hotspot settings — toggle it $stateWord from there.", null)
             } catch (e: Exception) {
                 try {
                     val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "Opened wireless settings as fallback for hotspot toggle.", null)
+                    ActionResult(true, "I opened wireless settings — find the hotspot toggle there.", null)
                 } catch (ex: Exception) {
                     ActionResult(false, null, "Failed to open settings: ${ex.localizedMessage}")
                 }

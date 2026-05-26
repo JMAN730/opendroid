@@ -19,7 +19,8 @@ class ConversationRepository @Inject constructor(
                 text = entity.text,
                 sender = ChatMessage.Sender.valueOf(entity.sender),
                 timestamp = entity.timestamp,
-                modelBadge = entity.modelBadge
+                modelBadge = entity.modelBadge,
+                contactPickerData = entity.contactPickerData
             )
         }
     }
@@ -31,7 +32,8 @@ class ConversationRepository @Inject constructor(
                 text = message.text,
                 sender = message.sender.name,
                 timestamp = message.timestamp,
-                modelBadge = message.modelBadge
+                modelBadge = message.modelBadge,
+                contactPickerData = message.contactPickerData
             )
         )
     }
@@ -43,7 +45,8 @@ class ConversationRepository @Inject constructor(
                 text = entity.text,
                 sender = ChatMessage.Sender.valueOf(entity.sender),
                 timestamp = entity.timestamp,
-                modelBadge = entity.modelBadge
+                modelBadge = entity.modelBadge,
+                contactPickerData = entity.contactPickerData
             )
         }.reversed()
     }
