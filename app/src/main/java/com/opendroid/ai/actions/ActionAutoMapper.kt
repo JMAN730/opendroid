@@ -184,15 +184,34 @@ class ActionAutoMapper @Inject constructor() {
         "TURN_ON_FLASHLIGHT"      to "TOGGLE_FLASHLIGHT",
         "TURN_OFF_FLASHLIGHT"     to "TOGGLE_FLASHLIGHT",
 
-        // ── Notification/chat variants → CHAT ───────────────────────
-        "NOTIFY_USER"             to "CHAT",
-        "ALERT_USER"              to "CHAT",
-        "INFORM_USER"             to "CHAT",
-        "SHOW_MESSAGE"            to "CHAT",
-        "DISPLAY_MESSAGE"         to "CHAT",
-        "SHOW_NOTIFICATION"       to "CHAT",
-        "RESPOND"                 to "CHAT",
-        "REPLY"                   to "CHAT",
+        // ── Informational/display variants → DISPLAY_INFO (auto-completing) ──
+        "NOTIFY_USER"             to "DISPLAY_INFO",
+        "ALERT_USER"              to "DISPLAY_INFO",
+        "INFORM_USER"             to "DISPLAY_INFO",
+        "SHOW_MESSAGE"            to "DISPLAY_INFO",
+        "DISPLAY_MESSAGE"         to "DISPLAY_INFO",
+        "SHOW_NOTIFICATION"       to "DISPLAY_INFO",
+        "RESPOND"                 to "DISPLAY_INFO",
+        "REPLY"                   to "DISPLAY_INFO",
+        "CHAT"                    to "DISPLAY_INFO",
+        "SHOW_TOAST"              to "DISPLAY_INFO",
+        "TOAST"                   to "DISPLAY_INFO",
+        "LOG_INFO"                to "DISPLAY_INFO",
+        "LOG_MESSAGE"             to "DISPLAY_INFO",
+        "LOG"                     to "DISPLAY_INFO",
+        "PRINT_MESSAGE"           to "DISPLAY_INFO",
+        "SHOW_STATUS"             to "DISPLAY_INFO",
+        "DISPLAY_STATUS"          to "DISPLAY_INFO",
+        "DISPLAY_INFO"            to "DISPLAY_INFO",
+        "SHOW_INFO"               to "DISPLAY_INFO",
+        "DISPLAY_RESULT"          to "DISPLAY_INFO",
+        "SHOW_RESULT"             to "DISPLAY_INFO",
+        "OUTPUT"                  to "DISPLAY_INFO",
+        "SHOW_OUTPUT"             to "DISPLAY_INFO",
+        "REPORT"                  to "DISPLAY_INFO",
+        "SHOW_REPORT"             to "DISPLAY_INFO",
+        "SNACKBAR"                to "DISPLAY_INFO",
+        "SHOW_SNACKBAR"           to "DISPLAY_INFO",
 
         // ── User input/prompt variants → ASK_USER ───────────────────
         "PROMPT_USER"             to "ASK_USER",
@@ -541,10 +560,14 @@ class ActionAutoMapper @Inject constructor() {
                 mapOf("appName" to appName)
             }
 
-            "CHAT" -> {
+            "DISPLAY_INFO" -> {
                 val message = originalParams["message"]
                     ?: originalParams["text"]
                     ?: originalParams["content"]
+                    ?: originalParams["info"]
+                    ?: originalParams["notification"]
+                    ?: originalParams["warning"]
+                    ?: originalParams["status"]
                     ?: "Action completed."
                 mapOf("message" to message)
             }

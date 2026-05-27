@@ -56,6 +56,8 @@ class SystemActions @Inject constructor(
         SetRingerModeAction(),
         AskUserAction(agentLoop),
         AnalyzeScreenshotAction(visionEngine),
+        // Informational (non-blocking, auto-completing)
+        DisplayInfoAction(),
         // Clipboard
         ClearClipboardAction(),
         CopyToClipboardAction(),
@@ -844,6 +846,43 @@ class SystemActions @Inject constructor(
             } catch (e: Exception) {}
             val response = agentLoop.get().awaitUserResponse().trim()
             return ActionResult(true, response, null)
+        }
+    }
+
+    /**
+     * Non-blocking informational action. Shows message and auto-completes.
+     * NEVER waits for user input. NEVER pauses plan execution.
+     *
+     * Handles: CHAT, DISPLAY_MESSAGE, SHOW_TOAST, SHOW_NOTIFICATION,
+     *          LOG_INFO, INFORM_USER, NOTIFY_USER, etc.
+     */
+    private class DisplayInfoAction : Action {
+        override val name: String = "DISPLAY_INFO"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val message = params["message"]
+                ?: params["text"]
+                ?: params["content"]
+                ?: params["info"]
+                ?: params["notification"]
+                ?: "Done."
+
+            Log.d("DisplayInfo", "Auto-completing info action: $message")
+
+            // Show toast on UI thread (non-blocking)
+            try {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (_: Exception) {}
+
+            // Return success IMMEDIATELY — never wait for user
+            return ActionResult.Success(
+                dataMap = mapOf(
+                    "message" to message,
+                    "displayed" to "true",
+                    "autonomous" to "true"
+                )
+            )
         }
     }
 
