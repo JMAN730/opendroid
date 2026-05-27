@@ -144,7 +144,7 @@ class ContactResolver @Inject constructor(
         }
 
         private val relationshipAliasesStatic: Map<String, List<String>> = mapOf(
-            "dad"       to listOf("dad", "father", "papa", "baba", "abbu", "pita", "daddy", "pops", "dada"),
+            "dad"       to listOf("dad", "father", "papa", "baba", "abbu", "pita", "daddy", "pops"),
             "mom"       to listOf("mom", "mother", "mama", "maa", "amma", "mummy", "mum", "mommy", "ma"),
             "wife"      to listOf("wife", "wifey", "mrs", "better half", "patni", "biwi"),
             "husband"   to listOf("husband", "hubby", "mr", "pati"),
@@ -186,8 +186,11 @@ class ContactResolver @Inject constructor(
     suspend fun resolveWithDisambiguation(input: String): ContactResolution {
         val query = input.trim()
 
+        Log.d(TAG, "── Contact Resolution for: '$query' ──")
+
         // STEP 1: Is it already a phone number?
         if (isPhoneNumber(query)) {
+            Log.d(TAG, "  → Direct phone number")
             return ContactResolution.Found(
                 Contact(
                     name = query,
@@ -200,6 +203,7 @@ class ContactResolver @Inject constructor(
         // STEP 2: Check memory for saved preference
         val memoryMatch = memoryManager.recallContactPreference(query)
         if (memoryMatch != null) {
+            Log.d(TAG, "  → Memory preference: ${memoryMatch.name}")
             return ContactResolution.Found(memoryMatch)
         }
 
@@ -213,29 +217,44 @@ class ContactResolver @Inject constructor(
         // STEP 3: Get ALL matching contacts
         val allMatches = findAllMatches(query)
 
+        Log.d(TAG, "  Found ${allMatches.size} matches:")
+        allMatches.forEach { c -> Log.d(TAG, "    - ${c.name} (${c.phoneNumber}) score=${c.matchScore}") }
+
         return when {
             // No matches found
             allMatches.isEmpty() ->
                 ContactResolution.NotFound(query)
 
             // Exactly one match → use it
-            allMatches.size == 1 ->
+            allMatches.size == 1 -> {
+                Log.d(TAG, "  → Single match: ${allMatches.first().name}")
                 ContactResolution.Found(allMatches.first())
+            }
 
             else -> {
-                // Multiple matches → check for exact match first
-                val exactMatch = allMatches.find { contact ->
-                    contact.name.equals(query, ignoreCase = true)
-                }
+                // Multiple matches — check if they are all the SAME person
+                // (same display name, just different phone numbers)
+                val distinctNames = allMatches.map { it.name.lowercase().trim() }.distinct()
 
-                if (exactMatch != null) {
-                    // Exact match exists → use it directly
-                    ContactResolution.Found(exactMatch)
+                if (distinctNames.size == 1) {
+                    // All matches are the same person — pick the highest-scored one
+                    Log.d(TAG, "  → All same name, using highest score: ${allMatches.first().name}")
+                    ContactResolution.Found(allMatches.first())
                 } else {
-                    // Multiple fuzzy matches → need user to pick
+                    // Multiple DIFFERENT people matched → ALWAYS show picker
+                    // Even if one is an exact match, user should choose
+                    Log.d(TAG, "  → ${distinctNames.size} different names — showing picker")
+
+                    // Deduplicate by name (keep highest score for each name)
+                    val deduped = allMatches
+                        .groupBy { it.name.lowercase().trim() }
+                        .map { (_, contacts) -> contacts.maxByOrNull { it.matchScore }!! }
+                        .sortedByDescending { it.matchScore }
+                        .take(5)
+
                     ContactResolution.Ambiguous(
                         query = query,
-                        matches = allMatches.take(5) // max 5 options
+                        matches = deduped
                     )
                 }
             }
@@ -243,7 +262,7 @@ class ContactResolver @Inject constructor(
     }
 
     /**
-     * Find ALL contacts that match query using 5-tier search.
+     * Find ALL contacts that match query using 4-tier search.
      */
     private fun findAllMatches(query: String): List<Contact> {
         val results = mutableListOf<Contact>()
@@ -256,7 +275,7 @@ class ContactResolver @Inject constructor(
             ContactsContract.CommonDataKinds.Phone.TYPE
         )
 
-        // Search 1: Exact name match (highest priority)
+        // Search 1: Exact name match (highest priority, score=100)
         queryContacts(uri, projection,
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?",
             arrayOf(query)
@@ -266,7 +285,7 @@ class ContactResolver @Inject constructor(
             }
         }
 
-        // Search 2: Case-insensitive exact match
+        // Search 2: Case-insensitive exact match (score=90)
         queryContacts(uri, projection,
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
             arrayOf(query)
@@ -276,27 +295,27 @@ class ContactResolver @Inject constructor(
             }
         }
 
-        // Search 3: Starts with query
-        queryContacts(uri, projection,
-            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
-            arrayOf("$query%")
-        ).forEach { contact ->
-            if (seen.add(contact.phoneNumber)) {
-                results.add(contact.copy(matchScore = 80))
-            }
-        }
-
-        // Search 4: Contains query
+        // Search 3: Contains query anywhere in name (score=60)
+        // This catches "Dad", "Dada", "Daddu" all together
         queryContacts(uri, projection,
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
             arrayOf("%$query%")
         ).forEach { contact ->
             if (seen.add(contact.phoneNumber)) {
-                results.add(contact.copy(matchScore = 60))
+                // Boost score if the name IS the query (just different case)
+                val score = if (contact.name.equals(query, ignoreCase = true)) 90
+                // Boost if name starts with query and query is a full word
+                // e.g., query="dad", name="Dad Mobile" gets 80
+                // but query="dad", name="Daddu" only gets 60
+                else if (contact.name.startsWith(query, ignoreCase = true) &&
+                    (contact.name.length == query.length ||
+                        contact.name.getOrNull(query.length)?.let { it == ' ' || it == '(' } == true)) 80
+                else 60
+                results.add(contact.copy(matchScore = score))
             }
         }
 
-        // Search 5: Relationship aliases
+        // Search 4: Relationship aliases (score=50)
         val aliases = getRelationshipAliases(query)
         aliases.forEach { alias ->
             queryContacts(uri, projection,
