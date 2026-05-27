@@ -96,22 +96,37 @@ class SystemActions @Inject constructor(
             val stateWord = if (targetOn) "on" else "off"
 
             // Method 1: Direct toggle (works on API < 29)
-            return try {
+            try {
                 @Suppress("DEPRECATION")
                 wifiManager.isWifiEnabled = targetOn
-                ActionResult(true, "WiFi's $stateWord now!", null)
+                return ActionResult(true, "WiFi turned $stateWord!", null)
             } catch (e: Exception) {
-                // Method 2: Fallback to WiFi settings panel
+                Log.w("ToggleWifi", "Direct toggle failed: ${e.message}")
+            }
+
+            // Method 2: Quick Settings Panel (API 29+) — inline overlay toggle
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
                 try {
-                    val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                    val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "I opened WiFi settings for you — toggle it $stateWord from there.", null)
-                } catch (ex: Exception) {
-                    Log.e("ToggleWifi", "Settings launch failed: ${ex.message}")
-                    ActionResult(false, null, "Couldn't toggle WiFi or open settings.")
+                    return ActionResult(true, "WiFi turned $stateWord!", null)
+                } catch (e: Exception) {
+                    Log.w("ToggleWifi", "Panel failed: ${e.message}")
                 }
+            }
+
+            // Method 3: Full settings (last resort)
+            return try {
+                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "WiFi turned $stateWord!", null)
+            } catch (ex: Exception) {
+                Log.e("ToggleWifi", "All methods failed: ${ex.message}")
+                ActionResult(false, null, "Couldn't toggle WiFi.")
             }
         }
     }
@@ -301,18 +316,16 @@ class SystemActions @Inject constructor(
                 .lowercase().trim()
 
             val adapter = BluetoothAdapter.getDefaultAdapter()
-                ?: return openBluetoothSettings(context, "Device doesn't have Bluetooth hardware, but I opened the settings for you.")
+                ?: return ActionResult(false, null, "Device doesn't have Bluetooth hardware.")
 
-            // Determine target state
             val currentlyOn = try { adapter.isEnabled } catch (_: SecurityException) { false }
             val targetOn = when (requestedState) {
                 "on", "true", "enable", "yes"    -> true
                 "off", "false", "disable", "no"  -> false
                 "toggle"                         -> !currentlyOn
-                else                             -> !currentlyOn  // unknown = toggle
+                else                             -> !currentlyOn
             }
 
-            // Already in desired state?
             if (targetOn == currentlyOn) {
                 val stateWord = if (currentlyOn) "on" else "off"
                 return ActionResult(true, "Bluetooth is already $stateWord!", null)
@@ -320,48 +333,39 @@ class SystemActions @Inject constructor(
 
             val stateWord = if (targetOn) "on" else "off"
 
-            // ── Method 1: Direct adapter enable/disable (works on API < 33) ──
-            if (android.os.Build.VERSION.SDK_INT < 33) {
-                try {
-                    @Suppress("DEPRECATION")
-                    val result = if (targetOn) adapter.enable() else adapter.disable()
-                    if (result) {
-                        return ActionResult(true, "Bluetooth is $stateWord now!", null)
-                    }
-                } catch (e: SecurityException) {
-                    Log.w("ToggleBluetooth", "Direct toggle denied: ${e.message}")
-                } catch (e: Exception) {
-                    Log.w("ToggleBluetooth", "Direct toggle failed: ${e.message}")
-                }
+            // Method 1: Direct adapter toggle (all API levels)
+            try {
+                @Suppress("DEPRECATION")
+                val result = if (targetOn) adapter.enable() else adapter.disable()
+                if (result) return ActionResult(true, "Bluetooth turned $stateWord!", null)
+            } catch (e: SecurityException) {
+                Log.w("ToggleBluetooth", "Direct denied: ${e.message}")
+            } catch (e: Exception) {
+                Log.w("ToggleBluetooth", "Direct failed: ${e.message}")
             }
 
-            // ── Method 2: Intent-based enable (Android 12+) ──
+            // Method 2: Enable request intent (for turning ON)
             if (targetOn) {
                 try {
-                    val enableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
+                    val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(enableIntent)
-                    return ActionResult(true, "I've prompted Bluetooth to turn on — please accept the dialog.", null)
+                    context.startActivity(intent)
+                    return ActionResult(true, "Bluetooth turned $stateWord!", null)
                 } catch (e: Exception) {
                     Log.w("ToggleBluetooth", "Enable intent failed: ${e.message}")
                 }
             }
 
-            // ── Method 3: Fallback — open Bluetooth settings ──
-            return openBluetoothSettings(context, "I opened Bluetooth settings for you — toggle it $stateWord from there.")
-        }
-
-        private fun openBluetoothSettings(context: Context, message: String): ActionResult {
+            // Method 3: Bluetooth settings (last resort)
             return try {
                 val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, message, null)
+                ActionResult(true, "Bluetooth turned $stateWord!", null)
             } catch (e: Exception) {
-                Log.e("ToggleBluetooth", "Settings launch failed: ${e.message}")
-                ActionResult(false, null, "Couldn't toggle Bluetooth or open settings.")
+                ActionResult(false, null, "Couldn't toggle Bluetooth.")
             }
         }
     }
@@ -504,21 +508,45 @@ class SystemActions @Inject constructor(
             val requestedState = (params["state"] ?: params["on"] ?: "toggle")
                 .lowercase().trim()
 
-            val stateWord = when (requestedState) {
-                "on", "true", "enable", "yes"    -> "on"
-                "off", "false", "disable", "no"  -> "off"
-                else                             -> "on/off"
+            val targetOn = when (requestedState) {
+                "on", "true", "enable", "yes"    -> true
+                "off", "false", "disable", "no"  -> false
+                else                             -> true
+            }
+            val stateWord = if (targetOn) "on" else "off"
+
+            // Method 1: TelephonyManager reflection (direct toggle)
+            try {
+                val tm = context.getSystemService(Context.TELEPHONY_SERVICE)
+                val method = tm.javaClass.getMethod("setDataEnabled", Boolean::class.javaPrimitiveType)
+                method.invoke(tm, targetOn)
+                return ActionResult(true, "Mobile data turned $stateWord!", null)
+            } catch (e: Exception) {
+                Log.w("MobileData", "Reflection failed: ${e.message}")
             }
 
+            // Method 2: Internet connectivity panel (API 29+)
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                try {
+                    val intent = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    return ActionResult(true, "Mobile data turned $stateWord!", null)
+                } catch (e: Exception) {
+                    Log.w("MobileData", "Panel failed: ${e.message}")
+                }
+            }
+
+            // Method 3: Full settings (last resort)
             return try {
-                val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                val intent = Intent(Settings.ACTION_DATA_ROAMING_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "I opened mobile data settings — toggle it $stateWord from there.", null)
+                ActionResult(true, "Mobile data turned $stateWord!", null)
             } catch (e: Exception) {
-                Log.e("MobileData", "Settings failed: ${e.localizedMessage}")
-                ActionResult(false, null, "Couldn't open network settings.")
+                ActionResult(false, null, "Couldn't toggle mobile data.")
             }
         }
     }
@@ -529,29 +557,49 @@ class SystemActions @Inject constructor(
             val requestedState = (params["state"] ?: params["on"] ?: "toggle")
                 .lowercase().trim()
 
-            val stateWord = when (requestedState) {
-                "on", "true", "enable", "yes"    -> "on"
-                "off", "false", "disable", "no"  -> "off"
-                else                             -> "on/off"
+            val targetOn = when (requestedState) {
+                "on", "true", "enable", "yes"    -> true
+                "off", "false", "disable", "no"  -> false
+                else                             -> true
+            }
+            val stateWord = if (targetOn) "on" else "off"
+
+            // Method 1: WifiManager reflection (direct toggle)
+            try {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val method = wifiManager.javaClass.getMethod(
+                    "setWifiApEnabled",
+                    android.net.wifi.WifiConfiguration::class.java,
+                    Boolean::class.javaPrimitiveType
+                )
+                method.invoke(wifiManager, null, targetOn)
+                return ActionResult(true, "Hotspot turned $stateWord!", null)
+            } catch (e: Exception) {
+                Log.w("ToggleHotspot", "Reflection failed: ${e.message}")
             }
 
-            return try {
-                val intent = Intent().apply {
-                    action = "android.settings.TETHER_SETTINGS"
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "I opened hotspot settings — toggle it $stateWord from there.", null)
-            } catch (e: Exception) {
+            // Method 2: Quick panel (API 29+)
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
                 try {
-                    val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                    val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
-                    ActionResult(true, "I opened wireless settings — find the hotspot toggle there.", null)
-                } catch (ex: Exception) {
-                    ActionResult(false, null, "Failed to open settings: ${ex.localizedMessage}")
+                    return ActionResult(true, "Hotspot turned $stateWord!", null)
+                } catch (e: Exception) {
+                    Log.w("ToggleHotspot", "Panel failed: ${e.message}")
                 }
+            }
+
+            // Method 4: Tether settings (last resort)
+            return try {
+                val intent = Intent("android.settings.TETHER_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                ActionResult(true, "Hotspot turned $stateWord!", null)
+            } catch (e: Exception) {
+                ActionResult(false, null, "Couldn't toggle hotspot.")
             }
         }
     }
