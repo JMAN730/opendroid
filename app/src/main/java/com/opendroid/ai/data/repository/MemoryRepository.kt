@@ -78,6 +78,17 @@ class MemoryRepository @Inject constructor(
         memoryDao.clearMemoryByType(type.name)
     }
 
+    suspend fun getMemoriesByKeyPrefix(prefix: String): List<Memory> {
+        return memoryDao.getMemoriesByKeyPrefix(prefix).map { entity ->
+            Memory(
+                key = entity.key,
+                value = entity.value,
+                type = MemoryType.valueOf(entity.type),
+                timestamp = entity.timestamp
+            )
+        }
+    }
+
     suspend fun deleteExpiredMemories() {
         memoryDao.deleteExpiredMemories()
     }

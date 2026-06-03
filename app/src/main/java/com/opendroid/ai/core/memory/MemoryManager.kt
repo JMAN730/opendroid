@@ -23,6 +23,7 @@ class MemoryManager @Inject constructor(
     private val memoryExtractor: MemoryExtractor,
     private val conversationRepository: ConversationRepository,
     private val memoryRepository: MemoryRepository,
+    private val notificationIntelligence: NotificationIntelligence,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json { prettyPrint = true }
@@ -78,6 +79,24 @@ class MemoryManager @Inject constructor(
         val currentDate = dateFormat.format(now)
         val currentTime = timeFormat.format(now)
 
+        // Notification intelligence context
+        val notifSummary = try {
+            notificationIntelligence.getRecentNotificationSummary(5)
+        } catch (e: Exception) { "" }
+        val learnedPatterns = try {
+            notificationIntelligence.getLearnedPatterns()
+        } catch (e: Exception) { "" }
+        val notifSection = if (notifSummary.isNotBlank() || learnedPatterns.isNotBlank()) {
+            """
+            
+            [Recent Notifications]
+            $notifSummary
+            
+            [Learned Communication Patterns]
+            $learnedPatterns
+            """.trimIndent()
+        } else ""
+
         return """
             [Current Date & Time]
             Date: $currentDate
@@ -89,6 +108,7 @@ class MemoryManager @Inject constructor(
             [Working Session State]
             $activePlanStr
             Device State: Location=${workingMemory.locationContext}, Battery=${workingMemory.batteryLevel}%, WiFi=${workingMemory.wifiState}, Connection=${workingMemory.connectivity}, Internet=${if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE"}
+            $notifSection
         """.trimIndent()
     }
 

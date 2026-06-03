@@ -24,7 +24,7 @@ enum class ActionCategory {
     SYSTEM, COMMUNICATION, PRODUCTIVITY,
     INFORMATION, TRANSPORT, MEDIA,
     SHOPPING, FINANCE, SMART_HOME,
-    MACRO, ADVANCED, AGENT
+    MACRO, ADVANCED, AGENT, NOTIFICATION
 }
 
 object ActionSchema {
@@ -1048,6 +1048,29 @@ object ActionSchema {
             params = listOf(ParamDefinition("response", ParamType.STRING, true, "Conversational response")),
             examples = listOf("how are you", "tell me a joke", "what can you do"),
             category = ActionCategory.AGENT
+        ),
+
+        // ── NOTIFICATION ────────────────────────────────
+
+        ActionDefinition(
+            name = "READ_NOTIFICATIONS",
+            description = "Reads recent notifications from the device. Can filter by app.",
+            params = listOf(
+                ParamDefinition("app", ParamType.STRING, false, "App name to filter (whatsapp, sms, gmail, etc.)", defaultValue = ""),
+                ParamDefinition("count", ParamType.STRING, false, "Number of notifications to show", defaultValue = "10")
+            ),
+            examples = listOf("read my notifications", "show whatsapp messages", "any new messages?", "check notifications"),
+            category = ActionCategory.NOTIFICATION
+        ),
+        ActionDefinition(
+            name = "AUTO_REPLY_TOGGLE",
+            description = "Enables or disables auto-reply for messages",
+            params = listOf(
+                ParamDefinition("state", ParamType.ENUM, false, "Turn on or off", listOf("on", "off"), defaultValue = "on"),
+                ParamDefinition("app", ParamType.STRING, false, "Specific app (whatsapp, sms, email) or all", defaultValue = "")
+            ),
+            examples = listOf("turn on auto reply", "disable auto reply for whatsapp", "enable auto reply"),
+            category = ActionCategory.NOTIFICATION
         )
     )
 

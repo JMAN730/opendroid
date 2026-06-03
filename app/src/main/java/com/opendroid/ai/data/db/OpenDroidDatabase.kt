@@ -15,7 +15,9 @@ import com.opendroid.ai.data.db.entities.MemoryEntity
 import com.opendroid.ai.data.db.entities.PlanEntity
 import com.opendroid.ai.data.db.entities.TaskHistoryEntity
 
+import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.dao.UnknownActionDao
+import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 
 @Database(
@@ -25,9 +27,10 @@ import com.opendroid.ai.data.db.entities.UnknownActionEntity
         MemoryEntity::class,
         TaskHistoryEntity::class,
         MacroEntity::class,
-        UnknownActionEntity::class
+        UnknownActionEntity::class,
+        NotificationEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class OpenDroidDatabase : RoomDatabase() {
@@ -37,11 +40,32 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun taskHistoryDao(): TaskHistoryDao
     abstract fun macroDao(): MacroDao
     abstract fun unknownActionDao(): UnknownActionDao
+    abstract fun notificationDao(): NotificationDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE conversations ADD COLUMN contactPickerData TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        packageName TEXT NOT NULL,
+                        appName TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        category TEXT NOT NULL DEFAULT 'OTHER',
+                        isAutoReplied INTEGER NOT NULL DEFAULT 0,
+                        autoReplyText TEXT,
+                        contactName TEXT,
+                        isRead INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
             }
         }
     }

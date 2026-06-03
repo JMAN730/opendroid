@@ -38,6 +38,8 @@ fun SettingsScreen(
     onNavigateToHelpCenter: () -> Unit = {},
     onNavigateToLicense: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
+    onNavigateToAutoReply: () -> Unit = {},
+    onNavigateToNotificationHistory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
@@ -549,6 +551,88 @@ fun SettingsScreen(
                                 )
                             )
                         }
+                    }
+                }
+            }
+
+            // Auto-Reply Settings Card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentPurple.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToAutoReply() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🤖", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "AUTO-REPLY SETTINGS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentPurple
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Configure AI auto-reply for WhatsApp, SMS & Email.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Notification History Card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentCyan.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToNotificationHistory() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🔔", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "NOTIFICATION HISTORY",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "View captured notifications and auto-reply log.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
                     }
                 }
             }

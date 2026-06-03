@@ -85,6 +85,12 @@ fun OpenDroidNavigation(
                 },
                 onNavigateToAbout = {
                     navController.navigate("about")
+                },
+                onNavigateToAutoReply = {
+                    navController.navigate("auto_reply_settings")
+                },
+                onNavigateToNotificationHistory = {
+                    navController.navigate("notification_history")
                 }
             )
         }
@@ -138,6 +144,26 @@ fun OpenDroidNavigation(
                 }
             )
         }
+
+        composable("auto_reply_settings") {
+            val settingsRepo = hiltViewModel<SettingsViewModel>().settingsRepository
+            AutoReplySettingsScreen(
+                settingsRepository = settingsRepo,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable("notification_history") {
+            val notifDao = hiltViewModel<SettingsViewModel>().notificationDao
+            NotificationHistoryScreen(
+                notificationDao = notifDao,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
@@ -157,7 +183,9 @@ fun MainDashboard(
     onNavigateToTermsOfUse: () -> Unit,
     onNavigateToHelpCenter: () -> Unit,
     onNavigateToLicense: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    onNavigateToAbout: () -> Unit,
+    onNavigateToAutoReply: () -> Unit = {},
+    onNavigateToNotificationHistory: () -> Unit = {}
 ) {
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -241,7 +269,9 @@ fun MainDashboard(
                     onNavigateToTermsOfUse = onNavigateToTermsOfUse,
                     onNavigateToHelpCenter = onNavigateToHelpCenter,
                     onNavigateToLicense = onNavigateToLicense,
-                    onNavigateToAbout = onNavigateToAbout
+                    onNavigateToAbout = onNavigateToAbout,
+                    onNavigateToAutoReply = onNavigateToAutoReply,
+                    onNavigateToNotificationHistory = onNavigateToNotificationHistory
                 )
             }
         }

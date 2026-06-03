@@ -7,6 +7,7 @@ import com.opendroid.ai.data.db.dao.ConversationDao
 import com.opendroid.ai.data.db.dao.MacroDao
 import com.opendroid.ai.data.db.dao.MemoryDao
 import com.opendroid.ai.data.db.dao.PlanDao
+import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.dao.TaskHistoryDao
 import dagger.Module
 import dagger.Provides
@@ -29,7 +30,7 @@ object DatabaseModule {
             OpenDroidDatabase::class.java,
             "opendroid_database"
         )
-        .addMigrations(OpenDroidDatabase.MIGRATION_1_2)
+        .addMigrations(OpenDroidDatabase.MIGRATION_1_2, OpenDroidDatabase.MIGRATION_2_3)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -57,4 +58,8 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideUnknownActionDao(db: OpenDroidDatabase): UnknownActionDao = db.unknownActionDao()
+
+    @Provides
+    @Singleton
+    fun provideNotificationDao(db: OpenDroidDatabase): NotificationDao = db.notificationDao()
 }

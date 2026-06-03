@@ -18,7 +18,8 @@ import dagger.Lazy
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
+    val settingsRepository: SettingsRepository,
+    val notificationDao: com.opendroid.ai.data.db.dao.NotificationDao,
     private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>
 ) : ViewModel() {
 
