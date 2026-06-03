@@ -551,6 +551,43 @@ fun SettingsScreen(
                                 )
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(BorderColor)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (config.isDarkMode) "Dark Mode" else "Light Mode",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Switch between dark and light appearance.",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = config.isDarkMode,
+                                onCheckedChange = { viewModel.updateDarkMode(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = AccentNeonGreen,
+                                    checkedTrackColor = AccentNeonGreen.copy(alpha = 0.5f)
+                                )
+                            )
+                        }
                     }
                 }
             }

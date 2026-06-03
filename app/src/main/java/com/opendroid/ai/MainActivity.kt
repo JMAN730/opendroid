@@ -7,16 +7,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.opendroid.ai.core.service.OpenDroidService
+import com.opendroid.ai.data.repository.SettingsRepository
 import com.opendroid.ai.ui.OpenDroidNavigation
-import com.opendroid.ai.ui.theme.DarkBackground
+import com.opendroid.ai.ui.theme.AppTheme
 import com.opendroid.ai.ui.theme.OpenDroidTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,10 +33,14 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            OpenDroidTheme {
+            val config by settingsRepository.llmConfig.collectAsState(
+                initial = com.opendroid.ai.data.models.LLMConfig()
+            )
+
+            OpenDroidTheme(isDarkTheme = config.isDarkMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = DarkBackground
+                    color = AppTheme.colors.background
                 ) {
                     OpenDroidNavigation()
                 }
@@ -45,3 +55,4 @@ class MainActivity : ComponentActivity() {
         // For production autonomous helper, we keep the service running in background.
     }
 }
+

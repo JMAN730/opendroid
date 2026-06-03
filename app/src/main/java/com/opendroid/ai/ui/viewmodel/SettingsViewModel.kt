@@ -160,4 +160,13 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    fun updateDarkMode(enabled: Boolean) {
+        _llmConfig.value = _llmConfig.value.copy(isDarkMode = enabled)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                current.copy(isDarkMode = enabled)
+            }
+        }
+    }
 }

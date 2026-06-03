@@ -35,7 +35,7 @@ fun OpenDroidNavigation(
     NavHost(
         navController = navController,
         startDestination = "splash",
-        modifier = Modifier.fillMaxSize().background(DarkBackground)
+        modifier = Modifier.fillMaxSize().background(AppTheme.colors.background)
     ) {
         composable("splash") {
             val context = LocalContext.current
