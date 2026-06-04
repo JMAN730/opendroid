@@ -1,6 +1,6 @@
 package com.opendroid.ai.accessibility
 
-import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.delay
 
 object WhatsAppAutomator {
@@ -11,26 +11,39 @@ object WhatsAppAutomator {
         // Wait for screen transition
         delay(1500)
         
-        // WhatsApp text input id is usually "com.whatsapp:id/entry"
-        var typed = service.findAndTypeById("com.whatsapp:id/entry", message)
+        // Try to type the message (in case it wasn't pre-filled by the URI)
+        val typed = service.findAndTypeById("com.whatsapp:id/entry", message)
         if (!typed) {
-            // Fallback: search by type/text in active window
-            typed = service.findAndType("Type a message", message)
+            service.findAndType("Type a message", message)
         }
         
-        if (!typed) return false
+        delay(800)
         
-        delay(500)
+        // WhatsApp send button id is usually "com.whatsapp:id/send" or "com.whatsapp:id/send_button"
+        val sendButtonIds = listOf(
+            "com.whatsapp:id/send",
+            "com.whatsapp:id/send_button",
+            "com.whatsapp:id/button_send"
+        )
         
-        // WhatsApp send button id is usually "com.whatsapp:id/send"
-        var clicked = service.findAndClickById("com.whatsapp:id/send")
-        if (!clicked) {
-            // Try standard labels
-            clicked = service.findAndClick("Send") || 
+        for (id in sendButtonIds) {
+            if (service.findAndClickById(id)) {
+                Log.d("WhatsAppAutomator", "Successfully clicked send button by ID: $id")
+                return true
+            }
+        }
+        
+        // Fallback to clicking Send by text / content description
+        val clicked = service.findAndClick("Send") || 
                       service.findAndClick("send") || 
                       service.findAndClick("SEND")
+                      
+        if (clicked) {
+            Log.d("WhatsAppAutomator", "Successfully clicked send button by text label")
+            return true
         }
         
-        return clicked
+        Log.w("WhatsAppAutomator", "Could not click send button automatically")
+        return false
     }
 }

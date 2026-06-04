@@ -10,6 +10,8 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
+import com.opendroid.ai.accessibility.SmsAutomator
+import com.opendroid.ai.accessibility.CallAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ContactResolution
@@ -159,7 +161,7 @@ class CommunicationActions @Inject constructor(
 
     // ── Execution helpers ────────────────────────────────────
 
-    private fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
+    private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
         val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
         return try {
             val callUri = Uri.parse("tel:$cleanPhone")
@@ -174,6 +176,14 @@ class CommunicationActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
+                
+                val service = OpenDroidAccessibilityService.getInstance()
+                if (service != null) {
+                    val clicked = CallAutomator.automateCall()
+                    if (clicked) {
+                        return ActionResult(true, "Calling $contactLabel now!", null)
+                    }
+                }
                 ActionResult(true, "I've opened the dialer for $contactLabel — just tap call!", null, true)
             }
         } catch (e: SecurityException) {
@@ -182,6 +192,14 @@ class CommunicationActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(dialIntent)
+                
+                val service = OpenDroidAccessibilityService.getInstance()
+                if (service != null) {
+                    val clicked = CallAutomator.automateCall()
+                    if (clicked) {
+                        return ActionResult(true, "Calling $contactLabel now!", null)
+                    }
+                }
                 ActionResult(true, "Dialer is open — tap call to connect!", null, true)
             } catch (e2: Exception) {
                 Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
@@ -229,7 +247,7 @@ class CommunicationActions @Inject constructor(
         }
     }
 
-    private fun executeSms(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
+    private suspend fun executeSms(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
         return try {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                 try {
@@ -248,6 +266,15 @@ class CommunicationActions @Inject constructor(
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+
+            val service = OpenDroidAccessibilityService.getInstance()
+            if (service != null) {
+                val autoSent = SmsAutomator.automateSend()
+                if (autoSent) {
+                    return ActionResult(true, "Sent SMS to $contactLabel!", null)
+                }
+            }
+
             ActionResult(true, "I've opened your message to $contactLabel — just hit send!", null)
         } catch (e: Exception) {
             try {
@@ -257,6 +284,15 @@ class CommunicationActions @Inject constructor(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(fallbackIntent)
+
+                val service = OpenDroidAccessibilityService.getInstance()
+                if (service != null) {
+                    val autoSent = SmsAutomator.automateSend()
+                    if (autoSent) {
+                        return ActionResult(true, "Sent SMS to $contactLabel!", null)
+                    }
+                }
+
                 ActionResult(true, "Messaging app is open for $contactLabel.", null, true)
             } catch (e2: Exception) {
                 Log.e("SendSMS", "SMS failed: ${e2.localizedMessage}")
