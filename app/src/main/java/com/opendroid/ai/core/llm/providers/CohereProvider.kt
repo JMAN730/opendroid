@@ -35,7 +35,7 @@ class CohereProvider @Inject constructor(
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel in availableModels) config.activeModel else "command-r-plus"
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "command-r-plus"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,

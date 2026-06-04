@@ -35,7 +35,7 @@ class MistralProvider @Inject constructor(
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel in availableModels) config.activeModel else "mistral-large-latest"
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "mistral-large-latest"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,

@@ -39,12 +39,7 @@ class CopilotProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        // Copilot model selection mapping (fallback if user selected invalid model)
-        val selectedModel = if (config.activeModel in availableModels) {
-            config.activeModel
-        } else {
-            "gpt-4o"
-        }
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)

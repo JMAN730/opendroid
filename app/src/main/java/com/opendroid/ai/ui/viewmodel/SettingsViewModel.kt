@@ -33,10 +33,25 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateActiveProvider(provider: String) {
-        _llmConfig.value = _llmConfig.value.copy(activeProvider = provider)
+        val defaultModel = when (provider) {
+            "Google Gemini" -> "gemini-2.0-flash"
+            "OpenAI" -> "gpt-4o"
+            "Anthropic Claude" -> "claude-3-5-sonnet-20241022"
+            "OpenRouter" -> "google/gemini-2.0-flash-exp:free"
+            "Groq" -> "llama-3.3-70b-specdec"
+            "Together AI" -> "meta-llama/Llama-3-70b-chat-hf"
+            "DeepSeek" -> "deepseek-chat"
+            "Cohere" -> "command-r-plus"
+            "Ollama" -> "llama3"
+            "Copilot API" -> "gpt-4o"
+            "Custom OpenAI Compatible" -> "gpt-4o"
+            "Mistral AI" -> "mistral-large-latest"
+            else -> "gemini-2.0-flash"
+        }
+        _llmConfig.value = _llmConfig.value.copy(activeProvider = provider, activeModel = defaultModel)
         viewModelScope.launch {
             settingsRepository.updateConfig { current ->
-                current.copy(activeProvider = provider)
+                current.copy(activeProvider = provider, activeModel = defaultModel)
             }
         }
     }

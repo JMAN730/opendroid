@@ -35,7 +35,7 @@ class DeepSeekProvider @Inject constructor(
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel in availableModels) config.activeModel else "deepseek-chat"
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "deepseek-chat"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,

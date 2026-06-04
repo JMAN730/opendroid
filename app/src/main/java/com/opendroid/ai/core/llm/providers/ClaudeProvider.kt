@@ -33,8 +33,7 @@ class ClaudeProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        // Anthropic model selection mapping (fallback if user selected invalid model)
-        val selectedModel = if (config.activeModel in availableModels) {
+        val selectedModel = if (config.activeModel.isNotBlank()) {
             when (config.activeModel) {
                 "claude-opus-4" -> "claude-3-opus-20240229"
                 "claude-sonnet-4" -> "claude-3-5-sonnet-20241022"

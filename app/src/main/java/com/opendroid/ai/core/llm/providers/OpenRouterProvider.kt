@@ -35,7 +35,7 @@ class OpenRouterProvider @Inject constructor(
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel in availableModels) config.activeModel else "google/gemini-2.0-flash-exp:free"
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "google/gemini-2.0-flash-exp:free"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,

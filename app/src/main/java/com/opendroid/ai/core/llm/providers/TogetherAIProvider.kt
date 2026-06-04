@@ -35,7 +35,7 @@ class TogetherAIProvider @Inject constructor(
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel in availableModels) config.activeModel else "meta-llama/Llama-3-70b-chat-hf"
+        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "meta-llama/Llama-3-70b-chat-hf"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,
