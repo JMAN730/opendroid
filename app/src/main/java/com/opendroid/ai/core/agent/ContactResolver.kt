@@ -232,30 +232,41 @@ class ContactResolver @Inject constructor(
             }
 
             else -> {
-                // Multiple matches — check if they are all the SAME person
-                // (same display name, just different phone numbers)
-                val distinctNames = allMatches.map { it.name.lowercase().trim() }.distinct()
+                // Check if we have an exact case-insensitive match.
+                // If we do, and there's only one distinct contact name among exact matches,
+                // we bypass partial/fuzzy matches and return the exact match.
+                val exactMatches = allMatches.filter { it.name.equals(query, ignoreCase = true) }
+                val distinctExactNames = exactMatches.map { it.name.lowercase().trim() }.distinct()
 
-                if (distinctNames.size == 1) {
-                    // All matches are the same person — pick the highest-scored one
-                    Log.d(TAG, "  → All same name, using highest score: ${allMatches.first().name}")
-                    ContactResolution.Found(allMatches.first())
+                if (exactMatches.isNotEmpty() && distinctExactNames.size == 1) {
+                    Log.d(TAG, "  → Found exact match, bypassing partial matches: ${exactMatches.first().name}")
+                    ContactResolution.Found(exactMatches.first())
                 } else {
-                    // Multiple DIFFERENT people matched → ALWAYS show picker
-                    // Even if one is an exact match, user should choose
-                    Log.d(TAG, "  → ${distinctNames.size} different names — showing picker")
+                    // Multiple matches — check if they are all the SAME person
+                    // (same display name, just different phone numbers)
+                    val distinctNames = allMatches.map { it.name.lowercase().trim() }.distinct()
 
-                    // Deduplicate by name (keep highest score for each name)
-                    val deduped = allMatches
-                        .groupBy { it.name.lowercase().trim() }
-                        .map { (_, contacts) -> contacts.maxByOrNull { it.matchScore }!! }
-                        .sortedByDescending { it.matchScore }
-                        .take(5)
+                    if (distinctNames.size == 1) {
+                        // All matches are the same person — pick the highest-scored one
+                        Log.d(TAG, "  → All same name, using highest score: ${allMatches.first().name}")
+                        ContactResolution.Found(allMatches.first())
+                    } else {
+                        // Multiple DIFFERENT people matched → ALWAYS show picker
+                        // Even if one is an exact match, user should choose
+                        Log.d(TAG, "  → ${distinctNames.size} different names — showing picker")
 
-                    ContactResolution.Ambiguous(
-                        query = query,
-                        matches = deduped
-                    )
+                        // Deduplicate by name (keep highest score for each name)
+                        val deduped = allMatches
+                            .groupBy { it.name.lowercase().trim() }
+                            .map { (_, contacts) -> contacts.maxByOrNull { it.matchScore }!! }
+                            .sortedByDescending { it.matchScore }
+                            .take(5)
+
+                        ContactResolution.Ambiguous(
+                            query = query,
+                            matches = deduped
+                        )
+                    }
                 }
             }
         }

@@ -241,9 +241,20 @@ class AutoReplyEngine @Inject constructor(
             }
             // SMS
             notification.category == "MESSAGE" -> {
-                // Try to extract phone number from notification or contact resolver
-                val phone = notification.contactName ?: return false
-                replyDispatcher.replyViaSms(phone, replyText, context)
+                // 1. Try to reply via notification action first (e.g. Google Messages / Samsung Messages inline reply)
+                if (sbn != null && replyDispatcher.replyViaNotificationAction(sbn, replyText)) {
+                    true
+                } else {
+                    // 2. Fallback to direct SMS send via phone number if the contact matches a phone number pattern
+                    val contact = notification.contactName ?: notification.title
+                    val phoneRegex = Regex("""^\+?[0-9\s\-()]{7,20}$""")
+                    if (phoneRegex.matches(contact.trim())) {
+                        replyDispatcher.replyViaSms(contact.trim(), replyText, context)
+                    } else {
+                        Log.w(TAG, "SMS direct reply skipped: Contact name is not a valid phone number ($contact) and no notification reply action was available")
+                        false
+                    }
+                }
             }
             // Email
             notification.category == "EMAIL" -> {

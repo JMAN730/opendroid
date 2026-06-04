@@ -1,6 +1,7 @@
 package com.opendroid.ai.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
+import com.opendroid.ai.ui.theme.AppTheme
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,6 +46,8 @@ fun NotificationHistoryScreen(
     val repliedCount = notifications.count { it.isAutoReplied }
     val messageCount = notifications.count { it.category == "MESSAGE" }
 
+    val themeColors = AppTheme.colors
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -58,17 +61,18 @@ fun NotificationHistoryScreen(
                     IconButton(onClick = {
                         scope.launch { notificationDao.clearAll() }
                     }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear All", tint = Color.White.copy(alpha = 0.7f))
+                        Icon(Icons.Default.Delete, contentDescription = "Clear All", tint = themeColors.textSecondary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1A2E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
+                    containerColor = themeColors.surface,
+                    titleContentColor = themeColors.textPrimary,
+                    navigationIconContentColor = themeColors.textPrimary
+                ),
+                modifier = Modifier.border(0.5.dp, themeColors.borderColor.copy(alpha = 0.5f))
             )
         },
-        containerColor = Color(0xFF0F0F23)
+        containerColor = themeColors.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -82,9 +86,9 @@ fun NotificationHistoryScreen(
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StatChip("📋 $totalCount", "Total", Modifier.weight(1f))
-                StatChip("💬 $messageCount", "Messages", Modifier.weight(1f))
-                StatChip("🤖 $repliedCount", "Replied", Modifier.weight(1f))
+                StatChip("📋 $totalCount", "Total", themeColors, Modifier.weight(1f))
+                StatChip("💬 $messageCount", "Messages", themeColors, Modifier.weight(1f))
+                StatChip("🤖 $repliedCount", "Replied", themeColors, Modifier.weight(1f))
             }
 
             // Filter Chips
@@ -105,12 +109,17 @@ fun NotificationHistoryScreen(
                             )
                         },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF6C63FF),
+                            selectedContainerColor = themeColors.accentPurple,
                             selectedLabelColor = Color.White,
-                            containerColor = Color(0xFF1A1A2E),
-                            labelColor = Color.White.copy(alpha = 0.7f)
+                            containerColor = themeColors.cardBackground,
+                            labelColor = themeColors.textSecondary
                         ),
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.border(
+                            1.dp,
+                            if (selectedFilter == filter) Color.Transparent else themeColors.borderColor,
+                            RoundedCornerShape(20.dp)
+                        )
                     )
                 }
             }
@@ -128,12 +137,13 @@ fun NotificationHistoryScreen(
                         Text(
                             "No notifications captured yet",
                             fontSize = 16.sp,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = themeColors.textSecondary
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Grant notification access in Settings",
                             fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.3f)
+                            color = themeColors.textSecondary.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -144,7 +154,7 @@ fun NotificationHistoryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredNotifications) { notification ->
-                        NotificationCard(notification)
+                        NotificationCard(notification, themeColors)
                     }
                 }
             }
@@ -153,24 +163,32 @@ fun NotificationHistoryScreen(
 }
 
 @Composable
-private fun StatChip(value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatChip(
+    value: String,
+    label: String,
+    themeColors: com.opendroid.ai.ui.theme.OpenDroidColors,
+    modifier: Modifier = Modifier
+) {
     Card(
-        modifier = modifier,
+        modifier = modifier.border(1.dp, themeColors.borderColor, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A2E))
+        colors = CardDefaults.cardColors(containerColor = themeColors.cardBackground)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(label, fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = themeColors.textPrimary)
+            Text(label, fontSize = 11.sp, color = themeColors.textSecondary)
         }
     }
 }
 
 @Composable
-private fun NotificationCard(notification: NotificationEntity) {
+private fun NotificationCard(
+    notification: NotificationEntity,
+    themeColors: com.opendroid.ai.ui.theme.OpenDroidColors
+) {
     val dateFormat = remember { java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault()) }
     val timeText = dateFormat.format(java.util.Date(notification.timestamp))
 
@@ -183,9 +201,14 @@ private fun NotificationCard(notification: NotificationEntity) {
     }
 
     Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, themeColors.borderColor, RoundedCornerShape(14.dp)),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (notification.isAutoReplied) Color(0xFF1B2838) else Color(0xFF1A1A2E)
+            containerColor = if (notification.isAutoReplied) {
+                themeColors.accentPurple.copy(alpha = 0.08f)
+            } else {
+                themeColors.cardBackground
+            }
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -201,13 +224,13 @@ private fun NotificationCard(notification: NotificationEntity) {
                         notification.appName,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF6C63FF)
+                        color = themeColors.accentPurple
                     )
                 }
                 Text(
                     timeText,
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.4f)
+                    color = themeColors.textSecondary.copy(alpha = 0.7f)
                 )
             }
 
@@ -217,13 +240,13 @@ private fun NotificationCard(notification: NotificationEntity) {
                 notification.contactName ?: notification.title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White
+                color = themeColors.textPrimary
             )
 
             Text(
                 notification.text,
                 fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.7f),
+                color = themeColors.textSecondary,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
@@ -234,14 +257,14 @@ private fun NotificationCard(notification: NotificationEntity) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF6C63FF).copy(alpha = 0.15f))
+                        .background(themeColors.accentPurple.copy(alpha = 0.15f))
                         .padding(8.dp)
                 ) {
                     Text("🤖 ", fontSize = 13.sp)
                     Text(
                         notification.autoReplyText,
                         fontSize = 13.sp,
-                        color = Color(0xFF9C95FF),
+                        color = themeColors.accentPurple,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
