@@ -146,7 +146,7 @@ fun OpenDroidNavigation(
         }
 
         composable("auto_reply_settings") {
-            val settingsRepo = hiltViewModel<SettingsViewModel>().settingsRepository
+            val settingsRepo = hiltViewModel<AutoReplyViewModel>().settingsRepository
             AutoReplySettingsScreen(
                 settingsRepository = settingsRepo,
                 onBack = {
@@ -156,7 +156,7 @@ fun OpenDroidNavigation(
         }
 
         composable("notification_history") {
-            val notifDao = hiltViewModel<SettingsViewModel>().notificationDao
+            val notifDao = hiltViewModel<NotificationHistoryViewModel>().notificationDao
             NotificationHistoryScreen(
                 notificationDao = notifDao,
                 onBack = {

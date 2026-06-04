@@ -200,17 +200,20 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        ExposedDropdownMenuBox(
-                            expanded = modelDropdownExpanded,
-                            onExpandedChange = { modelDropdownExpanded = it }
-                        ) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             OutlinedTextField(
                                 value = config.activeModel,
                                 onValueChange = { viewModel.updateActiveModel(it) },
                                 label = { Text("Active LLM Model", fontSize = 12.sp) },
                                 singleLine = true,
                                 trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
+                                    IconButton(onClick = { modelDropdownExpanded = !modelDropdownExpanded }) {
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Show models dropdown",
+                                            tint = AccentNeonGreen
+                                        )
+                                    }
                                 },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = AccentNeonGreen,
@@ -218,16 +221,15 @@ fun SettingsScreen(
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
                                 ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor()
+                                modifier = Modifier.fillMaxWidth()
                             )
 
                             if (fetchedModels.isNotEmpty()) {
-                                ExposedDropdownMenu(
+                                DropdownMenu(
                                     expanded = modelDropdownExpanded,
                                     onDismissRequest = { modelDropdownExpanded = false },
                                     modifier = Modifier
+                                        .fillMaxWidth(0.85f)
                                         .background(CardBackground)
                                         .border(1.dp, BorderColor)
                                 ) {
