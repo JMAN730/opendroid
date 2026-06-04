@@ -1,5 +1,14 @@
 package com.opendroid.ai.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,18 +38,48 @@ fun AutoReplySettingsScreen(
     settingsRepository: SettingsRepository,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var config by remember { mutableStateOf(AutoReplyConfig()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    var isNotificationPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
+    var isAccessibilityPermissionGranted by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isNotificationPermissionGranted = isNotificationServiceEnabled(context)
+                isAccessibilityPermissionGranted = isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(Unit) {
         config = settingsRepository.autoReplyConfig.first()
         isLoading = false
     }
 
-    fun saveConfig(newConfig: AutoReplyConfig) {
+    var dbWriteJob by remember { mutableStateOf<Job?>(null) }
+
+    fun saveConfig(newConfig: AutoReplyConfig, debounce: Boolean = false) {
         config = newConfig
-        scope.launch { settingsRepository.updateAutoReplyConfig(newConfig) }
+        dbWriteJob?.cancel()
+        dbWriteJob = scope.launch {
+            if (debounce) {
+                delay(1000)
+            }
+            try {
+                settingsRepository.updateAutoReplyConfig(newConfig)
+            } catch (e: Exception) {
+                android.util.Log.e("AutoReplySettings", "Failed to save config: ${e.message}", e)
+            }
+        }
     }
 
     val themeColors = AppTheme.colors
@@ -77,6 +116,70 @@ fun AutoReplySettingsScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Permission Warning Card
+                if (!isNotificationPermissionGranted || !isAccessibilityPermissionGranted) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, themeColors.accentRed, RoundedCornerShape(16.dp)),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = themeColors.accentRed.copy(alpha = 0.08f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "SYSTEM PERMISSIONS REQUIRED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = themeColors.accentRed,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Auto-Reply needs notification access to monitor incoming messages and accessibility access to automate typing & sending replies.",
+                                fontSize = 13.sp,
+                                color = themeColors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (!isNotificationPermissionGranted) {
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                                            } catch (e: Exception) {
+                                                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = themeColors.accentRed),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Grant Notification Access", fontSize = 10.sp, color = Color.White)
+                                    }
+                                }
+                                if (!isAccessibilityPermissionGranted) {
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                            } catch (e: Exception) {
+                                                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = themeColors.accentPurple),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Grant Accessibility Access", fontSize = 10.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Global Toggle Card
                 Card(
                     modifier = Modifier
@@ -283,7 +386,7 @@ fun AutoReplySettingsScreen(
                             OutlinedTextField(
                                 value = config.customPrompt ?: "",
                                 onValueChange = {
-                                    saveConfig(config.copy(customPrompt = it.ifBlank { null }))
+                                    saveConfig(config.copy(customPrompt = it.ifBlank { null }), debounce = true)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = {
@@ -341,4 +444,30 @@ private fun AppToggleRow(
             )
         )
     }
+}
+
+private fun isNotificationServiceEnabled(context: Context): Boolean {
+    val pkgName = context.packageName
+    val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    if (!flat.isNullOrEmpty()) {
+        val names = flat.split(":")
+        for (name in names) {
+            val cn = android.content.ComponentName.unflattenFromString(name)
+            if (cn != null) {
+                if (cn.packageName == pkgName) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+private fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    if (com.opendroid.ai.accessibility.OpenDroidAccessibilityService.getInstance() != null) {
+        return true
+    }
+    val expectedComponentName = android.content.ComponentName(context, com.opendroid.ai.accessibility.OpenDroidAccessibilityService::class.java).flattenToString()
+    val enabledServicesSetting = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+    return enabledServicesSetting.contains(expectedComponentName)
 }
