@@ -82,6 +82,16 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun saveModelCache(provider: String, models: List<com.opendroid.ai.core.llm.AIModel>) {
+        updateConfig { current ->
+            val cache = current.modelCache.toMutableMap()
+            cache[provider] = models
+            val fetchMap = current.lastModelFetch.toMutableMap()
+            fetchMap[provider] = System.currentTimeMillis()
+            current.copy(modelCache = cache, lastModelFetch = fetchMap)
+        }
+    }
+
     suspend fun updateAutoReplyConfig(config: AutoReplyConfig) {
         context.dataStore.edit { preferences ->
             preferences[autoReplyGlobalKey] = config.globalEnabled

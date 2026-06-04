@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -158,22 +159,158 @@ fun SettingsScreen(
                             }
                         }
 
+                        val modelsLoading by viewModel.modelsLoading.collectAsState()
+                        val fetchedModels = config.modelCache[config.activeProvider] ?: emptyList()
+                        var modelDropdownExpanded by remember { mutableStateOf(false) }
+
                         Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // Active Model Text Field
-                        OutlinedTextField(
-                            value = config.activeModel,
-                            onValueChange = { viewModel.updateActiveModel(it) },
-                            label = { Text("Active LLM Model", fontSize = 12.sp) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentNeonGreen,
-                                unfocusedBorderColor = BorderColor,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ACTIVE MODEL",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentNeonGreen
+                            )
+                            if (modelsLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = AccentNeonGreen,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                IconButton(
+                                    onClick = { viewModel.refreshModels(force = true) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh models",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        ExposedDropdownMenuBox(
+                            expanded = modelDropdownExpanded,
+                            onExpandedChange = { modelDropdownExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = config.activeModel,
+                                onValueChange = { viewModel.updateActiveModel(it) },
+                                label = { Text("Active LLM Model", fontSize = 12.sp) },
+                                singleLine = true,
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AccentNeonGreen,
+                                    unfocusedBorderColor = BorderColor,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+
+                            if (fetchedModels.isNotEmpty()) {
+                                ExposedDropdownMenu(
+                                    expanded = modelDropdownExpanded,
+                                    onDismissRequest = { modelDropdownExpanded = false },
+                                    modifier = Modifier
+                                        .background(CardBackground)
+                                        .border(1.dp, BorderColor)
+                                ) {
+                                    fetchedModels.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = model.displayName,
+                                                        color = TextPrimary,
+                                                        fontSize = 14.sp
+                                                    )
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        if (model.isRecommended) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(
+                                                                        AccentNeonGreen.copy(alpha = 0.15f),
+                                                                        RoundedCornerShape(4.dp)
+                                                                    )
+                                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "REC",
+                                                                    color = AccentNeonGreen,
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                )
+                                                            }
+                                                        }
+                                                        if (model.isFree) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(
+                                                                        AccentCyan.copy(alpha = 0.15f),
+                                                                        RoundedCornerShape(4.dp)
+                                                                    )
+                                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "FREE",
+                                                                    color = AccentCyan,
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                )
+                                                            }
+                                                        }
+                                                        if (model.isPremium) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(
+                                                                        Color(0xFFFFD700).copy(alpha = 0.15f),
+                                                                        RoundedCornerShape(4.dp)
+                                                                    )
+                                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "PRO",
+                                                                    color = Color(0xFFFFD700),
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            onClick = {
+                                                viewModel.updateActiveModel(model.id)
+                                                modelDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

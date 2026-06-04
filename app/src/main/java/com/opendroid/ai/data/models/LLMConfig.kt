@@ -1,6 +1,7 @@
 package com.opendroid.ai.data.models
 
 import kotlinx.serialization.Serializable
+import com.opendroid.ai.core.llm.AIModel
 
 @Serializable
 data class LLMConfig(
@@ -16,6 +17,8 @@ data class LLMConfig(
     val copilotUrl: String = "http://10.0.2.2:4141",
     val multiAgentModeEnabled: Boolean = false,
     val showFloatingButton: Boolean = true,
-    val isDarkMode: Boolean = true
+    val isDarkMode: Boolean = true,
+    val lastModelFetch: Map<String, Long> = emptyMap(), // Provider -> last fetch timestamp
+    val modelCache: Map<String, List<AIModel>> = emptyMap() // Provider -> cached AIModels list
 )
 

@@ -20,15 +20,57 @@ import dagger.Lazy
 class SettingsViewModel @Inject constructor(
     val settingsRepository: SettingsRepository,
     val notificationDao: com.opendroid.ai.data.db.dao.NotificationDao,
-    private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>
+    private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>,
+    private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>
 ) : ViewModel() {
 
     private val _llmConfig = MutableStateFlow(LLMConfig())
     val llmConfig: StateFlow<LLMConfig> = _llmConfig
 
+    private val _modelsLoading = MutableStateFlow(false)
+    val modelsLoading: StateFlow<Boolean> = _modelsLoading
+
     init {
         viewModelScope.launch {
-            _llmConfig.value = settingsRepository.llmConfig.first()
+            settingsRepository.llmConfig.collect { config ->
+                _llmConfig.value = config
+            }
+        }
+        viewModelScope.launch {
+            // Wait for initial config loading
+            settingsRepository.llmConfig.first()
+            refreshModels(force = false)
+        }
+    }
+
+    fun refreshModels(force: Boolean = false) {
+        viewModelScope.launch {
+            val config = _llmConfig.value
+            val provider = config.activeProvider
+            
+            // Check cache time limit (1 hour) unless forced
+            val lastFetch = config.lastModelFetch[provider] ?: 0L
+            val cacheExists = config.modelCache[provider]?.isNotEmpty() == true
+            val cacheExpired = System.currentTimeMillis() - lastFetch > 60 * 60 * 1000
+            
+            if (force || !cacheExists || cacheExpired) {
+                _modelsLoading.value = true
+                val result = modelFetcher.get().fetchModels(provider)
+                result.onSuccess { models ->
+                    settingsRepository.saveModelCache(provider, models)
+                    
+                    // Auto-select recommended model if current model is blank or not in fetched list
+                    val currentModel = config.activeModel
+                    val modelExists = models.any { it.id == currentModel }
+                    if (!modelExists || currentModel.isBlank()) {
+                        val recommended = models.find { it.isRecommended } ?: models.firstOrNull()
+                        recommended?.let {
+                            updateActiveModel(it.id)
+                        }
+                    }
+                }
+                _modelsLoading.value = false
+            }
         }
     }
 
@@ -53,6 +95,7 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.updateConfig { current ->
                 current.copy(activeProvider = provider, activeModel = defaultModel)
             }
+            refreshModels(force = false)
         }
     }
 
@@ -74,6 +117,9 @@ class SettingsViewModel @Inject constructor(
                 val currentKeys = current.apiKeys.toMutableMap()
                 currentKeys[providerName] = key
                 current.copy(apiKeys = currentKeys)
+            }
+            if (providerName == _llmConfig.value.activeProvider) {
+                refreshModels(force = true)
             }
         }
     }
