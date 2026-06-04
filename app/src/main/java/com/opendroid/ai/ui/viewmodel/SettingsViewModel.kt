@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 import com.opendroid.ai.core.llm.LLMRequest
@@ -29,6 +31,14 @@ class SettingsViewModel @Inject constructor(
 
     private val _modelsLoading = MutableStateFlow(false)
     val modelsLoading: StateFlow<Boolean> = _modelsLoading
+
+    private val apiKeyUpdateJobs = mutableMapOf<String, Job>()
+    private var activeModelJob: Job? = null
+    private var elevenLabsApiKeyJob: Job? = null
+    private var elevenLabsVoiceIdJob: Job? = null
+    private var ollamaUrlJob: Job? = null
+    private var copilotUrlJob: Job? = null
+    private var customEndpointJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -101,7 +111,9 @@ class SettingsViewModel @Inject constructor(
 
     fun updateActiveModel(model: String) {
         _llmConfig.value = _llmConfig.value.copy(activeModel = model)
-        viewModelScope.launch {
+        activeModelJob?.cancel()
+        activeModelJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 current.copy(activeModel = model)
             }
@@ -112,7 +124,10 @@ class SettingsViewModel @Inject constructor(
         val keys = _llmConfig.value.apiKeys.toMutableMap()
         keys[providerName] = key
         _llmConfig.value = _llmConfig.value.copy(apiKeys = keys)
-        viewModelScope.launch {
+        
+        apiKeyUpdateJobs[providerName]?.cancel()
+        apiKeyUpdateJobs[providerName] = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 val currentKeys = current.apiKeys.toMutableMap()
                 currentKeys[providerName] = key
@@ -126,7 +141,9 @@ class SettingsViewModel @Inject constructor(
 
     fun updateElevenLabsApiKey(key: String) {
         _llmConfig.value = _llmConfig.value.copy(elevenLabsApiKey = key)
-        viewModelScope.launch {
+        elevenLabsApiKeyJob?.cancel()
+        elevenLabsApiKeyJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 current.copy(elevenLabsApiKey = key)
             }
@@ -135,7 +152,9 @@ class SettingsViewModel @Inject constructor(
 
     fun updateElevenLabsVoiceId(voiceId: String) {
         _llmConfig.value = _llmConfig.value.copy(elevenLabsVoiceId = voiceId)
-        viewModelScope.launch {
+        elevenLabsVoiceIdJob?.cancel()
+        elevenLabsVoiceIdJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 current.copy(elevenLabsVoiceId = voiceId)
             }
@@ -144,7 +163,9 @@ class SettingsViewModel @Inject constructor(
 
     fun updateOllamaUrl(url: String) {
         _llmConfig.value = _llmConfig.value.copy(ollamaUrl = url)
-        viewModelScope.launch {
+        ollamaUrlJob?.cancel()
+        ollamaUrlJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 current.copy(ollamaUrl = url)
             }
@@ -153,7 +174,9 @@ class SettingsViewModel @Inject constructor(
 
     fun updateCopilotUrl(url: String) {
         _llmConfig.value = _llmConfig.value.copy(copilotUrl = url)
-        viewModelScope.launch {
+        copilotUrlJob?.cancel()
+        copilotUrlJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 current.copy(copilotUrl = url)
             }
@@ -164,7 +187,10 @@ class SettingsViewModel @Inject constructor(
         val endpoints = _llmConfig.value.customEndpoints.toMutableMap()
         endpoints[providerName] = url
         _llmConfig.value = _llmConfig.value.copy(customEndpoints = endpoints)
-        viewModelScope.launch {
+        
+        customEndpointJob?.cancel()
+        customEndpointJob = viewModelScope.launch {
+            delay(1000)
             settingsRepository.updateConfig { current ->
                 val currentEndpoints = current.customEndpoints.toMutableMap()
                 currentEndpoints[providerName] = url
