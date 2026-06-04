@@ -4,6 +4,52 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
+## v1.0.1 — Notification Intelligence & Theme Update
+
+### 🔔 Notification Intelligence & Auto-Reply
+*   **NotificationListenerService**: Intercepts all system notifications in real-time, persists them to a local Room database for analysis and recall.
+*   **AI Auto-Reply Engine**: Automatically generates contextual replies for WhatsApp, SMS, and Email using the active LLM provider.
+    *   Configurable 1–60 minute reply delay (default: 15 minutes).
+    *   Per-app toggles (WhatsApp, SMS, Email) and global master toggle.
+    *   Rate-limiting (max replies per contact per hour).
+    *   Contact blacklist/whitelist support.
+    *   Custom reply tone/style prompt.
+*   **Reply Dispatcher**: Dispatches replies via Android `RemoteInput` (WhatsApp inline reply) and `SmsManager` (SMS).
+*   **Pattern Learning**: `NotificationIntelligence` analyzes communication patterns (top contacts, peak hours, app usage) and stores them as semantic memories for adaptive agent behavior.
+*   **New Actions**: `READ_NOTIFICATIONS` and `AUTO_REPLY_TOGGLE` added to ActionSchema, accessible via natural language ("read my notifications", "turn on auto reply").
+
+### 🎨 Light & Dark Theme
+*   **Dynamic Theme System**: Added `OpenDroidColors` palette with `CompositionLocal` provider for runtime theme switching.
+*   **Light Mode**: Clean, GitHub-inspired light palette with proper contrast and readability.
+*   **Dark Mode**: Existing dark theme preserved as default.
+*   **Live Toggle**: Settings → Planning & Automation → Dark/Light Mode switch. Changes apply instantly without restart.
+*   **Status Bar Adaptation**: Status bar and navigation bar icons automatically adjust for light/dark appearance.
+
+### 📱 New UI Screens
+*   **Auto-Reply Settings Screen**: Full configuration UI with toggles, delay slider, rate limit, and custom tone prompt.
+*   **Notification History Screen**: View all captured notifications with filter chips (All/Message/Email/Social/Replied), stats dashboard, and auto-reply log.
+*   **Settings Navigation**: Two new cards in Settings for "Auto-Reply Settings" and "Notification History".
+
+### 🛠️ Technical Changes
+*   **Database**: Room migration v2→v3 adding `notifications` table.
+*   **DI**: `NotificationDao`, `AutoReplyEngine`, `NotificationIntelligence`, `NotificationActions` registered in Hilt.
+*   **Manifest**: Registered `OpenDroidNotificationListener` service with `BIND_NOTIFICATION_LISTENER_SERVICE` permission.
+*   **MemoryManager**: Now includes notification context and learned communication patterns in LLM context window.
+*   **ActionDispatcher**: Registered `NotificationActions` (READ_NOTIFICATIONS, AUTO_REPLY_TOGGLE).
+
+### 📦 Release Assets
+*   **`app-release.apk`** — Signed production APK.
+*   **`app-release.aab`** — Signed Android App Bundle.
+
+### 🔑 Build Configuration
+*   **Package**: `com.opendroid.ai`
+*   **Version Code**: 2
+*   **Version Name**: 1.0.1
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 34 (Android 14)
+
+---
+
 ## v1.0.0 — Production Release
 
 First official production release of OpenDroid, targeting Google Play Store, Amazon Appstore, Samsung Galaxy Store, and other Android app marketplaces.
@@ -46,8 +92,6 @@ First official production release of OpenDroid, targeting Google Play Store, Ama
 *   Encrypted API key storage using AndroidX Security Crypto.
 *   Scoped network security — cleartext HTTP restricted to localhost only.
 *   Backup exclusion for encrypted preferences.
-
----
 
 ### 📦 Release Assets
 *   **`app-release.apk`** — Signed production APK (for sideloading and non-Play stores).

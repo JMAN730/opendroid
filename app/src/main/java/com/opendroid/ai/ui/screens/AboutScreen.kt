@@ -126,7 +126,7 @@ fun AboutScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "Version 1.0.0",
+                            text = "Version 1.0.1",
                             fontSize = 12.sp,
                             color = TextSecondary,
                             fontFamily = FontFamily.Monospace
