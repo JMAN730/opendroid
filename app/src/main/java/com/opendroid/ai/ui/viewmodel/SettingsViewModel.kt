@@ -55,30 +55,39 @@ class SettingsViewModel @Inject constructor(
 
     fun refreshModels(force: Boolean = false) {
         viewModelScope.launch {
-            val config = _llmConfig.value
-            val provider = config.activeProvider
-            
-            // Check cache time limit (1 hour) unless forced
-            val lastFetch = config.lastModelFetch[provider] ?: 0L
-            val cacheExists = config.modelCache[provider]?.isNotEmpty() == true
-            val cacheExpired = System.currentTimeMillis() - lastFetch > 60 * 60 * 1000
-            
-            if (force || !cacheExists || cacheExpired) {
-                _modelsLoading.value = true
-                val result = modelFetcher.get().fetchModels(provider)
-                result.onSuccess { models ->
-                    settingsRepository.saveModelCache(provider, models)
-                    
-                    // Auto-select recommended model if current model is blank or not in fetched list
-                    val currentModel = config.activeModel
-                    val modelExists = models.any { it.id == currentModel }
-                    if (!modelExists || currentModel.isBlank()) {
-                        val recommended = models.find { it.isRecommended } ?: models.firstOrNull()
-                        recommended?.let {
-                            updateActiveModel(it.id)
+            try {
+                val config = _llmConfig.value
+                val provider = config.activeProvider
+                
+                // Check cache time limit (1 hour) unless forced
+                val lastFetch = config.lastModelFetch[provider] ?: 0L
+                val cacheExists = config.modelCache[provider]?.isNotEmpty() == true
+                val cacheExpired = System.currentTimeMillis() - lastFetch > 60 * 60 * 1000
+                
+                if (force || !cacheExists || cacheExpired) {
+                    _modelsLoading.value = true
+                    val result = modelFetcher.get().fetchModels(provider)
+                    result.onSuccess { models ->
+                        try {
+                            settingsRepository.saveModelCache(provider, models)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SettingsViewModel", "Failed to save model cache: ${e.message}", e)
+                        }
+                        
+                        // Auto-select recommended model if current model is blank or not in fetched list
+                        val currentModel = config.activeModel
+                        val modelExists = models.any { it.id == currentModel }
+                        if (!modelExists || currentModel.isBlank()) {
+                            val recommended = models.find { it.isRecommended } ?: models.firstOrNull()
+                            recommended?.let {
+                                updateActiveModel(it.id)
+                            }
                         }
                     }
+                    _modelsLoading.value = false
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to refresh models: ${e.message}", e)
                 _modelsLoading.value = false
             }
         }
@@ -102,10 +111,14 @@ class SettingsViewModel @Inject constructor(
         }
         _llmConfig.value = _llmConfig.value.copy(activeProvider = provider, activeModel = defaultModel)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
-                current.copy(activeProvider = provider, activeModel = defaultModel)
+            try {
+                settingsRepository.updateConfig { current ->
+                    current.copy(activeProvider = provider, activeModel = defaultModel)
+                }
+                refreshModels(force = false)
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update active provider: ${e.message}", e)
             }
-            refreshModels(force = false)
         }
     }
 
@@ -113,9 +126,13 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = _llmConfig.value.copy(activeModel = model)
         activeModelJob?.cancel()
         activeModelJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                current.copy(activeModel = model)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(activeModel = model)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update active model: ${e.message}", e)
             }
         }
     }
@@ -127,14 +144,18 @@ class SettingsViewModel @Inject constructor(
         
         apiKeyUpdateJobs[providerName]?.cancel()
         apiKeyUpdateJobs[providerName] = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                val currentKeys = current.apiKeys.toMutableMap()
-                currentKeys[providerName] = key
-                current.copy(apiKeys = currentKeys)
-            }
-            if (providerName == _llmConfig.value.activeProvider) {
-                refreshModels(force = true)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    val currentKeys = current.apiKeys.toMutableMap()
+                    currentKeys[providerName] = key
+                    current.copy(apiKeys = currentKeys)
+                }
+                if (providerName == _llmConfig.value.activeProvider) {
+                    refreshModels(force = true)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update API Key: ${e.message}", e)
             }
         }
     }
@@ -143,9 +164,13 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = _llmConfig.value.copy(elevenLabsApiKey = key)
         elevenLabsApiKeyJob?.cancel()
         elevenLabsApiKeyJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                current.copy(elevenLabsApiKey = key)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(elevenLabsApiKey = key)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs API Key: ${e.message}", e)
             }
         }
     }
@@ -154,9 +179,13 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = _llmConfig.value.copy(elevenLabsVoiceId = voiceId)
         elevenLabsVoiceIdJob?.cancel()
         elevenLabsVoiceIdJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                current.copy(elevenLabsVoiceId = voiceId)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(elevenLabsVoiceId = voiceId)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs Voice ID: ${e.message}", e)
             }
         }
     }
@@ -165,9 +194,13 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = _llmConfig.value.copy(ollamaUrl = url)
         ollamaUrlJob?.cancel()
         ollamaUrlJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                current.copy(ollamaUrl = url)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(ollamaUrl = url)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update Ollama URL: ${e.message}", e)
             }
         }
     }
@@ -176,9 +209,13 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = _llmConfig.value.copy(copilotUrl = url)
         copilotUrlJob?.cancel()
         copilotUrlJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                current.copy(copilotUrl = url)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(copilotUrl = url)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update Copilot URL: ${e.message}", e)
             }
         }
     }
@@ -190,11 +227,15 @@ class SettingsViewModel @Inject constructor(
         
         customEndpointJob?.cancel()
         customEndpointJob = viewModelScope.launch {
-            delay(1000)
-            settingsRepository.updateConfig { current ->
-                val currentEndpoints = current.customEndpoints.toMutableMap()
-                currentEndpoints[providerName] = url
-                current.copy(customEndpoints = currentEndpoints)
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    val currentEndpoints = current.customEndpoints.toMutableMap()
+                    currentEndpoints[providerName] = url
+                    current.copy(customEndpoints = currentEndpoints)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update custom endpoint: ${e.message}", e)
             }
         }
     }
