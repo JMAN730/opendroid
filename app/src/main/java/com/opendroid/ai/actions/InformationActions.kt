@@ -89,12 +89,29 @@ class InformationActions @Inject constructor() {
             }
 
             return try {
+                val weatherCondition = try {
+                    val url = java.net.URL("https://wttr.in/${URLEncoder.encode(location, "UTF-8")}?format=%C,+%t")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.connectTimeout = 3000
+                    connection.readTimeout = 3000
+                    connection.inputStream.bufferedReader().use { it.readText().trim() }
+                } catch (e: Exception) {
+                    Log.e("GetWeather", "Failed to fetch weather from wttr.in: ${e.message}")
+                    "Unknown"
+                }
+
                 val query = URLEncoder.encode("weather in $location", "UTF-8")
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
-                ActionResult(true, "Here's the weather for $location!", null)
+
+                val resultMsg = if (weatherCondition != "Unknown") {
+                    "The current weather in $location is $weatherCondition. Opened search for details."
+                } else {
+                    "Here's the weather for $location! Opened search for details."
+                }
+                ActionResult(true, resultMsg, null)
             } catch (e: Exception) {
                 Log.e("GetWeather", "Weather failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't check the weather right now. Please check your internet connection.")

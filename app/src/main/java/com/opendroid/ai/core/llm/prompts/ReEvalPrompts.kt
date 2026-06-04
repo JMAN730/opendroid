@@ -13,7 +13,7 @@ Your options:
 A) Continue with the original plan (no changes needed)
 B) Modify remaining steps (e.g. inject parameters returned from completed steps, like GPS coordinates or booking IDs)
 C) Add new steps (e.g. request permission, alert the user, or run alternative queries)
-D) Abandon the plan (e.g. if a critical step failed and its fallback failed, or goal is impossible)
+D) Abandon the plan (e.g. if a critical step failed and its fallback failed, the goal is impossible, or a conditional prerequisite specified in the goal is not met—for example, if the goal is "if it is rain, send message" and the weather result is sunny, you MUST abandon the plan).
 
 You MUST respond with a valid JSON in this format:
 {

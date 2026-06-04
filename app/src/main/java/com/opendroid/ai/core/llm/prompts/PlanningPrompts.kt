@@ -20,9 +20,13 @@ $schema
 
 CRITICAL DEPENDENCY RULES:
 1. "dependsOn" defaults to [] (empty) for most steps. Steps already execute sequentially by order.
-2. ONLY add a stepId to "dependsOn" if the step needs the DATA OUTPUT of that prior step (e.g., using ${'$'}${'$'}stepId to reference its result).
+2. ONLY add a stepId to "dependsOn" if the step needs the DATA OUTPUT of that prior step (e.g., using $$stepId to reference its result).
 3. Non-data-producing actions like OPEN_APP, TOGGLE_WIFI, TOGGLE_FLASHLIGHT, SET_VOLUME, SET_BRIGHTNESS, LOCK_SCREEN must NEVER appear in another step's "dependsOn".
 4. Data-producing actions that CAN be referenced: WEB_SEARCH, GET_WEATHER, GET_NEWS, CALCULATE, ASK_USER, GET_SYSTEM_INFO, CHECK_BALANCE, SPLIT_BILL, TRANSLATE, CURRENCY_CONVERT, ANALYZE_SCREENSHOT.
+5. CONDITIONAL TASKS (e.g., "if X then do Y"):
+   - Schedule ALL potential steps in sequence (e.g., Step 1: GET_WEATHER, Step 2: SEND_WHATSAPP).
+   - Do NOT try to invent custom conditional or programming syntax in the JSON plan structure.
+   - The Re-Evaluation Engine will run after Step 1, inspect the output data (e.g., weather condition), and automatically decide whether to CONTINUE or ABANDON/MODIFY the remaining steps if the condition is not met.
 
 SELF-CONTAINED ACTIONS (do NOT add OPEN_APP before these):
 - SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally.
