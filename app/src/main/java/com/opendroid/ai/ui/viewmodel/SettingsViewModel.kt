@@ -99,6 +99,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateCustomEndpoint(providerName: String, url: String) {
+        val endpoints = _llmConfig.value.customEndpoints.toMutableMap()
+        endpoints[providerName] = url
+        _llmConfig.value = _llmConfig.value.copy(customEndpoints = endpoints)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                val currentEndpoints = current.customEndpoints.toMutableMap()
+                currentEndpoints[providerName] = url
+                current.copy(customEndpoints = currentEndpoints)
+            }
+        }
+    }
+
     fun testProviderLatency(providerName: String) {
         viewModelScope.launch {
             try {

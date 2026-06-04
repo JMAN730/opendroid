@@ -55,6 +55,7 @@ fun SettingsScreen(
         "Cohere",
         "DeepSeek",
         "Copilot API",
+        "Custom OpenAI Compatible",
         "Ollama"
     )
 
@@ -294,6 +295,48 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "Use local LAN IP (e.g. http://192.168.1.50:4141) if testing from a physical Android device.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Custom OpenAI Compatible Endpoint Config Card (Visible only when Custom OpenAI Compatible is selected)
+            if (config.activeProvider == "Custom OpenAI Compatible") {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "CUSTOM OPENAI ENDPOINT",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentNeonGreen
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = config.customEndpoints["Custom OpenAI Compatible"] ?: "",
+                                onValueChange = { viewModel.updateCustomEndpoint("Custom OpenAI Compatible", it) },
+                                label = { Text("Base URL (e.g. https://api.openai.com/v1)", fontSize = 12.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AccentNeonGreen,
+                                    unfocusedBorderColor = BorderColor,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Provide the custom OpenAI-compatible API base URL (e.g. from Pollination, Aqua Dev, Portkey, etc.)",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )

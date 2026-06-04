@@ -31,6 +31,9 @@ object AliasResolver {
         "turn on flash"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         "turn on torch"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         "turn on flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "turn flash on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "turn torch on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
+        "turn flashlight on" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         "flash on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         "torch on"          to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
         "flashlight on"     to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "on")),
@@ -40,6 +43,9 @@ object AliasResolver {
         "turn off flash"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
         "turn off torch"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
         "turn off flashlight" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "turn flash off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "turn torch off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
+        "turn flashlight off" to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
         "flash off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
         "torch off"         to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
         "flashlight off"    to ActionHint("TOGGLE_FLASHLIGHT", mapOf("state" to "off")),
@@ -204,10 +210,24 @@ object AliasResolver {
      * Resolve user input to an ActionHint.
      * Returns null if no alias matches.
      */
+    private fun cleanInput(input: String): String {
+        return input.lowercase()
+            .replace(Regex("""[.,\/#!$%\^&\*;:{}=\-_`~()?+!]"""), " ") // replace punctuation with spaces
+            .replace(Regex("""\b(the|a|an|please|could\s+you|please\s+turn|turn\s+the|open\s+the|close\s+the|enable\s+the|disable\s+the|switch\s+on\s+the|switch\s+off\s+the)\b"""), "") // remove stop/filler words
+            .replace(Regex("""\s+"""), " ") // collapse multiple spaces
+            .trim()
+    }
+
+    /**
+     * Resolve user input to an ActionHint.
+     * Returns null if no alias matches.
+     */
     fun resolve(input: String): ActionHint? {
         val lower = input.lowercase().trim()
+        val cleaned = cleanInput(input)
 
         // 1. Exact match (always wins)
+        aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
 
         // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
@@ -243,7 +263,7 @@ object AliasResolver {
 
         // 5. Longest partial match — only for simple, single-intent inputs
         return aliases.entries
-            .filter { (key, _) -> lower.contains(key) }
+            .filter { (key, _) -> cleaned.contains(key) || lower.contains(key) }
             .maxByOrNull { it.key.length }
             ?.value
     }
