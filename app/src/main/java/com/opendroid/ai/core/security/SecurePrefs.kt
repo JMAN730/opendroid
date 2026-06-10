@@ -70,9 +70,12 @@ object SecurePrefs {
             editor.putBoolean("migration_done", true)
             editor.apply()
 
+            // Capture count before clearing
+            val migratedCount = oldPrefs.all.size
+
             // Wipe the old plaintext prefs
             oldPrefs.edit().clear().apply()
-            Log.d(TAG, "Migrated ${oldPrefs.all.size} entries from plaintext to encrypted prefs")
+            Log.d(TAG, "Migrated $migratedCount entries from plaintext to encrypted prefs")
         }
     }
 }

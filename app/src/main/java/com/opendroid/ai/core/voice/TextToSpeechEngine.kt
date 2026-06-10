@@ -71,18 +71,26 @@ class TextToSpeechEngine(
                 }
             }
 
-            // Local fallback
+            // Local fallback — must run on main thread
             if (isInitialized) {
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "opendroid_tts")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "opendroid_tts")
+                }
             }
         }
     }
 
     private fun playElevenLabsTts(text: String, apiKey: String, voiceId: String): Boolean {
         val url = "https://api.elevenlabs.io/v1/text-to-speech/$voiceId"
+        val escapedText = text
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
         val jsonPayload = """
             {
-              "text": "${text.replace("\"", "\\\"")}",
+              "text": "$escapedText",
               "model_id": "eleven_monolingual_v1",
               "voice_settings": {
                 "stability": 0.5,

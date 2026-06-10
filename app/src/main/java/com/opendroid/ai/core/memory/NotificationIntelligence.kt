@@ -130,7 +130,10 @@ class NotificationIntelligence @Inject constructor(
             val dateFormat = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault())
             recent.joinToString("\n") { notif ->
                 val time = dateFormat.format(java.util.Date(notif.timestamp))
-                val replied = if (notif.isAutoReplied) " [Auto-replied: ${notif.autoReplyText?.take(30)}...]" else ""
+                val replyPreview = notif.autoReplyText?.let { text ->
+                    if (text.length > 30) "${text.take(30)}..." else text
+                }
+                val replied = if (notif.isAutoReplied) " [Auto-replied: $replyPreview]" else ""
                 "• ${notif.appName} — ${notif.contactName ?: notif.title}: ${notif.text.take(80)}$replied ($time)"
             }
         } catch (e: Exception) {

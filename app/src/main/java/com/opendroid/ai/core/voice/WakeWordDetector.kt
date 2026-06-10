@@ -107,11 +107,7 @@ class WakeWordDetector(private val context: Context) {
     }
 
     private fun triggerWakeWord() {
-        val callback = onWakeWordDetectedCallback
-        if (callback != null) {
-            onWakeWordDetectedCallback = null
-            callback.invoke()
-        }
+        onWakeWordDetectedCallback?.invoke()
     }
 
     private fun scheduleRestart() {

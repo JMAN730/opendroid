@@ -45,14 +45,7 @@ class ReplyDispatcher @Inject constructor() {
                 RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
 
                 try {
-                    action.actionIntent.send(
-                        sbn.packageName.let { 
-                            // Use the context from the PendingIntent
-                            null 
-                        } as? Context,
-                        0,
-                        intent
-                    )
+                    action.actionIntent.send(0, intent, null)
                     Log.d(TAG, "Successfully sent reply via notification action: ${replyText.take(30)}...")
                     return true
                 } catch (e: PendingIntent.CanceledException) {

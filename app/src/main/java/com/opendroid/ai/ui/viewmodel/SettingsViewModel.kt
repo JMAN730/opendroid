@@ -84,6 +84,9 @@ class SettingsViewModel @Inject constructor(
                             }
                         }
                     }
+                    result.onFailure { error ->
+                        android.util.Log.e("SettingsViewModel", "Failed to fetch models for $provider: ${error.message}", error)
+                    }
                     _modelsLoading.value = false
                 }
             } catch (e: Exception) {
@@ -97,7 +100,7 @@ class SettingsViewModel @Inject constructor(
         val defaultModel = when (provider) {
             "Google Gemini" -> "gemini-2.0-flash"
             "OpenAI" -> "gpt-4o"
-            "Anthropic Claude" -> "claude-3-5-sonnet-20241022"
+            "Anthropic Claude" -> "claude-sonnet-4"
             "OpenRouter" -> "google/gemini-2.0-flash-exp:free"
             "Groq" -> "llama-3.3-70b-specdec"
             "Together AI" -> "meta-llama/Llama-3-70b-chat-hf"

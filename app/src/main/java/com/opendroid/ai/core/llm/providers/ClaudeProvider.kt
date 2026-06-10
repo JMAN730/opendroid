@@ -35,13 +35,13 @@ class ClaudeProvider @Inject constructor(
 
         val selectedModel = if (config.activeModel.isNotBlank()) {
             when (config.activeModel) {
-                "claude-opus-4" -> "claude-3-opus-20240229"
-                "claude-sonnet-4" -> "claude-3-5-sonnet-20241022"
-                "claude-haiku-4" -> "claude-3-5-haiku-20241022"
+                "claude-opus-4" -> "claude-opus-4-20250514"
+                "claude-sonnet-4" -> "claude-sonnet-4-20250514"
+                "claude-haiku-4" -> "claude-haiku-4-20250514"
                 else -> config.activeModel
             }
         } else {
-            "claude-3-5-sonnet-20241022"
+            "claude-sonnet-4-20250514"
         }
 
         val messagesList = mutableListOf<Map<String, Any>>()
