@@ -132,7 +132,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(activeModel = model)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update active model: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update active model: ${e.message}", e)
+                }
             }
         }
     }
@@ -155,7 +157,9 @@ class SettingsViewModel @Inject constructor(
                     refreshModels(force = true)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update API Key: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update API Key: ${e.message}", e)
+                }
             }
         }
     }
@@ -170,7 +174,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(elevenLabsApiKey = key)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs API Key: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs API Key: ${e.message}", e)
+                }
             }
         }
     }
@@ -185,7 +191,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(elevenLabsVoiceId = voiceId)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs Voice ID: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update ElevenLabs Voice ID: ${e.message}", e)
+                }
             }
         }
     }
@@ -200,7 +208,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(ollamaUrl = url)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update Ollama URL: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update Ollama URL: ${e.message}", e)
+                }
             }
         }
     }
@@ -215,7 +225,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(copilotUrl = url)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update Copilot URL: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update Copilot URL: ${e.message}", e)
+                }
             }
         }
     }
@@ -235,7 +247,9 @@ class SettingsViewModel @Inject constructor(
                     current.copy(customEndpoints = currentEndpoints)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "Failed to update custom endpoint: ${e.message}", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update custom endpoint: ${e.message}", e)
+                }
             }
         }
     }
