@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.service.notification.StatusBarNotification
 import android.telephony.SmsManager
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,7 +18,9 @@ import javax.inject.Singleton
  * Uses notification RemoteInput actions for WhatsApp direct reply without opening the app.
  */
 @Singleton
-class ReplyDispatcher @Inject constructor() {
+class ReplyDispatcher @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     companion object {
         private const val TAG = "ReplyDispatcher"
@@ -45,7 +48,7 @@ class ReplyDispatcher @Inject constructor() {
                 RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
 
                 try {
-                    action.actionIntent.send(0, intent, null)
+                    action.actionIntent.send(context, 0, intent)
                     Log.d(TAG, "Successfully sent reply via notification action: ${replyText.take(30)}...")
                     return true
                 } catch (e: PendingIntent.CanceledException) {
