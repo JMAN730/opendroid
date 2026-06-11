@@ -15,5 +15,6 @@ data class NotificationEntity(
     val isAutoReplied: Boolean = false,
     val autoReplyText: String? = null,
     val contactName: String? = null,
+    val senderEmail: String? = null,
     val isRead: Boolean = false
 )

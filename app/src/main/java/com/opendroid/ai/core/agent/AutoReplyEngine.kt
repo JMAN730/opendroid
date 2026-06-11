@@ -230,22 +230,41 @@ class AutoReplyEngine @Inject constructor(
         context: Context
     ): Boolean {
         return when {
-            // WhatsApp — use notification inline reply
+            // WhatsApp — use notification inline reply with a fresh SBN
             notification.packageName.contains("whatsapp", ignoreCase = true) -> {
-                if (sbn != null) {
-                    replyDispatcher.replyViaNotificationAction(sbn, replyText)
+                // Fetch a fresh SBN from the NotificationListenerService — the original
+                // one captured at schedule time may have a stale PendingIntent after the delay
+                val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
+                val freshSbn = listener?.getActiveNotification(
+                    notification.packageName,
+                    notification.contactName
+                )
+                val targetSbn = freshSbn ?: sbn
+                if (targetSbn != null) {
+                    val replied = replyDispatcher.replyViaNotificationAction(targetSbn, replyText)
+                    if (!replied && freshSbn == null && sbn != null) {
+                        // Both failed — the notification was probably dismissed
+                        Log.w(TAG, "WhatsApp reply failed: notification may have been dismissed")
+                    }
+                    replied
                 } else {
-                    Log.w(TAG, "No StatusBarNotification available for WhatsApp reply")
+                    Log.w(TAG, "No StatusBarNotification available for WhatsApp reply (neither fresh nor original)")
                     false
                 }
             }
             // SMS
             notification.category == "MESSAGE" -> {
-                // 1. Try to reply via notification action first (e.g. Google Messages / Samsung Messages inline reply)
-                if (sbn != null && replyDispatcher.replyViaNotificationAction(sbn, replyText)) {
+                // Try fresh SBN for inline reply first
+                val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
+                val freshSbn = listener?.getActiveNotification(
+                    notification.packageName,
+                    notification.contactName
+                ) ?: sbn
+
+                if (freshSbn != null && replyDispatcher.replyViaNotificationAction(freshSbn, replyText)) {
                     true
                 } else {
-                    // 2. Fallback to direct SMS send via phone number if the contact matches a phone number pattern
+                    // Fallback to direct SMS send via phone number
                     val contact = notification.contactName ?: notification.title
                     val phoneRegex = Regex("""^\+?[0-9\s\-()]{7,20}$""")
                     if (phoneRegex.matches(contact.trim())) {
@@ -256,9 +275,16 @@ class AutoReplyEngine @Inject constructor(
                     }
                 }
             }
-            // Email
+            // Email — use the extracted sender email address
             notification.category == "EMAIL" -> {
-                replyDispatcher.replyViaEmail(sbn, "", notification.title, replyText, context)
+                val senderEmail = notification.senderEmail ?: ""
+                // Try fresh SBN for inline reply first
+                val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
+                val freshSbn = listener?.getActiveNotification(
+                    notification.packageName,
+                    notification.contactName
+                ) ?: sbn
+                replyDispatcher.replyViaEmail(freshSbn, senderEmail, notification.title, replyText, context)
             }
             else -> false
         }

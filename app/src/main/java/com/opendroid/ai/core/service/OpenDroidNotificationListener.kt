@@ -131,6 +131,7 @@ class OpenDroidNotificationListener : NotificationListenerService() {
         val appName = getAppName(sbn.packageName)
         val category = classifyNotification(sbn)
         val contactName = extractContactName(sbn, title)
+        val senderEmail = if (category == "EMAIL") extractSenderEmail(sbn, title) else null
 
         return NotificationEntity(
             packageName = sbn.packageName,
@@ -139,7 +140,8 @@ class OpenDroidNotificationListener : NotificationListenerService() {
             text = text,
             timestamp = sbn.postTime,
             category = category,
-            contactName = contactName
+            contactName = contactName,
+            senderEmail = senderEmail
         )
     }
 
@@ -213,4 +215,78 @@ class OpenDroidNotificationListener : NotificationListenerService() {
         if (sbn.notification?.category == Notification.CATEGORY_EMAIL) return true
         return false
     }
+
+    /**
+     * Extract sender email address from email notification extras.
+     * Gmail includes the sender email in various extras; Outlook typically
+     * includes it in the title as "Name <email@example.com>".
+     */
+    private fun extractSenderEmail(sbn: StatusBarNotification, title: String): String? {
+        val extras = sbn.notification?.extras ?: return null
+        val emailRegex = Regex("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}")
+
+        // 1. Check android.subText / android.infoText — Gmail puts account email here
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+        if (!subText.isNullOrBlank()) {
+            emailRegex.find(subText)?.value?.let { return it }
+        }
+        val infoText = extras.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()
+        if (!infoText.isNullOrBlank()) {
+            emailRegex.find(infoText)?.value?.let { return it }
+        }
+
+        // 2. Check the big text (full email body often starts with "From: ...")
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+        if (!bigText.isNullOrBlank()) {
+            // Look for "From: ... <email>" pattern in the body
+            val fromMatch = Regex("(?i)from:?\\s*.*?([a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,})").find(bigText)
+            fromMatch?.groupValues?.get(1)?.let { return it }
+        }
+
+        // 3. Check the title — Outlook often uses "Name <email@example.com>" format
+        emailRegex.find(title)?.value?.let { return it }
+
+        // 4. Check EXTRA_PEOPLE_LIST (API 28+)
+        try {
+            @Suppress("DEPRECATION")
+            val people = extras.getStringArray(Notification.EXTRA_PEOPLE)
+            people?.forEach { person ->
+                if (person.startsWith("mailto:")) {
+                    return person.removePrefix("mailto:")
+                }
+                emailRegex.find(person)?.value?.let { return it }
+            }
+        } catch (_: Exception) {}
+
+        return null
+    }
+
+    /**
+     * Get a fresh active StatusBarNotification matching the given package and contact.
+     * This is needed because the original SBN's PendingIntent can go stale after the
+     * auto-reply delay period. Re-fetching ensures we have a valid reply action.
+     */
+    fun getActiveNotification(packageName: String, contactName: String?): StatusBarNotification? {
+        return try {
+            val activeNotifications = getActiveNotifications() ?: return null
+            // Try to find a matching notification by package and sender name
+            activeNotifications.firstOrNull { sbn ->
+                sbn.packageName == packageName &&
+                sbn.notification?.extras?.let { extras ->
+                    val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+                    val convTitle = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString() ?: ""
+                    contactName == null || title == contactName || convTitle == contactName
+                } == true &&
+                sbn.notification?.actions?.any { it.remoteInputs?.isNotEmpty() == true } == true
+            } ?: activeNotifications.firstOrNull { sbn ->
+                // Fallback: any notification from the same package that has reply actions
+                sbn.packageName == packageName &&
+                sbn.notification?.actions?.any { it.remoteInputs?.isNotEmpty() == true } == true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get active notifications: ${e.message}")
+            null
+        }
+    }
 }
+
