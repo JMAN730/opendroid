@@ -101,27 +101,34 @@ class AgentLoop @Inject constructor(
 
                 _agentState.value = AgentState.Thinking
 
-                // 0. Alias resolution — bypass LLM for known commands
-                val alias = AliasResolver.resolve(query)
-                if (alias != null) {
-                    executeAliasDirect(alias, query, context)
-                    return@launch
-                }
+                // 0. Check if this is a complex, multi-step query
+                //    If so, skip ALL shortcuts and let the LLM planner handle it properly
+                val complexity = intentClassifier.classifyComplexity(query)
+                val isMultiStep = complexity != QueryComplexity.SIMPLE
 
-                // 0b. Alarm shortcut — bypass LLM for alarm requests
-                if (AliasResolver.isAlarmRequest(query)) {
-                    val timeStr = AliasResolver.extractAlarmTime(query)
-                    if (timeStr != null) {
-                        val alarmHint = AliasResolver.ActionHint(
-                            "SET_ALARM",
-                            mapOf("time" to timeStr, "label" to "Alarm")
-                        )
-                        executeAliasDirect(alarmHint, query, context)
+                // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
+                if (!isMultiStep) {
+                    val alias = AliasResolver.resolve(query)
+                    if (alias != null) {
+                        executeAliasDirect(alias, query, context)
                         return@launch
+                    }
+
+                    // 1b. Alarm shortcut — bypass LLM for simple alarm requests ONLY
+                    if (AliasResolver.isAlarmRequest(query)) {
+                        val timeStr = AliasResolver.extractAlarmTime(query)
+                        if (timeStr != null) {
+                            val alarmHint = AliasResolver.ActionHint(
+                                "SET_ALARM",
+                                mapOf("time" to timeStr, "label" to "Alarm")
+                            )
+                            executeAliasDirect(alarmHint, query, context)
+                            return@launch
+                        }
                     }
                 }
 
-                // 1. Intent Classification
+                // 2. Intent Classification
                 val requiresAction = intentClassifier.requiresAction(query)
                 if (requiresAction) {
                     generatePlan(userMsg, context)
