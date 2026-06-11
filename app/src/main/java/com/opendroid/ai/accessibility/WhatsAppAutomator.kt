@@ -89,6 +89,7 @@ object WhatsAppAutomator {
         }
         
         // Post-send verification: check that the input field is now empty
+        // If we can't find the input field, trust the click (optimistic)
         delay(500)
         for (id in inputIds) {
             val rootNode = service.rootInActiveWindow ?: continue
@@ -97,13 +98,14 @@ object WhatsAppAutomator {
                 val text = node.text?.toString() ?: ""
                 node.recycle()
                 if (text.isNotBlank() && text != "Type a message" && text != "Message") {
-                    // Input field still has text — message wasn't sent
+                    // Input field still has text — message likely wasn't sent
                     Log.w("WhatsAppAutomator", "Post-send check: input field still has text '$text', message may not have been sent")
                     return false
                 }
             }
         }
         
+        // Either input field is empty (confirmed sent) or we couldn't find it (trust the click)
         Log.d("WhatsAppAutomator", "Post-send verification passed — message appears to be sent")
         return true
     }

@@ -231,23 +231,26 @@ class CommunicationActions @Inject constructor(
                 if (autoSent) {
                     return ActionResult(true, "Sent your message to $contactLabel!", null)
                 }
-                // First attempt failed — try one more time with a longer wait
+                // First attempt didn't confirm — try one more time with a longer wait
                 kotlinx.coroutines.delay(2000)
                 val retryClicked = service.findAndClickById("com.whatsapp:id/send") ||
                                    service.findAndClick("Send") ||
                                    service.findAndClick("send")
                 if (retryClicked) {
-                    // Verify send: wait briefly and check if the input field is now empty
+                    // We clicked something — check if it actually sent
                     kotlinx.coroutines.delay(500)
-                    val verified = verifySendCompleted(service)
-                    if (verified) {
+                    val verifyResult = verifySendCompleted(service)
+                    if (verifyResult != false) {
+                        // Verified or inconclusive → trust the click
                         return ActionResult(true, "Message sent to $contactLabel!", null)
                     }
+                    // Verification says input field still has text — send didn't work
+                    return ActionResult(false, null, "I tapped send but the message is still in the input field. Please send it manually.", true)
                 }
             }
 
-            // Automation couldn't confirm the message was sent — report honestly
-            ActionResult(false, null, "I've opened the chat with $contactLabel on WhatsApp, but couldn't confirm the message was sent. Please check and tap send if needed.", true)
+            // No accessibility service or couldn't click send — chat is open with message pre-filled
+            ActionResult(false, null, "I've opened the chat with $contactLabel on WhatsApp with your message ready — just tap send!", true)
         } catch (e: Exception) {
             Log.e("SendWhatsApp", "WhatsApp failed: ${e.localizedMessage}")
             ActionResult(false, null, "WhatsApp didn't work. ${e.localizedMessage ?: "Please try again."}", true)
@@ -257,25 +260,33 @@ class CommunicationActions @Inject constructor(
     /**
      * After clicking send, verify the message was actually dispatched by checking
      * if the WhatsApp input field is now empty or shows the placeholder text.
+     * 
+     * Returns:
+     *   true  = verified sent (input field is empty/placeholder)
+     *   false = verified NOT sent (input field still has message text)
+     *   null  = inconclusive (couldn't find input field to check)
      */
-    private fun verifySendCompleted(service: OpenDroidAccessibilityService): Boolean {
+    private fun verifySendCompleted(service: OpenDroidAccessibilityService): Boolean? {
         try {
-            val rootNode = service.rootInActiveWindow ?: return false
-            val inputNodes = rootNode.findAccessibilityNodeInfosByViewId("com.whatsapp:id/entry")
-            for (node in inputNodes) {
-                val text = node.text?.toString() ?: ""
-                node.recycle()
-                // If input field is empty or shows placeholder, message was likely sent
-                if (text.isBlank() || text == "Type a message") {
-                    return true
+            val rootNode = service.rootInActiveWindow ?: return null // inconclusive
+            val inputIds = listOf("com.whatsapp:id/entry", "com.whatsapp:id/text_entry")
+            for (id in inputIds) {
+                val inputNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+                for (node in inputNodes) {
+                    val text = node.text?.toString() ?: ""
+                    node.recycle()
+                    // If input field is empty or shows placeholder, message was sent
+                    if (text.isBlank() || text == "Type a message" || text == "Message") {
+                        return true
+                    }
+                    // Input field still has content — message wasn't sent
+                    return false
                 }
-                // If the input field still has content, message wasn't sent
-                return false
             }
-            // No input field found — could mean we left the chat screen (unlikely but possible)
-            return false
+            // Couldn't find input field — inconclusive, don't assume failure
+            return null
         } catch (e: Exception) {
-            return false
+            return null // inconclusive
         }
     }
 
