@@ -91,6 +91,22 @@ Built with **Jetpack Compose** featuring a futuristic glassmorphic design:
 - Live latency benchmarks for each provider
 - Dark mode by default
 
+### 📸 Screenshots
+
+<p align="center">
+  <img src="assets/screenshot/Screenshot_20260528-234508_OpenDroid.png" alt="Chat Screen" width="220px">
+  &nbsp;&nbsp;
+  <img src="assets/screenshot/Screenshot_20260528-234521_OpenDroid.png" alt="Plan Engine" width="220px">
+  &nbsp;&nbsp;
+  <img src="assets/screenshot/Screenshot_20260528-234535_OpenDroid.png" alt="Persistent Memory" width="220px">
+  &nbsp;&nbsp;
+  <img src="assets/screenshot/Screenshot_20260528-234615_OpenDroid.png" alt="Set Alarm" width="220px">
+</p>
+
+<p align="center">
+  <em>Chat &bull; Plan Engine &bull; Memory System &bull; Alarm Control</em>
+</p>
+
 ---
 
 ## 🏗️ Architecture
