@@ -1,0 +1,12 @@
+# Project-wide Gradle settings.
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.enableJetifier=true
+kotlin.code.style=official
+
+# Release signing credentials
+# Copy this file to gradle.properties and fill in your values.
+# NEVER commit gradle.properties to version control.
+RELEASE_STORE_PASSWORD=your_store_password_here
+RELEASE_KEY_ALIAS=your_key_alias_here
+RELEASE_KEY_PASSWORD=your_key_password_here

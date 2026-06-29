@@ -23,12 +23,25 @@ android {
         }
     }
 
+    // Release signing — credentials must be in gradle.properties (see gradle.properties.example)
+    // The keystore file itself must also be placed at the project root (NOT committed to Git).
+    def hasSigningConfig = project.hasProperty('RELEASE_STORE_PASSWORD') &&
+            project.hasProperty('RELEASE_KEY_ALIAS') &&
+            project.hasProperty('RELEASE_KEY_PASSWORD') &&
+            file("${rootProject.projectDir}/opendroid-release.keystore").exists()
+
+    if (!hasSigningConfig) {
+        logger.warn("WARNING: Release signing not configured. Set credentials in gradle.properties (see gradle.properties.example).")
+    }
+
     signingConfigs {
-        release {
-            storeFile file("${rootProject.projectDir}/opendroid-release.keystore")
-            storePassword project.findProperty('RELEASE_STORE_PASSWORD') ?: ''
-            keyAlias project.findProperty('RELEASE_KEY_ALIAS') ?: ''
-            keyPassword project.findProperty('RELEASE_KEY_PASSWORD') ?: ''
+        if (hasSigningConfig) {
+            release {
+                storeFile file("${rootProject.projectDir}/opendroid-release.keystore")
+                storePassword project.findProperty('RELEASE_STORE_PASSWORD')
+                keyAlias project.findProperty('RELEASE_KEY_ALIAS')
+                keyPassword project.findProperty('RELEASE_KEY_PASSWORD')
+            }
         }
     }
 
@@ -36,7 +49,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources false
-            signingConfig signingConfigs.release
+            signingConfig hasSigningConfig ? signingConfigs.release : signingConfigs.debug
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
