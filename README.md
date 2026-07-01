@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yashab-cyber/opendroid/releases"><img src="https://img.shields.io/github/v/release/yashab-cyber/opendroid?style=for-the-badge&color=00FF88&labelColor=0D1117&logo=android&logoColor=white" alt="Release"></a>
-  <a href="https://github.com/yashab-cyber/opendroid/stargazers"><img src="https://img.shields.io/github/stars/yashab-cyber/opendroid?style=for-the-badge&color=FFD700&labelColor=0D1117&logo=github&logoColor=white" alt="Stars"></a>
-  <a href="https://github.com/yashab-cyber/opendroid/blob/main/LICENSE"><img src="https://img.shields.io/github/license/yashab-cyber/opendroid?style=for-the-badge&color=00BFFF&labelColor=0D1117" alt="License"></a>
+  <a href="https://github.com/JMAN730/opendroid/releases"><img src="https://img.shields.io/github/v/release/JMAN730/opendroid?style=for-the-badge&color=00FF88&labelColor=0D1117&logo=android&logoColor=white" alt="Release"></a>
+  <a href="https://github.com/JMAN730/opendroid/stargazers"><img src="https://img.shields.io/github/stars/JMAN730/opendroid?style=for-the-badge&color=FFD700&labelColor=0D1117&logo=github&logoColor=white" alt="Stars"></a>
+  <a href="https://github.com/JMAN730/opendroid/blob/main/LICENSE"><img src="https://img.shields.io/github/license/JMAN730/opendroid?style=for-the-badge&color=00BFFF&labelColor=0D1117" alt="License"></a>
   <a href="https://discord.gg/knRMyFmvpp"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=0D1117" alt="Discord"></a>
 </p>
 
@@ -186,7 +186,7 @@ OpenDroid supports **12 LLM providers** with automatic failover:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yashab-cyber/opendroid.git
+git clone https://github.com/JMAN730/opendroid.git
 cd opendroid
 
 # Build debug APK
@@ -272,5 +272,5 @@ limitations under the License.
 </p>
 
 <p align="center">
-  <a href="https://github.com/yashab-cyber/opendroid">⭐ Star this repo</a> if OpenDroid has helped you!
+  <a href="https://github.com/JMAN730/opendroid">⭐ Star this repo</a> if OpenDroid has helped you!
 </p>
