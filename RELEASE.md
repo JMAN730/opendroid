@@ -4,7 +4,12 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.1 — Notification Intelligence & Theme Update
+## v1.0.1 — Notification Intelligence & Theme Update (Re-release)
+
+### 🐛 Bug Fixes & Improvements
+*   **Auto-Reply Loop Prevention**: Tracks recently auto-replied contacts with a 60-second cooldown window in `AutoReplyEngine` to suppress bounceback notifications. Also ignores self-sent notifications (e.g. WhatsApp notifications starting with `"You:"`).
+*   **Intent Classifier Complexity Heuristics**: Added a fast-path whitelist of single-intent commands (e.g. `"set brightness to 50"`, `"set volume to 70"`) in `IntentClassifier` to classify them as `SIMPLE` instead of `MEDIUM`. This prevents them from bypassing the local `AliasResolver` and causing LLM hallucinations.
+*   **Missing Parameter Prompt Loop**: Fully supports prompting the user for missing required action parameters (e.g. `"to"`, `"subject"`, and `"body"` for `SEND_EMAIL`) sequentially via chat and re-executing actions upon receipt.
 
 ### 🔔 Notification Intelligence & Auto-Reply
 *   **NotificationListenerService**: Intercepts all system notifications in real-time, persists them to a local Room database for analysis and recall.
@@ -38,6 +43,7 @@ This document tracks release updates, changelogs, and binary verification checks
 *   **ActionDispatcher**: Registered `NotificationActions` (READ_NOTIFICATIONS, AUTO_REPLY_TOGGLE).
 
 ### 📦 Release Assets
+*   **`app-debug.apk`** — Debug build APK (for testing and logging).
 *   **`app-release.apk`** — Signed production APK.
 *   **`app-release.aab`** — Signed Android App Bundle.
 
