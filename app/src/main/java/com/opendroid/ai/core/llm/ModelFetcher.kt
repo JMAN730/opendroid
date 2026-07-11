@@ -304,6 +304,17 @@ class ModelFetcher @Inject constructor(
                 "Google Gemini" -> {
                     Result.success(getGeminiFallback())
                 }
+                "Gemma 4 (On-device)" -> {
+                    Result.success(listOf(
+                        AIModel(
+                            id = "gemma-4-on-device",
+                            displayName = "Gemma 4 (On-device)",
+                            provider = provider,
+                            isFree = true,
+                            isRecommended = true
+                        )
+                    ))
+                }
                 "Copilot API" -> {
                     val baseUrl = formatBaseUrl(config.copilotUrl, "http://10.0.2.2:4141")
                     val requestBuilder = Request.Builder()

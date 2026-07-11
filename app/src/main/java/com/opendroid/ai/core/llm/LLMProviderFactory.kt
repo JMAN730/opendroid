@@ -28,6 +28,7 @@ class LLMProviderFactory @Inject constructor(
     private val deepSeekProvider: Provider<DeepSeekProvider>,
     private val copilotProvider: Provider<CopilotProvider>,
     private val customOpenAIProvider: Provider<CustomOpenAIProvider>,
+    private val gemmaProvider: Provider<GemmaProvider>,
     private val settingsRepository: SettingsRepository,
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
     private val intentClassifier: dagger.Lazy<IntentClassifier>,
@@ -48,6 +49,7 @@ class LLMProviderFactory @Inject constructor(
             "DeepSeek" -> deepSeekProvider.get()
             "Copilot API" -> copilotProvider.get()
             "Custom OpenAI Compatible" -> customOpenAIProvider.get()
+            "Gemma 4 (On-device)" -> gemmaProvider.get()
             else -> geminiProvider.get()
         }
         return WrappedLLMProvider(rawProvider, actionDispatcher, intentClassifier, deviceStateProvider)
@@ -66,7 +68,8 @@ class LLMProviderFactory @Inject constructor(
             "DeepSeek",
             "Copilot API",
             "Custom OpenAI Compatible",
-            "Ollama"
+            "Ollama",
+            "Gemma 4 (On-device)"
         )
         val orderedNames = mutableListOf<String>()
         orderedNames.add(primaryName)

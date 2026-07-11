@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.data.models.LLMConfig
+import com.google.mlkit.genai.prompt.*
+import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.SettingsViewModel
 
@@ -57,7 +59,8 @@ fun SettingsScreen(
         "DeepSeek",
         "Copilot API",
         "Custom OpenAI Compatible",
-        "Ollama"
+        "Ollama",
+        "Gemma 4 (On-device)"
     )
 
     var providerDropdownExpanded by remember { mutableStateOf(false) }
@@ -127,7 +130,7 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = config.activeProvider,
+                                    text = if (config.activeProvider == "Gemma 4 (On-device)") "Gemma 4 (Offline)" else config.activeProvider,
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -147,9 +150,57 @@ fun SettingsScreen(
                                     .background(CardBackground)
                                     .border(1.dp, BorderColor)
                             ) {
-                                providers.forEach { name ->
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text(
+                                            text = "OFFLINE AI", 
+                                            color = AccentCyan, 
+                                            fontWeight = FontWeight.Bold, 
+                                            fontSize = 11.sp, 
+                                            fontFamily = FontFamily.Monospace
+                                        ) 
+                                    },
+                                    enabled = false,
+                                    onClick = {}
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Gemma 4 (On-device)", color = TextPrimary, modifier = Modifier.padding(start = 8.dp)) },
+                                    onClick = {
+                                        viewModel.updateActiveProvider("Gemma 4 (On-device)")
+                                        providerDropdownExpanded = false
+                                    }
+                                )
+                                
+                                Divider(color = BorderColor, thickness = 1.dp)
+
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text(
+                                            text = "CLOUD AI", 
+                                            color = AccentCyan, 
+                                            fontWeight = FontWeight.Bold, 
+                                            fontSize = 11.sp, 
+                                            fontFamily = FontFamily.Monospace
+                                        ) 
+                                    },
+                                    enabled = false,
+                                    onClick = {}
+                                )
+                                val cloudProvidersList = listOf(
+                                    "Google Gemini",
+                                    "OpenAI",
+                                    "Anthropic Claude",
+                                    "Groq",
+                                    "Ollama"
+                                )
+                                cloudProvidersList.forEach { name ->
+                                    val displayName = when (name) {
+                                        "Google Gemini" -> "Gemini"
+                                        "Anthropic Claude" -> "Claude"
+                                        else -> name
+                                    }
                                     DropdownMenuItem(
-                                        text = { Text(name, color = TextPrimary) },
+                                        text = { Text(displayName, color = TextPrimary, modifier = Modifier.padding(start = 8.dp)) },
                                         onClick = {
                                             viewModel.updateActiveProvider(name)
                                             providerDropdownExpanded = false
@@ -400,6 +451,78 @@ fun SettingsScreen(
                 }
             }
 
+            // Gemma Status Config Card (Visible only when Gemma is selected)
+            if (config.activeProvider == "Gemma 4 (On-device)") {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "GEMMA ON-DEVICE AI",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentNeonGreen
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            var statusState by remember { mutableStateOf("Checking...") }
+                            var showDownloadButton by remember { mutableStateOf(false) }
+                            
+                            LaunchedEffect(Unit) {
+                                try {
+                                    val client = Generation.getClient()
+                                    val status = client.checkStatus()
+                                    statusState = when (status) {
+                                        FeatureStatus.AVAILABLE -> "Available and ready on-device"
+                                        FeatureStatus.DOWNLOADABLE -> {
+                                            showDownloadButton = true
+                                            "Unsupported (Download needed)"
+                                        }
+                                        FeatureStatus.DOWNLOADING -> "Downloading model files..."
+                                        FeatureStatus.UNAVAILABLE -> "This device does not support Google AI Core."
+                                        else -> "Unknown status"
+                                    }
+                                } catch (e: Exception) {
+                                    statusState = "This device does not support Google AI Core."
+                                }
+                            }
+                            
+                            Text(
+                                text = "Status: $statusState",
+                                fontSize = 14.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            
+                            if (showDownloadButton) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val client = Generation.getClient()
+                                            client.download()
+                                            statusState = "Downloading model files..."
+                                            showDownloadButton = false
+                                        } catch (e: Exception) {
+                                            statusState = "Download failed: ${e.localizedMessage}"
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Download Gemma Model", color = DarkBackground)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Copilot Endpoint Config Card (Visible only when Copilot API is selected)
             if (config.activeProvider == "Copilot API") {
                 item {
@@ -519,7 +642,7 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(top = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val inputProviders = providers.filter { it != "Ollama" }
+                                val inputProviders = providers.filter { it != "Ollama" && it != "Gemma 4 (On-device)" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
                                     OutlinedTextField(

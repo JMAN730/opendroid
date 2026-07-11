@@ -394,8 +394,12 @@ fun ChatBubble(message: ChatMessage, viewModel: ChatViewModel? = null, context: 
                     .padding(14.dp)
             ) {
                 if (isAgent && message.modelBadge != null) {
+                    val displayName = when (message.modelBadge) {
+                        "Gemma 4 (On-device)" -> "GEMMA 4 (OFFLINE)"
+                        else -> message.modelBadge.uppercase(Locale.getDefault())
+                    }
                     Text(
-                        text = message.modelBadge.uppercase(Locale.getDefault()),
+                        text = displayName,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = AccentCyan,

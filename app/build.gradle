@@ -4,6 +4,7 @@ plugins {
     id 'kotlin-kapt'
     id 'dagger.hilt.android.plugin'
     id 'kotlinx-serialization'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 android {
@@ -67,9 +68,6 @@ android {
     buildFeatures {
         compose true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion '1.5.8'
-    }
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
@@ -109,8 +107,8 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     // Hilt Dependency Injection
-    implementation 'com.google.dagger:hilt-android:2.50'
-    kapt 'com.google.dagger:hilt-compiler:2.50'
+    implementation 'com.google.dagger:hilt-android:2.51.1'
+    kapt 'com.google.dagger:hilt-compiler:2.51.1'
     implementation 'androidx.hilt:hilt-navigation-compose:1.1.0'
 
     // Networking
@@ -130,6 +128,9 @@ dependencies {
 
     // Accompanist Permissions
     implementation 'com.google.accompanist:accompanist-permissions:0.34.0'
+
+    // Google ML Kit GenAI Prompt API
+    implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
 
     // Testing
     testImplementation 'junit:junit:4.13.2'

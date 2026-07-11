@@ -6,6 +6,13 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ## v1.0.1 — Notification Intelligence & Theme Update (Re-release)
 
+### 🤖 On-Device Gemma 4 Integration
+*   **Google ML Kit GenAI Prompt API**: Complemented the offline LLM providers with Google's on-device Gemma 4 (Gemini Nano) running via Android AI Core (AICore).
+*   **AI Core Status & Model Downloader**: Added a real-time AICore capability checker and downloader card in Settings to monitor model status (available, downloading, or unsupported) and trigger downloads directly from the UI.
+*   **Structured Tool Calling & Streaming**: Supports native streaming of responses and maps available actions (like toggle flashlight, take screenshot, lock phone) to structured JSON output parsing to perform autonomous device actions.
+*   **Build Toolchain Upgrades**: Upgraded the project build configurations to Kotlin 2.0.21 and Dagger/Hilt 2.51.1 to resolve Room/Kapt annotation processor metadata incompatibilities.
+*   **Ollama Preservation**: Retained full backward compatibility for Ollama as an optional offline provider.
+
 ### 🐛 Bug Fixes & Improvements
 *   **Ollama Host & Endpoint Normalization**: Corrected `OllamaProvider` to read from the dedicated `ollamaUrl` config field rather than ignoring it. Implemented automatic URL normalization to prepend `http://` and remove trailing slashes for Ollama, Copilot, and Custom OpenAI Compatible endpoints to support formats like `127.0.0.1:11434` or `localhost`.
 *   **Settings Screen Race Condition & Saving Debounce**: Fixed a critical race condition where active keystroke inputs in Settings (API keys, URLs, etc.) were overwritten by background model-cache and latency benchmark updates before they could save. Also reduced saving debounce delays from 1000ms to 500ms for faster, more responsive updates.
