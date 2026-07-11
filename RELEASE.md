@@ -7,6 +7,8 @@ This document tracks release updates, changelogs, and binary verification checks
 ## v1.0.1 — Notification Intelligence & Theme Update (Re-release)
 
 ### 🐛 Bug Fixes & Improvements
+*   **Ollama Host & Endpoint Normalization**: Corrected `OllamaProvider` to read from the dedicated `ollamaUrl` config field rather than ignoring it. Implemented automatic URL normalization to prepend `http://` and remove trailing slashes for Ollama, Copilot, and Custom OpenAI Compatible endpoints to support formats like `127.0.0.1:11434` or `localhost`.
+*   **Settings Screen Race Condition & Saving Debounce**: Fixed a critical race condition where active keystroke inputs in Settings (API keys, URLs, etc.) were overwritten by background model-cache and latency benchmark updates before they could save. Also reduced saving debounce delays from 1000ms to 500ms for faster, more responsive updates.
 *   **Auto-Reply Loop Prevention**: Tracks recently auto-replied contacts with a 60-second cooldown window in `AutoReplyEngine` to suppress bounceback notifications. Also ignores self-sent notifications (e.g. WhatsApp notifications starting with `"You:"`).
 *   **Intent Classifier Complexity Heuristics**: Added a fast-path whitelist of single-intent commands (e.g. `"set brightness to 50"`, `"set volume to 70"`) in `IntentClassifier` to classify them as `SIMPLE` instead of `MEDIUM`. This prevents them from bypassing the local `AliasResolver` and causing LLM hallucinations.
 *   **Missing Parameter Prompt Loop**: Fully supports prompting the user for missing required action parameters (e.g. `"to"`, `"subject"`, and `"body"` for `SEND_EMAIL`) sequentially via chat and re-executing actions upon receipt.

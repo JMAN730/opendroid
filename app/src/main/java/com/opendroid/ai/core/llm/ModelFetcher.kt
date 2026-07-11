@@ -274,8 +274,7 @@ class ModelFetcher @Inject constructor(
                     }
                 }
                 "Ollama" -> {
-                    val rawUrl = config.ollamaUrl.trim()
-                    val baseUrl = if (rawUrl.isNotEmpty()) rawUrl else "http://10.0.2.2:11434"
+                    val baseUrl = formatBaseUrl(config.ollamaUrl, "http://10.0.2.2:11434")
                     val request = Request.Builder()
                         .url("$baseUrl/api/tags")
                         .get()
@@ -306,8 +305,7 @@ class ModelFetcher @Inject constructor(
                     Result.success(getGeminiFallback())
                 }
                 "Copilot API" -> {
-                    val rawUrl = config.copilotUrl.trim()
-                    val baseUrl = if (rawUrl.isNotEmpty()) rawUrl else "http://10.0.2.2:4141"
+                    val baseUrl = formatBaseUrl(config.copilotUrl, "http://10.0.2.2:4141")
                     val requestBuilder = Request.Builder()
                         .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
                         .get()
@@ -341,8 +339,9 @@ class ModelFetcher @Inject constructor(
                 "Custom OpenAI Compatible" -> {
                     val customUrl = config.customEndpoints[provider]?.trim() ?: ""
                     if (customUrl.isEmpty()) return@withContext Result.success(emptyList())
+                    val baseUrl = formatBaseUrl(customUrl, "")
                     val requestBuilder = Request.Builder()
-                        .url(if (customUrl.endsWith("/v1")) "$customUrl/models" else "$customUrl/v1/models")
+                        .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
                         .get()
                     if (!apiKey.isNullOrBlank()) {
                         requestBuilder.header("Authorization", "Bearer $apiKey")
@@ -466,4 +465,15 @@ class ModelFetcher @Inject constructor(
         AIModel("gpt-4-turbo", "GPT-4 Turbo", "Copilot API"),
         AIModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "Copilot API")
     )
+
+    private fun formatBaseUrl(url: String, defaultUrl: String): String {
+        val trimmed = url.trim()
+        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
+        val withScheme = if (!target.startsWith("http://") && !target.startsWith("https://")) {
+            "http://$target"
+        } else {
+            target
+        }
+        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
+    }
 }

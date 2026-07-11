@@ -40,10 +40,24 @@ class SettingsViewModel @Inject constructor(
     private var copilotUrlJob: Job? = null
     private var customEndpointJob: Job? = null
 
+    private var isLoaded = false
+
     init {
         viewModelScope.launch {
             settingsRepository.llmConfig.collect { config ->
-                _llmConfig.value = config
+                if (!isLoaded) {
+                    _llmConfig.value = config
+                    isLoaded = true
+                } else {
+                    _llmConfig.value = config.copy(
+                        apiKeys = _llmConfig.value.apiKeys,
+                        customEndpoints = _llmConfig.value.customEndpoints,
+                        elevenLabsApiKey = _llmConfig.value.elevenLabsApiKey,
+                        elevenLabsVoiceId = _llmConfig.value.elevenLabsVoiceId,
+                        ollamaUrl = _llmConfig.value.ollamaUrl,
+                        copilotUrl = _llmConfig.value.copilotUrl
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -130,7 +144,7 @@ class SettingsViewModel @Inject constructor(
         activeModelJob?.cancel()
         activeModelJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     current.copy(activeModel = model)
                 }
@@ -150,7 +164,7 @@ class SettingsViewModel @Inject constructor(
         apiKeyUpdateJobs[providerName]?.cancel()
         apiKeyUpdateJobs[providerName] = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     val currentKeys = current.apiKeys.toMutableMap()
                     currentKeys[providerName] = key
@@ -172,7 +186,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsApiKeyJob?.cancel()
         elevenLabsApiKeyJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsApiKey = key)
                 }
@@ -189,7 +203,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsVoiceIdJob?.cancel()
         elevenLabsVoiceIdJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsVoiceId = voiceId)
                 }
@@ -206,7 +220,7 @@ class SettingsViewModel @Inject constructor(
         ollamaUrlJob?.cancel()
         ollamaUrlJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     current.copy(ollamaUrl = url)
                 }
@@ -223,7 +237,7 @@ class SettingsViewModel @Inject constructor(
         copilotUrlJob?.cancel()
         copilotUrlJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     current.copy(copilotUrl = url)
                 }
@@ -243,7 +257,7 @@ class SettingsViewModel @Inject constructor(
         customEndpointJob?.cancel()
         customEndpointJob = viewModelScope.launch {
             try {
-                delay(1000)
+                delay(500)
                 settingsRepository.updateConfig { current ->
                     val currentEndpoints = current.customEndpoints.toMutableMap()
                     currentEndpoints[providerName] = url
