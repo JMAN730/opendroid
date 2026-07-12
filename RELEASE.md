@@ -6,6 +6,12 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ## v1.0.1 — Notification Intelligence & Theme Update (Re-release)
 
+### 🔄 Re-release Updates (July 12, 2026)
+*   **Gemma 3n Multimodal Support**: Added support for the Google on-device Gemma 3n Multimodal model alongside Gemma 4, utilizing the upgraded ML Kit GenAI Prompt API.
+*   **Dual Model Status Check**: Upgraded the on-device AI card in Settings to display individual status indicators (Available, Download Needed, Downloading, or Unsupported) and separate download triggers for both Gemma 4 and Gemma 3n Multimodal.
+*   **Toolchain Upgrades**: Upgraded Kotlin compiler to `2.1.10`, Hilt compiler/plugin to `2.55`, and Room compiler to `2.7.0` to support modern Kotlin 2.1 metadata compilation.
+*   **Settings Provider Restored**: Resolved a bug introduced during Gemma 4 integration where cloud providers (such as OpenRouter, Copilot API, DeepSeek, and Together AI) were incorrectly omitted from the active provider selection dropdown.
+
 ### 🤖 On-Device Gemma 4 Integration
 *   **Google ML Kit GenAI Prompt API**: Complemented the offline LLM providers with Google's on-device Gemma 4 (Gemini Nano) running via Android AI Core (AICore).
 *   **AI Core Status & Model Downloader**: Added a real-time AICore capability checker and downloader card in Settings to monitor model status (available, downloading, or unsupported) and trigger downloads directly from the UI.
