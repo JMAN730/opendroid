@@ -23,24 +23,47 @@ class GemmaProvider @Inject constructor(
 ) : LLMProvider {
 
     override val name: String = "Gemma 4 (On-device)"
-    override val availableModels: List<String> = listOf("gemma-4-on-device")
+    override val availableModels: List<String> = listOf("gemma-4-on-device", "gemma-3n-multimodal")
 
-    private val modelName = "gemma-4-on-device"
+    private fun getActiveModelName(): String {
+        return "gemma-on-device"
+    }
+
+    /**
+     * Returns the appropriate GenerativeModel client based on the selected model.
+     * - gemma-4-on-device: Uses default (STABLE) config
+     * - gemma-3n-multimodal: Uses PREVIEW stage with FAST preference for multimodal support
+     */
+    private fun getClientForModel(modelId: String): GenerativeModel {
+        return if (modelId == "gemma-3n-multimodal") {
+            val config = generationConfig {
+                modelConfig = modelConfig {
+                    releaseStage = ModelReleaseStage.PREVIEW
+                    preference = ModelPreference.FAST
+                }
+            }
+            Generation.getClient(config)
+        } else {
+            Generation.getClient()
+        }
+    }
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val startTime = System.currentTimeMillis()
+        val config = settingsRepository.llmConfig.first()
+        val selectedModel = config.activeModel
         val systemPrompt = request.systemPrompt
         val messages = request.messages
         val prompt = buildPrompt(systemPrompt, messages, request.tools?.map { ToolDefinition(it.name, it.description, it.parameters) } ?: emptyList())
 
         return withContext(Dispatchers.IO) {
             try {
-                val generativeModel = Generation.getClient()
+                val generativeModel = getClientForModel(selectedModel)
                 val status = generativeModel.checkStatus()
                 
                 when (status) {
-                    0 -> throw IllegalStateException("This device does not support Google AI Core.")
-                    1, 2 -> throw IllegalStateException("Gemma model is downloading or not installed. Please try again later.")
+                    0 -> throw IllegalStateException("This device does not support Google AI Core. Try selecting a different model.")
+                    1, 2 -> throw IllegalStateException("On-device model is downloading or not installed. Please try again later.")
                     3 -> { /* Ready */ }
                 }
 
@@ -54,7 +77,7 @@ class GemmaProvider @Inject constructor(
                 LLMResponse(
                     content = outputText,
                     tokensUsed = outputText.length / 4,
-                    model = modelName,
+                    model = selectedModel,
                     provider = name,
                     latencyMs = System.currentTimeMillis() - startTime
                 )
@@ -66,16 +89,18 @@ class GemmaProvider @Inject constructor(
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
         try {
-            val generativeModel = Generation.getClient()
+            val config = settingsRepository.llmConfig.first()
+            val selectedModel = config.activeModel
+            val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             
             when (status) {
                 0 -> {
-                    emit("Error: This device does not support Google AI Core.")
+                    emit("Error: This device does not support Google AI Core. Try selecting a different model.")
                     return@flow
                 }
                 1, 2 -> {
-                    emit("Error: Gemma model is downloading or not installed. Please try again later.")
+                    emit("Error: On-device model is downloading or not installed. Please try again later.")
                     return@flow
                 }
                 3 -> { /* Ready */ }
@@ -93,7 +118,7 @@ class GemmaProvider @Inject constructor(
                 emit(chunk.candidates.firstOrNull()?.text ?: "")
             }
         } catch (e: Exception) {
-            emit("Error streaming Gemma: ${handleException(e).localizedMessage}")
+            emit("Error streaming on-device model: ${handleException(e).localizedMessage}")
         }
     }
 
@@ -102,16 +127,18 @@ class GemmaProvider @Inject constructor(
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
         try {
-            val generativeModel = Generation.getClient()
+            val config = settingsRepository.llmConfig.first()
+            val selectedModel = config.activeModel
+            val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             
             when (status) {
                 0 -> {
-                    emit(StreamChunk.Content("Error: This device does not support Google AI Core."))
+                    emit(StreamChunk.Content("Error: This device does not support Google AI Core. Try selecting a different model."))
                     return@flow
                 }
                 1, 2 -> {
-                    emit(StreamChunk.Content("Error: Gemma model is downloading or not installed. Please try again later."))
+                    emit(StreamChunk.Content("Error: On-device model is downloading or not installed. Please try again later."))
                     return@flow
                 }
                 3 -> { /* Ready */ }
@@ -152,8 +179,19 @@ class GemmaProvider @Inject constructor(
 
     override suspend fun isAvailable(): Boolean {
         return try {
-            val generativeModel = Generation.getClient()
-            generativeModel.checkStatus() == 3
+            // Check if any on-device model variant is available
+            val defaultClient = Generation.getClient()
+            if (defaultClient.checkStatus() == 3) return true
+            
+            // Also check PREVIEW variant (Gemma 3n)
+            val previewConfig = generationConfig {
+                modelConfig = modelConfig {
+                    releaseStage = ModelReleaseStage.PREVIEW
+                    preference = ModelPreference.FAST
+                }
+            }
+            val previewClient = Generation.getClient(previewConfig)
+            previewClient.checkStatus() == 3
         } catch (e: Exception) {
             false
         }
@@ -168,9 +206,32 @@ class GemmaProvider @Inject constructor(
         }
     }
 
+    suspend fun getFeatureStatusForModel(modelId: String): Int {
+        return try {
+            val generativeModel = getClientForModel(modelId)
+            generativeModel.checkStatus()
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     fun triggerModelDownload(): Flow<DownloadStatus> {
         return try {
             val generativeModel = Generation.getClient()
+            generativeModel.download()
+        } catch (e: Exception) {
+            flow { 
+                emit(DownloadStatus.DownloadFailed(
+                    if (e is com.google.mlkit.genai.common.GenAiException) e 
+                    else com.google.mlkit.genai.common.GenAiException(e.localizedMessage ?: "Download failed", e, 1)
+                )) 
+            }
+        }
+    }
+
+    fun triggerModelDownloadForModel(modelId: String): Flow<DownloadStatus> {
+        return try {
+            val generativeModel = getClientForModel(modelId)
             generativeModel.download()
         } catch (e: Exception) {
             flow { 

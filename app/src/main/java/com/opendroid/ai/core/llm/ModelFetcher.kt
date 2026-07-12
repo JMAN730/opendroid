@@ -312,6 +312,13 @@ class ModelFetcher @Inject constructor(
                             provider = provider,
                             isFree = true,
                             isRecommended = true
+                        ),
+                        AIModel(
+                            id = "gemma-3n-multimodal",
+                            displayName = "Gemma 3n Multimodal",
+                            provider = provider,
+                            isFree = true,
+                            isRecommended = false
                         )
                     ))
                 }

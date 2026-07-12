@@ -186,13 +186,7 @@ fun SettingsScreen(
                                     enabled = false,
                                     onClick = {}
                                 )
-                                val cloudProvidersList = listOf(
-                                    "Google Gemini",
-                                    "OpenAI",
-                                    "Anthropic Claude",
-                                    "Groq",
-                                    "Ollama"
-                                )
+                                val cloudProvidersList = providers.filter { it != "Gemma 4 (On-device)" }
                                 cloudProvidersList.forEach { name ->
                                     val displayName = when (name) {
                                         "Google Gemini" -> "Gemini"
@@ -462,62 +456,159 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "GEMMA ON-DEVICE AI",
+                                text = "ON-DEVICE AI STATUS",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = AccentNeonGreen
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Active: ${if (config.activeModel == "gemma-3n-multimodal") "Gemma 3n Multimodal" else "Gemma 4"}",
+                                fontSize = 12.sp,
+                                color = AccentCyan,
+                                fontWeight = FontWeight.SemiBold
+                            )
                             Spacer(modifier = Modifier.height(12.dp))
                             
-                            var statusState by remember { mutableStateOf("Checking...") }
-                            var showDownloadButton by remember { mutableStateOf(false) }
+                            // Gemma 4 Status
+                            var gemma4Status by remember { mutableStateOf("Checking...") }
+                            var showGemma4Download by remember { mutableStateOf(false) }
+                            
+                            // Gemma 3n Status
+                            var gemma3nStatus by remember { mutableStateOf("Checking...") }
+                            var showGemma3nDownload by remember { mutableStateOf(false) }
                             
                             LaunchedEffect(Unit) {
+                                // Check Gemma 4 (default/stable)
                                 try {
                                     val client = Generation.getClient()
                                     val status = client.checkStatus()
-                                    statusState = when (status) {
-                                        FeatureStatus.AVAILABLE -> "Available and ready on-device"
+                                    gemma4Status = when (status) {
+                                        FeatureStatus.AVAILABLE -> "Available and ready"
                                         FeatureStatus.DOWNLOADABLE -> {
-                                            showDownloadButton = true
-                                            "Unsupported (Download needed)"
+                                            showGemma4Download = true
+                                            "Download needed"
                                         }
-                                        FeatureStatus.DOWNLOADING -> "Downloading model files..."
-                                        FeatureStatus.UNAVAILABLE -> "This device does not support Google AI Core."
-                                        else -> "Unknown status"
+                                        FeatureStatus.DOWNLOADING -> "Downloading..."
+                                        FeatureStatus.UNAVAILABLE -> "Not supported on this device"
+                                        else -> "Unknown"
                                     }
                                 } catch (e: Exception) {
-                                    statusState = "This device does not support Google AI Core."
+                                    gemma4Status = "Not supported on this device"
+                                }
+                                
+                                // Check Gemma 3n (preview/fast)
+                                try {
+                                    val previewConfig = generationConfig {
+                                        modelConfig = modelConfig {
+                                            releaseStage = ModelReleaseStage.PREVIEW
+                                            preference = ModelPreference.FAST
+                                        }
+                                    }
+                                    val client3n = Generation.getClient(previewConfig)
+                                    val status3n = client3n.checkStatus()
+                                    gemma3nStatus = when (status3n) {
+                                        FeatureStatus.AVAILABLE -> "Available and ready"
+                                        FeatureStatus.DOWNLOADABLE -> {
+                                            showGemma3nDownload = true
+                                            "Download needed"
+                                        }
+                                        FeatureStatus.DOWNLOADING -> "Downloading..."
+                                        FeatureStatus.UNAVAILABLE -> "Not supported on this device"
+                                        else -> "Unknown"
+                                    }
+                                } catch (e: Exception) {
+                                    gemma3nStatus = "Not supported on this device"
                                 }
                             }
                             
+                            // Gemma 4 row
                             Text(
-                                text = "Status: $statusState",
-                                fontSize = 14.sp,
+                                text = "GEMMA 4",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Status: $gemma4Status",
+                                fontSize = 13.sp,
                                 color = TextPrimary,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            
-                            if (showDownloadButton) {
-                                Spacer(modifier = Modifier.height(12.dp))
+                            if (showGemma4Download) {
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Button(
                                     onClick = {
                                         try {
                                             val client = Generation.getClient()
                                             client.download()
-                                            statusState = "Downloading model files..."
-                                            showDownloadButton = false
+                                            gemma4Status = "Downloading..."
+                                            showGemma4Download = false
                                         } catch (e: Exception) {
-                                            statusState = "Download failed: ${e.localizedMessage}"
+                                            gemma4Status = "Download failed: ${e.localizedMessage}"
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Download Gemma Model", color = DarkBackground)
+                                    Text("Download Gemma 4", color = DarkBackground)
                                 }
                             }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Gemma 3n row
+                            Text(
+                                text = "GEMMA 3N MULTIMODAL",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Status: $gemma3nStatus",
+                                fontSize = 13.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (showGemma3nDownload) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val previewConfig = generationConfig {
+                                                modelConfig = modelConfig {
+                                                    releaseStage = ModelReleaseStage.PREVIEW
+                                                    preference = ModelPreference.FAST
+                                                }
+                                            }
+                                            val client3n = Generation.getClient(previewConfig)
+                                            client3n.download()
+                                            gemma3nStatus = "Downloading..."
+                                            showGemma3nDownload = false
+                                        } catch (e: Exception) {
+                                            gemma3nStatus = "Download failed: ${e.localizedMessage}"
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Download Gemma 3n", color = DarkBackground)
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Tip: If one model is unsupported, try selecting the other from the model dropdown above.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
                         }
                     }
                 }
