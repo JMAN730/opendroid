@@ -5,6 +5,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
+        classpath 'com.android.tools:r8:9.1.31'
         classpath 'com.android.tools.build:gradle:8.8.2'
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0'
         classpath 'com.google.dagger:hilt-android-gradle-plugin:2.58'
