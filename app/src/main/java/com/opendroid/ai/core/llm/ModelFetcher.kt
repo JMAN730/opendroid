@@ -1,6 +1,7 @@
 package com.opendroid.ai.core.llm
 
 import android.util.Log
+import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -304,23 +305,19 @@ class ModelFetcher @Inject constructor(
                 "Google Gemini" -> {
                     Result.success(getGeminiFallback())
                 }
-                "Gemma 4 (On-device)" -> {
-                    Result.success(listOf(
+                "Gemma 4 (On-device)",
+                "On-Device AI" -> {
+                    // Use the centralized registry — future models are
+                    // added there and automatically appear here.
+                    Result.success(OnDeviceModelRegistry.allModels.map { spec ->
                         AIModel(
-                            id = "gemma-4-on-device",
-                            displayName = "Gemma 4 (On-device)",
+                            id = spec.id,
+                            displayName = spec.displayName,
                             provider = provider,
                             isFree = true,
-                            isRecommended = true
-                        ),
-                        AIModel(
-                            id = "gemma-3n-multimodal",
-                            displayName = "Gemma 3n Multimodal",
-                            provider = provider,
-                            isFree = true,
-                            isRecommended = false
+                            isRecommended = spec.isRecommended
                         )
-                    ))
+                    })
                 }
                 "Copilot API" -> {
                     val baseUrl = formatBaseUrl(config.copilotUrl, "http://10.0.2.2:4141")

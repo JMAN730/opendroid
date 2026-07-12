@@ -123,15 +123,18 @@ class SettingsViewModel @Inject constructor(
             "Ollama" -> "llama3"
             "Copilot API" -> "gpt-4o"
             "Custom OpenAI Compatible" -> "gpt-4o"
+            "On-Device AI",
             "Gemma 4 (On-device)" -> "gemma-4-on-device"
             "Mistral AI" -> "mistral-large-latest"
             else -> "gemini-2.0-flash"
         }
-        _llmConfig.value = _llmConfig.value.copy(activeProvider = provider, activeModel = defaultModel)
+        // Normalize legacy name to the new unified name
+        val normalizedProvider = if (provider == "Gemma 4 (On-device)") "On-Device AI" else provider
+        _llmConfig.value = _llmConfig.value.copy(activeProvider = normalizedProvider, activeModel = defaultModel)
         viewModelScope.launch {
             try {
                 settingsRepository.updateConfig { current ->
-                    current.copy(activeProvider = provider, activeModel = defaultModel)
+                    current.copy(activeProvider = normalizedProvider, activeModel = defaultModel)
                 }
                 refreshModels(force = false)
             } catch (e: Exception) {

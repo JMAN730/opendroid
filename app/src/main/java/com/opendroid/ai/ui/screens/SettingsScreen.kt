@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
@@ -60,7 +62,7 @@ fun SettingsScreen(
         "Copilot API",
         "Custom OpenAI Compatible",
         "Ollama",
-        "Gemma 4 (On-device)"
+        "On-Device AI"
     )
 
     var providerDropdownExpanded by remember { mutableStateOf(false) }
@@ -130,7 +132,7 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (config.activeProvider == "Gemma 4 (On-device)") "Gemma 4 (Offline)" else config.activeProvider,
+                                    text = if (config.activeProvider == "On-Device AI" || config.activeProvider == "Gemma 4 (On-device)") "On-Device AI" else config.activeProvider,
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -164,9 +166,9 @@ fun SettingsScreen(
                                     onClick = {}
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Gemma 4 (On-device)", color = TextPrimary, modifier = Modifier.padding(start = 8.dp)) },
+                                    text = { Text("On-Device AI", color = TextPrimary, modifier = Modifier.padding(start = 8.dp)) },
                                     onClick = {
-                                        viewModel.updateActiveProvider("Gemma 4 (On-device)")
+                                        viewModel.updateActiveProvider("On-Device AI")
                                         providerDropdownExpanded = false
                                     }
                                 )
@@ -186,7 +188,7 @@ fun SettingsScreen(
                                     enabled = false,
                                     onClick = {}
                                 )
-                                val cloudProvidersList = providers.filter { it != "Gemma 4 (On-device)" }
+                                val cloudProvidersList = providers.filter { it != "On-Device AI" }
                                 cloudProvidersList.forEach { name ->
                                     val displayName = when (name) {
                                         "Google Gemini" -> "Gemini"
@@ -445,8 +447,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Gemma Status Config Card (Visible only when Gemma is selected)
-            if (config.activeProvider == "Gemma 4 (On-device)") {
+            // On-Device AI Status Card (Visible when On-Device AI or legacy Gemma provider is selected)
+            if (config.activeProvider == "On-Device AI" || config.activeProvider == "Gemma 4 (On-device)") {
                 item {
                     Card(
                         modifier = Modifier
@@ -463,19 +465,37 @@ fun SettingsScreen(
                                 color = AccentNeonGreen
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            
+                            // Show which model is active
+                            val activeSpec = OnDeviceModelRegistry.findById(config.activeModel)
                             Text(
-                                text = "Active: ${if (config.activeModel == "gemma-3n-multimodal") "Gemma 3n Multimodal" else "Gemma 4"}",
+                                text = "Active: ${activeSpec?.displayName ?: config.activeModel}",
                                 fontSize = 12.sp,
                                 color = AccentCyan,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            if (activeSpec != null) {
+                                Text(
+                                    text = "Backend: ${if (activeSpec.backend == OnDeviceBackend.AI_CORE) "Android AI Core" else "LiteRT-LM"}",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
                             
-                            // Gemma 4 Status
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // ─── AI Core Backend Section ───
+                            Text(
+                                text = "ANDROID AI CORE",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
                             var gemma4Status by remember { mutableStateOf("Checking...") }
                             var showGemma4Download by remember { mutableStateOf(false) }
-                            
-                            // Gemma 3n Status
                             var gemma3nStatus by remember { mutableStateOf("Checking...") }
                             var showGemma3nDownload by remember { mutableStateOf(false) }
                             
@@ -523,23 +543,21 @@ fun SettingsScreen(
                                 }
                             }
                             
-                            // Gemma 4 row
-                            Text(
-                                text = "GEMMA 4",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Status: $gemma4Status",
-                                fontSize = 13.sp,
-                                color = TextPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            // Gemma 4 AI Core row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Gemma 4", fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = gemma4Status,
+                                    fontSize = 11.sp,
+                                    color = if (gemma4Status.contains("ready")) AccentNeonGreen else TextSecondary
+                                )
+                            }
                             if (showGemma4Download) {
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
                                         try {
@@ -554,31 +572,27 @@ fun SettingsScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Download Gemma 4", color = DarkBackground)
+                                    Text("Download Gemma 4 (AI Core)", color = DarkBackground)
                                 }
                             }
                             
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             
-                            // Gemma 3n row
-                            Text(
-                                text = "GEMMA 3N MULTIMODAL",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Status: $gemma3nStatus",
-                                fontSize = 13.sp,
-                                color = TextPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            // Gemma 3n AI Core row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Gemma 3n Multimodal", fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = gemma3nStatus,
+                                    fontSize = 11.sp,
+                                    color = if (gemma3nStatus.contains("ready")) AccentNeonGreen else TextSecondary
+                                )
+                            }
                             if (showGemma3nDownload) {
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
                                         try {
@@ -599,13 +613,86 @@ fun SettingsScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Download Gemma 3n", color = DarkBackground)
+                                    Text("Download Gemma 3n (AI Core)", color = DarkBackground)
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // ─── LiteRT-LM Backend Section ───
+                            Text(
+                                text = "LITERT-LM (FALLBACK)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Runs without Google AI Core. Works on any Android 12+ device.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // Dynamically list all LiteRT-LM models from registry
+                            val liteRTModels = OnDeviceModelRegistry.liteRTOnly
+                            liteRTModels.forEach { spec ->
+                                var modelStatus by remember { mutableStateOf(
+                                    if (android.os.Build.VERSION.SDK_INT < spec.minSdk) "Requires API ${spec.minSdk}+" else "Not downloaded"
+                                ) }
+                                
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = spec.displayName,
+                                            fontSize = 13.sp,
+                                            color = TextPrimary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "${spec.family} · ${spec.sizeLabel}",
+                                            fontSize = 10.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                    if (spec.isRecommended) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(
+                                                    Color(0xFFFF9800).copy(alpha = 0.15f),
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "REC",
+                                                color = Color(0xFFFF9800),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = modelStatus,
+                                        fontSize = 10.sp,
+                                        color = if (modelStatus == "Ready") AccentNeonGreen else TextSecondary
+                                    )
                                 }
                             }
                             
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Tip: If one model is unsupported, try selecting the other from the model dropdown above.",
+                                text = "Tip: If AI Core is unsupported, select a LiteRT-LM model from the model dropdown above. The app will automatically fall back to LiteRT-LM when AI Core is unavailable.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -733,7 +820,7 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(top = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val inputProviders = providers.filter { it != "Ollama" && it != "Gemma 4 (On-device)" }
+                                val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
                                     OutlinedTextField(
