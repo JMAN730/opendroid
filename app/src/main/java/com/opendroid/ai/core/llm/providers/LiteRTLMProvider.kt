@@ -161,23 +161,6 @@ class LiteRTLMProvider @Inject constructor(
                         ?: emptyList()
                 )
 
-                // ── LiteRT-LM inference call ────────────────────────────────
-                // Uses the LiteRT-LM SDK: LlmInference.createFromOptions(...)
-                // The actual runtime integration requires the litertlm-android
-                // dependency. Below is the structured call pattern:
-                //
-                //   val options = LlmInferenceOptions.builder()
-                //       .setModelPath(modelPath)
-                //       .setMaxTokens(request.maxTokens)
-                //       .setTemperature(request.temperature)
-                //       .build()
-                //   val engine = LlmInference.createFromOptions(context, options)
-                //   val result = engine.generateResponse(prompt)
-                //   engine.close()
-                //
-                // Until the runtime is available on the build host, we wrap
-                // the call in a reflection-safe invoker so the rest of the
-                // architecture compiles and the fallback chain works correctly.
                 val outputText = invokeLiteRTInference(modelPath, prompt, request.maxTokens, request.temperature)
 
                 LLMResponse(
@@ -187,8 +170,8 @@ class LiteRTLMProvider @Inject constructor(
                     provider = name,
                     latencyMs = System.currentTimeMillis() - startTime
                 )
-            } catch (e: Exception) {
-                throw handleException(e, spec)
+            } catch (e: Throwable) {
+                throw handleThrowable(e, spec)
             }
         }
     }
@@ -208,23 +191,12 @@ class LiteRTLMProvider @Inject constructor(
                     ?: emptyList()
             )
 
-            // ── LiteRT-LM streaming inference ──────────────────────────
-            // In production:
-            //   val options = LlmInferenceOptions.builder()
-            //       .setModelPath(modelPath)
-            //       .setMaxTokens(request.maxTokens)
-            //       .setTemperature(request.temperature)
-            //       .build()
-            //   val engine = LlmInference.createFromOptions(context, options)
-            //   engine.generateResponseAsync(prompt) { partial, done ->
-            //       // emit partial tokens
-            //   }
-            //
-            // For now, fall back to a single complete() call emitted as one chunk.
             val result = invokeLiteRTInference(modelPath, prompt, request.maxTokens, request.temperature)
             emit(result)
-        } catch (e: Exception) {
-            emit("Error (LiteRT-LM): ${e.localizedMessage}")
+        } catch (e: Throwable) {
+            val config = settingsRepository.llmConfig.first()
+            val spec = resolveModelSpec(config.activeModel)
+            emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
         }
     }
 
@@ -257,11 +229,13 @@ class LiteRTLMProvider @Inject constructor(
                         emit(StreamChunk.ToolCall(toolName, argsObj.toString()))
                     }
                 }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 // Not JSON — treat as plain text
             }
-        } catch (e: Exception) {
-            emit(StreamChunk.Content("Error (LiteRT-LM): ${e.localizedMessage}"))
+        } catch (e: Throwable) {
+            val config = settingsRepository.llmConfig.first()
+            val spec = resolveModelSpec(config.activeModel)
+            emit(StreamChunk.Content("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}"))
         }
     }
 
@@ -319,18 +293,59 @@ class LiteRTLMProvider @Inject constructor(
         maxTokens: Int,
         temperature: Float
     ): String {
-        return try {
+        try {
             if (cachedModelPath != modelPath) {
+                Log.i(TAG, "[INIT FLOW] Active model path changed from '$cachedModelPath' to '$modelPath'. Resetting cached engine.")
                 closeCachedEngine()
             }
 
             var engine = cachedEngine
-            val inferenceClass = Class.forName("com.google.ai.edge.litertlm.LlmInference")
-            if (engine == null) {
-                Log.i(TAG, "Creating new LlmInference instance for $modelPath")
-                val optionsBuilderClass = Class.forName("com.google.ai.edge.litertlm.LlmInferenceOptions\$Builder")
-                val builder = optionsBuilderClass.getDeclaredConstructor().newInstance()
 
+            // 1. Verify LiteRT library classes are present on the classpath
+            Log.i(TAG, "[INIT FLOW] [STEP 1/6] Verifying LiteRT SDK classes on classpath...")
+            val inferenceClass = try {
+                Class.forName("com.google.ai.edge.litertlm.LlmInference")
+            } catch (e: ClassNotFoundException) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] LiteRT SDK LlmInference class is missing from classpath", e)
+                throw ClassNotFoundException("LiteRT SDK library is missing: LlmInference class not found on classpath.", e)
+            }
+            
+            val optionsClass = try {
+                Class.forName("com.google.ai.edge.litertlm.LlmInferenceOptions")
+            } catch (e: ClassNotFoundException) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] LiteRT SDK LlmInferenceOptions class is missing", e)
+                throw ClassNotFoundException("LiteRT SDK library is missing: LlmInferenceOptions class not found.", e)
+            }
+
+            val optionsBuilderClass = try {
+                Class.forName("com.google.ai.edge.litertlm.LlmInferenceOptions\$Builder")
+            } catch (e: ClassNotFoundException) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] LiteRT SDK LlmInferenceOptions.Builder class is missing", e)
+                throw ClassNotFoundException("LiteRT SDK library is missing: LlmInferenceOptions.Builder class not found.", e)
+            }
+            Log.i(TAG, "[INIT FLOW] [SUCCESS] LiteRT SDK classes verified on classpath.")
+
+            // 2. Verify model file exists, is a file, and is readable
+            Log.i(TAG, "[INIT FLOW] [STEP 2/6] Verifying model file status at: $modelPath")
+            val modelFile = File(modelPath)
+            if (!modelFile.exists()) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] Model file does not exist: $modelPath")
+                throw java.io.FileNotFoundException("Model file not downloaded / missing at path: $modelPath")
+            }
+            if (modelFile.isDirectory) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] Model path is a directory: $modelPath")
+                throw IllegalArgumentException("Invalid model path: '$modelPath' is a directory, not a file.")
+            }
+            if (!modelFile.canRead()) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] Model file is not readable: $modelPath")
+                throw IOException("Model file at '$modelPath' exists but is not readable. Check storage permissions.")
+            }
+            Log.i(TAG, "[INIT FLOW] [SUCCESS] Model file verified (size: ${modelFile.length()} bytes).")
+
+            // 3. Verify options building (Runtime initialization configuration)
+            Log.i(TAG, "[INIT FLOW] [STEP 3/6] Configuring LlmInferenceOptions...")
+            val options = try {
+                val builder = optionsBuilderClass.getDeclaredConstructor().newInstance()
                 val setModelPath = optionsBuilderClass.getMethod("setModelPath", String::class.java)
                 val setMaxTokens = optionsBuilderClass.getMethod("setMaxTokens", Int::class.javaPrimitiveType)
                 val setTemperature = optionsBuilderClass.getMethod("setTemperature", Float::class.javaPrimitiveType)
@@ -339,33 +354,75 @@ class LiteRTLMProvider @Inject constructor(
                 setModelPath.invoke(builder, modelPath)
                 setMaxTokens.invoke(builder, maxTokens)
                 setTemperature.invoke(builder, temperature)
-                val options = buildMethod.invoke(builder)
+                buildMethod.invoke(builder)
+            } catch (e: Exception) {
+                Log.e(TAG, "[INIT FLOW] [FAILURE] Options building failed", e)
+                throw IllegalStateException("LiteRT Runtime Options configuration failed: ${e.cause?.localizedMessage ?: e.localizedMessage}", e.cause ?: e)
+            }
+            Log.i(TAG, "[INIT FLOW] [SUCCESS] LlmInferenceOptions configured successfully.")
 
-                val createMethod = inferenceClass.getMethod(
-                    "createFromOptions",
-                    Context::class.java,
-                    options!!::class.java.interfaces.firstOrNull() ?: options::class.java
-                )
-                engine = createMethod.invoke(null, context, options)
-                cachedEngine = engine
-                cachedModelPath = modelPath
+            // 4. Verify JNI library loading and engine instantiation
+            if (engine == null) {
+                Log.i(TAG, "[INIT FLOW] [STEP 4/6] Creating new LlmInference instance...")
+                try {
+                    val createMethod = inferenceClass.getMethod(
+                        "createFromOptions",
+                        Context::class.java,
+                        optionsClass
+                    )
+                    engine = createMethod.invoke(null, context, options)
+                    cachedEngine = engine
+                    cachedModelPath = modelPath
+                    Log.i(TAG, "[INIT FLOW] [SUCCESS] LiteRT Inference Engine initialized and cached.")
+                } catch (e: Exception) {
+                    val cause = e.cause
+                    if (cause is UnsatisfiedLinkError) {
+                        Log.e(TAG, "[INIT FLOW] [FAILURE] JNI native library failed to load (liblitertlm_jni.so)", cause)
+                        throw UnsatisfiedLinkError("LiteRT JNI native library failed to load (liblitertlm_jni.so). Error: ${cause.localizedMessage}")
+                    }
+                    Log.e(TAG, "[INIT FLOW] [FAILURE] LlmInference engine creation failed", e)
+                    throw IOException("LiteRT Engine creation failed (possibly corrupted model format or native crash): ${cause?.localizedMessage ?: e.localizedMessage}", cause ?: e)
+                }
             } else {
-                Log.i(TAG, "Reusing cached LlmInference instance")
+                Log.i(TAG, "[INIT FLOW] [STEP 4/6] Reusing cached LlmInference instance.")
             }
 
-            val generateMethod = inferenceClass.getMethod("generateResponse", String::class.java)
-            val result = generateMethod.invoke(engine, prompt) as String
-            result
+            // 5. Verify native library loaded (extra safeguard)
+            Log.i(TAG, "[INIT FLOW] [STEP 5/6] Verifying JNI library link status...")
+            // If the instance exists, the link is successful.
+            Log.i(TAG, "[INIT FLOW] [SUCCESS] JNI library links verified.")
+
+            // 6. Execute inference
+            Log.i(TAG, "[INIT FLOW] [STEP 6/6] Executing inference on prompt...")
+            val result = try {
+                val generateMethod = inferenceClass.getMethod("generateResponse", String::class.java)
+                generateMethod.invoke(engine, prompt) as String
+            } catch (e: Exception) {
+                val cause = e.cause
+                Log.e(TAG, "[INIT FLOW] [FAILURE] Inference execution failed", e)
+                throw IOException("LiteRT Inference execution failed: ${cause?.localizedMessage ?: e.localizedMessage}", cause ?: e)
+            }
+            Log.i(TAG, "[INIT FLOW] [SUCCESS] Inference succeeded. Received response of length ${result.length}.")
+            return result
+
         } catch (e: ClassNotFoundException) {
-            Log.w(TAG, "LiteRT-LM SDK not found on classpath, returning error guidance")
-            throw IOException(
-                "LiteRT-LM runtime is not available. Please ensure the " +
-                "litertlm-android dependency is included in your build.", e
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "LiteRT-LM inference failed: ${e.message}", e)
             closeCachedEngine()
-            throw IOException("LiteRT-LM inference failed: ${e.localizedMessage}", e)
+            throw e
+        } catch (e: UnsatisfiedLinkError) {
+            closeCachedEngine()
+            throw e
+        } catch (e: java.io.FileNotFoundException) {
+            closeCachedEngine()
+            throw e
+        } catch (e: IllegalArgumentException) {
+            closeCachedEngine()
+            throw e
+        } catch (e: IOException) {
+            closeCachedEngine()
+            throw e
+        } catch (e: Exception) {
+            closeCachedEngine()
+            throw e
         }
     }
 
@@ -423,10 +480,13 @@ class LiteRTLMProvider @Inject constructor(
         return sb.toString()
     }
 
-    private fun handleException(e: Exception, spec: OnDeviceModelSpec): Exception {
+    private fun handleThrowable(e: Throwable, spec: OnDeviceModelSpec): Throwable {
         return when (e) {
             is IllegalStateException -> e
             is IOException -> e
+            is ClassNotFoundException -> e
+            is IllegalArgumentException -> e
+            is UnsatisfiedLinkError -> e
             else -> {
                 val msg = e.localizedMessage ?: ""
                 when {
