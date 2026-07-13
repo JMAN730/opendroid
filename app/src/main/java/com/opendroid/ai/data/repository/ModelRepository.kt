@@ -63,20 +63,31 @@ class ModelRepository @Inject constructor(
         registeredModels.forEach { spec ->
             val existing = modelDao.getModelById(spec.id)
             val dir = getModelDir(spec.id)
-            val hasFiles = dir.exists() && File(dir, "model.task").exists() && File(dir, "model.task").length() > 0
-
+            
+            val modelTaskFile = File(dir, "model.task")
+            if (modelTaskFile.exists() && modelTaskFile.length() <= 100 * 1024 * 1024) {
+                Log.w(tag, "Deleting invalid/simulated placeholder model file: ${modelTaskFile.absolutePath} (size: ${modelTaskFile.length()} bytes)")
+                try {
+                    modelTaskFile.delete()
+                } catch (e: Exception) {
+                    Log.e(tag, "Failed to delete invalid placeholder model file", e)
+                }
+            }
+            
+            val hasFiles = dir.exists() && modelTaskFile.exists() && modelTaskFile.length() > 100 * 1024 * 1024
+ 
             val currentStatus = when {
                 hasFiles -> ModelStatus.READY
                 existing != null && (existing.status == ModelStatus.DOWNLOADING || existing.status == ModelStatus.PAUSED) -> existing.status
                 else -> ModelStatus.NOT_DOWNLOADED
             }
-
+ 
             val currentProgress = when {
                 hasFiles -> 100
                 existing != null && (existing.status == ModelStatus.DOWNLOADING || existing.status == ModelStatus.PAUSED) -> existing.downloadProgress
                 else -> 0
             }
-
+ 
             val entity = ModelEntity(
                 id = spec.id,
                 name = spec.displayName,
@@ -90,7 +101,7 @@ class ModelRepository @Inject constructor(
                 installedAt = existing?.installedAt ?: (if (hasFiles) System.currentTimeMillis() else 0L),
                 downloadedSize = existing?.downloadedSize ?: (if (hasFiles) getModelSize(spec.id) else 0L)
             )
-
+ 
             modelDao.insertModel(entity)
         }
     }
