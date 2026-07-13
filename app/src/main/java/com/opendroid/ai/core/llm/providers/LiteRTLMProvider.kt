@@ -92,7 +92,8 @@ class LiteRTLMProvider @Inject constructor(
     fun isModelDownloaded(modelId: String): Boolean {
         val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
-        return modelFile.exists() && modelFile.length() > 0
+        // Integrity check: real LiteRT model file must exist and be > 100MB (mock files from previous runs are small)
+        return modelFile.exists() && modelFile.length() > 100 * 1024 * 1024
     }
 
     /**
@@ -294,17 +295,87 @@ class LiteRTLMProvider @Inject constructor(
         }
     }
 
+    private fun verifyModelFileIntegrity(modelPath: String) {
+        val file = File(modelPath)
+        Log.i(TAG, "[INTEGRITY CHECK] Verifying file at path: $modelPath")
+        
+        if (!file.exists()) {
+            Log.e(TAG, "[INTEGRITY CHECK] File does not exist: $modelPath")
+            throw java.io.FileNotFoundException("Model file does not exist at: $modelPath")
+        }
+        
+        if (file.isDirectory) {
+            Log.e(TAG, "[INTEGRITY CHECK] File is a directory: $modelPath")
+            throw IllegalArgumentException("Expected model file, but path is a directory: $modelPath")
+        }
+        
+        val size = file.length()
+        Log.i(TAG, "[INTEGRITY CHECK] File size: $size bytes (${String.format("%.2f", size.toDouble() / (1024 * 1024))} MB)")
+        if (size == 0L) {
+            Log.e(TAG, "[INTEGRITY CHECK] File is empty (0 bytes): $modelPath")
+            throw IOException("Model file is empty (0 bytes) at: $modelPath")
+        }
+        
+        if (size < 100 * 1024 * 1024) {
+            Log.e(TAG, "[INTEGRITY CHECK] File is too small ($size bytes) to be a valid Gemma model. It is likely a simulated placeholder.")
+            throw IOException("Model file at '$modelPath' is invalid/simulated ($size bytes). Please delete and redownload it.")
+        }
+        
+        if (size >= 4) {
+            try {
+                file.inputStream().use { input ->
+                    val magic = ByteArray(4)
+                    val read = input.read(magic)
+                    if (read == 4) {
+                        val hex = magic.joinToString(" ") { "%02X".format(it) }
+                        val ascii = String(magic).replace(Regex("[^\\x20-\\x7E]"), ".")
+                        Log.i(TAG, "[INTEGRITY CHECK] Magic bytes (Hex): $hex | ASCII: $ascii")
+                        
+                        // ZIP archive magic header: PK\u0003\u0004 (50 4B 03 04)
+                        if (magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
+                            magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()) {
+                            Log.i(TAG, "[INTEGRITY CHECK] Valid ZIP/Task archive header found.")
+                        } else {
+                            Log.w(TAG, "[INTEGRITY CHECK] Warning: ZIP/Task archive header not found! Expected 50 4B 03 04 (PK..)")
+                        }
+                    }
+                }
+            } catch (e: java.lang.Exception) {
+                Log.e(TAG, "[INTEGRITY CHECK] Failed to read magic bytes", e)
+            }
+        } else {
+            Log.e(TAG, "[INTEGRITY CHECK] File is too small to read magic header (< 4 bytes)")
+        }
+
+        // Compute and print SHA-256
+        try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+            Log.i(TAG, "[INTEGRITY CHECK] SHA-256 checksum: $sha256")
+        } catch (e: java.lang.Exception) {
+            Log.e(TAG, "[INTEGRITY CHECK] Failed to compute SHA-256", e)
+        }
+    }
+
     /**
      * Verifies the model file exists and is valid.
      */
     private fun checkModelReady(modelPath: String, spec: OnDeviceModelSpec) {
         val file = File(modelPath)
-        if (!file.exists() || file.length() == 0L) {
+        if (!file.exists() || file.length() < 100 * 1024 * 1024) {
             throw IllegalStateException(
-                "Model \"${spec.displayName}\" has not been downloaded yet. " +
+                "Model \"${spec.displayName}\" has not been downloaded yet or is invalid/simulated. " +
                 "Please download it from Settings → On-Device AI."
             )
         }
+        verifyModelFileIntegrity(modelPath)
     }
 
     /**
@@ -324,12 +395,9 @@ class LiteRTLMProvider @Inject constructor(
 
         var engine = cachedEngine
         if (engine == null) {
-            val modelFile = File(modelPath)
-            if (!modelFile.exists()) {
-                throw java.io.FileNotFoundException("Model file not downloaded / missing at path: $modelPath")
-            }
+            verifyModelFileIntegrity(modelPath)
             
-            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig...")
+            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath")
             val config = EngineConfig(
                 modelPath = modelPath,
                 backend = Backend.CPU(), // Run on CPU for compatibility
@@ -337,11 +405,16 @@ class LiteRTLMProvider @Inject constructor(
             )
             
             Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
-            engine = Engine(config)
-            engine.initialize()
-            cachedEngine = engine
-            cachedModelPath = modelPath
-            Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully and cached.")
+            try {
+                engine = Engine(config)
+                engine.initialize()
+                cachedEngine = engine
+                cachedModelPath = modelPath
+                Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully and cached.")
+            } catch (e: Throwable) {
+                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine. Full Exception Stack Trace:", e)
+                throw e
+            }
         }
         return engine
     }

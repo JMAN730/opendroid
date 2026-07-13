@@ -248,9 +248,9 @@ class ModelDownloadWorker(
         val targetDir = File(targetPath)
         if (!targetDir.exists()) targetDir.mkdirs()
 
-        Log.i(tag, "[DOWNLOAD FLOW] Extracting model payload to target directory: $targetPath")
+        Log.i(tag, "[DOWNLOAD FLOW] Copying or extracting model payload to target directory: $targetPath")
         try {
-            if (downloadUrl.endsWith(".zip") || isZipFile(tempFile)) {
+            if (downloadUrl.contains(".zip")) {
                 extractZip(tempFile, targetDir)
             } else {
                 // If it's a single file (like model.task), copy it to targetDir/model.task
