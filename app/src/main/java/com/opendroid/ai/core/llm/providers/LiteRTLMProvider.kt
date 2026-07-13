@@ -29,6 +29,9 @@ class LiteRTLMProvider @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) : LLMProvider {
 
+    private var cachedEngine: Any? = null
+    private var cachedModelPath: String? = null
+
     companion object {
         private const val TAG = "LiteRTLMProvider"
         private const val MODELS_DIR = "litert_models"
@@ -53,6 +56,21 @@ class LiteRTLMProvider @Inject constructor(
      * Returns the local file path where a model should be stored.
      */
     private fun getModelFilePath(spec: OnDeviceModelSpec): String {
+        val folderName = when (spec.id) {
+            "gemma-4-e2b-it-litert" -> "Gemma4-E2B"
+            "gemma-4-e4b-it-litert" -> "Gemma4-E4B"
+            "gemma-3n-e2b-it-litert" -> "Gemma3n-E2B"
+            "gemma-3n-e4b-it-litert" -> "Gemma3n-E4B"
+            else -> spec.id.replace("-", "").replace("litert", "").replace("it", "")
+        }
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val modelDir = File(File(baseDir, "models"), folderName)
+        val taskFile = File(modelDir, "model.task")
+        if (taskFile.exists() && taskFile.length() > 0) {
+            return taskFile.absolutePath
+        }
+
+        // Legacy path fallback
         val modelsDir = File(context.filesDir, MODELS_DIR)
         if (!modelsDir.exists()) modelsDir.mkdirs()
         return File(modelsDir, "${spec.id}.litertlm").absolutePath
@@ -294,6 +312,7 @@ class LiteRTLMProvider @Inject constructor(
      * `com.google.ai.edge.litertlm:litertlm-android` is available, this will
      * call through to the real engine.
      */
+    @Synchronized
     private fun invokeLiteRTInference(
         modelPath: String,
         prompt: String,
@@ -301,34 +320,41 @@ class LiteRTLMProvider @Inject constructor(
         temperature: Float
     ): String {
         return try {
-            // Try direct SDK call via reflection
-            val optionsBuilderClass = Class.forName("com.google.ai.edge.litertlm.LlmInferenceOptions\$Builder")
-            val builder = optionsBuilderClass.getDeclaredConstructor().newInstance()
+            if (cachedModelPath != modelPath) {
+                closeCachedEngine()
+            }
 
-            val setModelPath = optionsBuilderClass.getMethod("setModelPath", String::class.java)
-            val setMaxTokens = optionsBuilderClass.getMethod("setMaxTokens", Int::class.javaPrimitiveType)
-            val setTemperature = optionsBuilderClass.getMethod("setTemperature", Float::class.javaPrimitiveType)
-            val buildMethod = optionsBuilderClass.getMethod("build")
-
-            setModelPath.invoke(builder, modelPath)
-            setMaxTokens.invoke(builder, maxTokens)
-            setTemperature.invoke(builder, temperature)
-            val options = buildMethod.invoke(builder)
-
+            var engine = cachedEngine
             val inferenceClass = Class.forName("com.google.ai.edge.litertlm.LlmInference")
-            val createMethod = inferenceClass.getMethod(
-                "createFromOptions",
-                Context::class.java,
-                options!!::class.java.interfaces.firstOrNull() ?: options::class.java
-            )
-            val engine = createMethod.invoke(null, context, options)
+            if (engine == null) {
+                Log.i(TAG, "Creating new LlmInference instance for $modelPath")
+                val optionsBuilderClass = Class.forName("com.google.ai.edge.litertlm.LlmInferenceOptions\$Builder")
+                val builder = optionsBuilderClass.getDeclaredConstructor().newInstance()
+
+                val setModelPath = optionsBuilderClass.getMethod("setModelPath", String::class.java)
+                val setMaxTokens = optionsBuilderClass.getMethod("setMaxTokens", Int::class.javaPrimitiveType)
+                val setTemperature = optionsBuilderClass.getMethod("setTemperature", Float::class.javaPrimitiveType)
+                val buildMethod = optionsBuilderClass.getMethod("build")
+
+                setModelPath.invoke(builder, modelPath)
+                setMaxTokens.invoke(builder, maxTokens)
+                setTemperature.invoke(builder, temperature)
+                val options = buildMethod.invoke(builder)
+
+                val createMethod = inferenceClass.getMethod(
+                    "createFromOptions",
+                    Context::class.java,
+                    options!!::class.java.interfaces.firstOrNull() ?: options::class.java
+                )
+                engine = createMethod.invoke(null, context, options)
+                cachedEngine = engine
+                cachedModelPath = modelPath
+            } else {
+                Log.i(TAG, "Reusing cached LlmInference instance")
+            }
 
             val generateMethod = inferenceClass.getMethod("generateResponse", String::class.java)
             val result = generateMethod.invoke(engine, prompt) as String
-
-            val closeMethod = inferenceClass.getMethod("close")
-            closeMethod.invoke(engine)
-
             result
         } catch (e: ClassNotFoundException) {
             Log.w(TAG, "LiteRT-LM SDK not found on classpath, returning error guidance")
@@ -338,8 +364,25 @@ class LiteRTLMProvider @Inject constructor(
             )
         } catch (e: Exception) {
             Log.e(TAG, "LiteRT-LM inference failed: ${e.message}", e)
+            closeCachedEngine()
             throw IOException("LiteRT-LM inference failed: ${e.localizedMessage}", e)
         }
+    }
+
+    @Synchronized
+    fun closeCachedEngine() {
+        cachedEngine?.let { engine ->
+            try {
+                Log.i(TAG, "Closing cached LlmInference engine")
+                val inferenceClass = Class.forName("com.google.ai.edge.litertlm.LlmInference")
+                val closeMethod = inferenceClass.getMethod("close")
+                closeMethod.invoke(engine)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing cached engine: ${e.message}")
+            }
+        }
+        cachedEngine = null
+        cachedModelPath = null
     }
 
     // ── Prompt building (shared with GemmaProvider pattern) ─────────────

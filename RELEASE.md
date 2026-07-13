@@ -4,7 +4,14 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.1 — Notification Intelligence & Theme Update (Re-release)
+## v1.0.1 — On-Device Model Management & Theme Update (Re-release)
+
+### 🔄 Model Management Update (July 13, 2026)
+*   **On-Demand Model Downloader & Manager**: Created a complete lifecycle manager (`ModelManager` / `ModelRepository`) that supports downloading on-device LiteRT-LM models in the background via WorkManager, pausing, resuming, or canceling downloads, and verifying integrity.
+*   **Dynamic Progress Tracking & Speed Indicator UI**: Replaced the static status placeholders in Settings with an interactive card for each LiteRT-LM model. Displays live progress percentage, download speed, ETA, and progress bar with pause/resume/cancel buttons.
+*   **Automated Storage Cleanup**: Implemented on-device storage checks showing total/free device space and model space usage, plus a "Delete Unused Models" option to prune inactive models.
+*   **LiteRT Runtime Caching**: Upgraded `LiteRTLMProvider` to cache the `LlmInference` engine across prompts instead of reinstantiating it every time, enabling seamless switching and sub-millisecond execution.
+*   **Persistent Room State & Migrations**: Added the `models` table (`ModelEntity`) and `ModelDao` to track progress and status Reactively via Flow, with a safe database `MIGRATION_4_5` migration.
 
 ### 🔄 Re-release Updates (July 12, 2026)
 *   **Gemma 3n Multimodal Support**: Added support for the Google on-device Gemma 3n Multimodal model alongside Gemma 4, utilizing the upgraded ML Kit GenAI Prompt API.

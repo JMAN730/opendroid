@@ -32,6 +32,17 @@ import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.SettingsViewModel
+import com.opendroid.ai.data.db.entities.ModelEntity
+import com.opendroid.ai.data.db.entities.ModelStatus
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ArrowForward
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +59,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
+    val dbModels by viewModel.allModels.collectAsState()
+    val storageInfo by viewModel.storageInfo.collectAsState()
     
     val providers = listOf(
         "Google Gemini",
@@ -635,67 +648,299 @@ fun SettingsScreen(
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            // Dynamically list all LiteRT-LM models from registry
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Dynamically list all LiteRT-LM models from database
                             val liteRTModels = OnDeviceModelRegistry.liteRTOnly
                             liteRTModels.forEach { spec ->
-                                var modelStatus by remember { mutableStateOf(
-                                    if (android.os.Build.VERSION.SDK_INT < spec.minSdk) "Requires API ${spec.minSdk}+" else "Not downloaded"
-                                ) }
+                                val modelEntity = dbModels.find { it.id == spec.id }
+                                val status = modelEntity?.status ?: ModelStatus.NOT_DOWNLOADED
+                                val progress = modelEntity?.downloadProgress ?: 0
+                                val downloadedSize = modelEntity?.downloadedSize ?: 0L
+                                val totalSize = modelEntity?.size ?: 2_600_000_000L
+                                val speed = modelEntity?.downloadSpeed ?: ""
+                                val eta = modelEntity?.etaString ?: ""
                                 
-                                Row(
+                                var expanded by remember { mutableStateOf(false) }
+                                val isApiCompatible = android.os.Build.VERSION.SDK_INT >= spec.minSdk
+                                
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(vertical = 6.dp)
+                                        .border(
+                                            1.dp,
+                                            if (config.activeModel == spec.id) AccentNeonGreen.copy(alpha = 0.5f) else BorderColor,
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { if (isApiCompatible) expanded = !expanded },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (config.activeModel == spec.id) CardBackground.copy(alpha = 0.8f) else CardBackground.copy(alpha = 0.3f)
+                                    )
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = spec.displayName,
-                                            fontSize = 13.sp,
-                                            color = TextPrimary,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = "${spec.family} · ${spec.sizeLabel}",
-                                            fontSize = 10.sp,
-                                            color = TextSecondary
-                                        )
-                                    }
-                                    if (spec.isRecommended) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    Color(0xFFFF9800).copy(alpha = 0.15f),
-                                                    RoundedCornerShape(4.dp)
-                                                )
-                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = spec.displayName,
+                                                        fontSize = 13.sp,
+                                                        color = if (isApiCompatible) TextPrimary else TextSecondary,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    if (spec.isRecommended) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .background(Color(0xFFFF9800).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "REC",
+                                                                color = Color(0xFFFF9800),
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Text(
+                                                    text = "Backend: LiteRT-LM · Context: 32K · RAM: 6GB+",
+                                                    fontSize = 10.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                            
+                                            val badgeColor = when (status) {
+                                                ModelStatus.READY -> AccentNeonGreen
+                                                ModelStatus.DOWNLOADING -> Color(0xFFFF9800)
+                                                ModelStatus.PAUSED -> Color.Yellow
+                                                ModelStatus.LOADING -> AccentCyan
+                                                ModelStatus.FAILED -> Color.Red
+                                                else -> TextSecondary
+                                            }
+                                            
+                                            val statusText = when {
+                                                !isApiCompatible -> "API ${spec.minSdk}+ Req"
+                                                status == ModelStatus.READY -> "Downloaded"
+                                                status == ModelStatus.DOWNLOADING -> "${progress}%"
+                                                status == ModelStatus.PAUSED -> "Paused"
+                                                status == ModelStatus.LOADING -> "Loading..."
+                                                status == ModelStatus.FAILED -> "Failed"
+                                                else -> "Not Downloaded"
+                                            }
+                                            
                                             Text(
-                                                text = "REC",
-                                                color = Color(0xFFFF9800),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold
+                                                text = statusText,
+                                                fontSize = 10.sp,
+                                                color = badgeColor,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(start = 8.dp)
                                             )
                                         }
+                                        
+                                        if (isApiCompatible && (status == ModelStatus.DOWNLOADING || status == ModelStatus.PAUSED)) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            LinearProgressIndicator(
+                                                progress = { progress.toFloat() / 100f },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(4.dp)
+                                                    .clip(RoundedCornerShape(2.dp)),
+                                                color = Color(0xFFFF9800),
+                                                trackColor = BorderColor
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${formatBytes(downloadedSize)} / ${formatBytes(totalSize)}" +
+                                                           (if (status == ModelStatus.DOWNLOADING && speed.isNotEmpty()) " @ $speed" else ""),
+                                                    fontSize = 9.sp,
+                                                    color = TextSecondary
+                                                )
+                                                if (status == ModelStatus.DOWNLOADING && eta.isNotEmpty()) {
+                                                    Text(
+                                                        text = "ETA: $eta",
+                                                        fontSize = 9.sp,
+                                                        color = TextSecondary
+                                                    )
+                                                }
+                                            }
+                                            
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                if (status == ModelStatus.DOWNLOADING) {
+                                                    Button(
+                                                        onClick = { viewModel.pauseDownload(spec.id) },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
+                                                        modifier = Modifier.height(28.dp).padding(horizontal = 4.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Pause, contentDescription = "Pause", modifier = Modifier.size(12.dp), tint = TextPrimary)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Pause", fontSize = 10.sp, color = TextPrimary)
+                                                    }
+                                                } else if (status == ModelStatus.PAUSED) {
+                                                    Button(
+                                                        onClick = { viewModel.resumeDownload(spec.id) },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                        modifier = Modifier.height(28.dp).padding(horizontal = 4.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.PlayArrow, contentDescription = "Resume", modifier = Modifier.size(12.dp), tint = DarkBackground)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Resume", fontSize = 10.sp, color = DarkBackground)
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Button(
+                                                    onClick = { viewModel.cancelDownload(spec.id) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.6f)),
+                                                    modifier = Modifier.height(28.dp).padding(horizontal = 4.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Cancel", fontSize = 10.sp, color = Color.White)
+                                                }
+                                            }
+                                        }
+                                        
+                                        AnimatedVisibility(visible = expanded) {
+                                            Column {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    if (status == ModelStatus.NOT_DOWNLOADED || status == ModelStatus.FAILED) {
+                                                        Button(
+                                                            onClick = { viewModel.downloadModel(spec.id, simulate = true) },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                            modifier = Modifier.weight(1f).height(32.dp),
+                                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                                        ) {
+                                                            Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                        }
+                                                    }
+                                                    
+                                                    if (status == ModelStatus.READY) {
+                                                         Button(
+                                                             onClick = { viewModel.loadModel(spec.id) },
+                                                             colors = ButtonDefaults.buttonColors(
+                                                                 containerColor = if (config.activeModel == spec.id) AccentNeonGreen else AccentCyan
+                                                             ),
+                                                             modifier = Modifier.weight(1f).height(32.dp),
+                                                             contentPadding = PaddingValues(horizontal = 4.dp)
+                                                         ) {
+                                                             Icon(
+                                                                 if (config.activeModel == spec.id) Icons.Default.Check else Icons.Default.ArrowForward,
+                                                                 contentDescription = null,
+                                                                 modifier = Modifier.size(12.dp),
+                                                                 tint = DarkBackground
+                                                             )
+                                                             Spacer(modifier = Modifier.width(4.dp))
+                                                             Text(if (config.activeModel == spec.id) "Active" else "Load Model", fontSize = 11.sp, color = DarkBackground)
+                                                         }
+                                                         
+                                                         Button(
+                                                             onClick = { viewModel.deleteModel(spec.id) },
+                                                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.2f)),
+                                                             modifier = Modifier.height(32.dp),
+                                                             contentPadding = PaddingValues(horizontal = 8.dp)
+                                                         ) {
+                                                             Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(14.dp), tint = Color.Red)
+                                                         }
+                                                    }
+                                                    
+                                                    Button(
+                                                        onClick = {
+                                                            // Info clicked (No-op or log details)
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
+                                                        modifier = Modifier.height(32.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = TextSecondary)
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = modelStatus,
-                                        fontSize = 10.sp,
-                                        color = if (modelStatus == "Ready") AccentNeonGreen else TextSecondary
-                                    )
                                 }
                             }
                             
                             Spacer(modifier = Modifier.height(12.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // ─── Storage Cleanup Section ───
                             Text(
-                                text = "Tip: If AI Core is unsupported, select a LiteRT-LM model from the model dropdown above. The app will automatically fall back to LiteRT-LM when AI Core is unavailable.",
+                                text = "STORAGE CLEANUP",
                                 fontSize = 10.sp,
-                                color = TextSecondary
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            val totalSpace = storageInfo.totalBytes
+                            val freeSpace = storageInfo.freeBytes
+                            val usedByApp = storageInfo.usedByAppBytes
+                            val usedPercentage = if (totalSpace > 0) ((totalSpace - freeSpace).toFloat() / totalSpace.toFloat()) else 0f
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Used: ${formatBytes(totalSpace - freeSpace)} / ${formatBytes(totalSpace)}",
+                                    fontSize = 11.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "${((totalSpace - freeSpace) * 100 / (totalSpace.coerceAtLeast(1L)))}% Used",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                             }
+                             Spacer(modifier = Modifier.height(4.dp))
+                             LinearProgressIndicator(
+                                 progress = { usedPercentage },
+                                 modifier = Modifier
+                                     .fillMaxWidth()
+                                     .height(6.dp)
+                                     .clip(RoundedCornerShape(3.dp)),
+                                 color = Color(0xFFFF9800),
+                                 trackColor = BorderColor
+                             )
+                             Spacer(modifier = Modifier.height(6.dp))
+                             Text(
+                                 text = "OpenDroid models occupy ${formatBytes(usedByApp)} of on-device storage.",
+                                 fontSize = 10.sp,
+                                 color = TextSecondary
+                             )
+                             Spacer(modifier = Modifier.height(8.dp))
+                             Button(
+                                 onClick = { viewModel.deleteUnusedModels() },
+                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                                 modifier = Modifier.fillMaxWidth(),
+                                 shape = RoundedCornerShape(8.dp)
+                             ) {
+                                 Text("Delete Unused Models", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                             }
                         }
                     }
                 }
@@ -1414,4 +1659,11 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    return String.format("%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }

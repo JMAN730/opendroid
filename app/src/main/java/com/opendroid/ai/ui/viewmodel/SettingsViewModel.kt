@@ -8,6 +8,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,7 +25,8 @@ class SettingsViewModel @Inject constructor(
     val settingsRepository: SettingsRepository,
     val notificationDao: com.opendroid.ai.data.db.dao.NotificationDao,
     private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>,
-    private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>
+    private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>,
+    val modelRepository: com.opendroid.ai.data.repository.ModelRepository
 ) : ViewModel() {
 
     private val _llmConfig = MutableStateFlow(LLMConfig())
@@ -343,6 +346,81 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.updateConfig { current ->
                 current.copy(isDarkMode = enabled)
             }
+        }
+    }
+
+    // ── On-Device Model Lifecycle Management ──
+
+    val allModels = modelRepository.allModelsFlow.stateIn(
+        scope = viewModelScope,
+        started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val storageInfo = modelRepository.getStorageInfoFlow().stateIn(
+        scope = viewModelScope,
+        started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+        initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
+    )
+
+    fun downloadModel(modelId: String, simulate: Boolean = true) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.startDownload(it, simulate)
+            }
+        }
+    }
+
+    fun pauseDownload(modelId: String) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.pauseDownload(it)
+            }
+        }
+    }
+
+    fun resumeDownload(modelId: String) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.resumeDownload(it)
+            }
+        }
+    }
+
+    fun cancelDownload(modelId: String) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.cancelDownload(it)
+            }
+        }
+    }
+
+    fun deleteModel(modelId: String) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.delete(it)
+            }
+        }
+    }
+
+    fun loadModel(modelId: String) {
+        viewModelScope.launch {
+            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            spec?.let {
+                modelRepository.load(it)
+                updateActiveModel(it.id)
+            }
+        }
+    }
+
+    fun deleteUnusedModels() {
+        viewModelScope.launch {
+            modelRepository.deleteUnusedModels()
         }
     }
 }
