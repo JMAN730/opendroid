@@ -115,7 +115,7 @@ class ModelRepository @Inject constructor(
     }
 
     private fun getModelDownloadUrl(spec: OnDeviceModelSpec): String {
-        return "https://huggingface.co/${spec.modelPath}/resolve/main/model.task"
+        return "https://huggingface.co/${spec.modelPath}/resolve/main/${spec.modelFilename}"
     }
 
     override suspend fun download(model: OnDeviceModel) {

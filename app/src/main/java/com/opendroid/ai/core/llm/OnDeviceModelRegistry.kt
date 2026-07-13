@@ -35,6 +35,8 @@ data class OnDeviceModelSpec(
      * `.litertlm` model file.  Ignored for AI_CORE models.
      */
     val modelPath: String = "",
+    /** The actual model filename on Hugging Face (e.g. "gemma-4-E2B-it.litertlm"). */
+    val modelFilename: String = "model.task",
     /** Whether this model is the recommended default for its backend. */
     val isRecommended: Boolean = false,
     /** Minimum Android SDK level required by this model variant. */
@@ -79,7 +81,8 @@ object OnDeviceModelRegistry {
             family = "Gemma 4",
             sizeLabel = "2B",
             backend = OnDeviceBackend.LITERT_LM,
-            modelPath = "litert-community/gemma-4-e2b-it",
+            modelPath = "litert-community/gemma-4-E2B-it-litert-lm",
+            modelFilename = "gemma-4-E2B-it.litertlm",
             isRecommended = true,
             minSdk = 31
         ),
@@ -89,7 +92,8 @@ object OnDeviceModelRegistry {
             family = "Gemma 4",
             sizeLabel = "4B",
             backend = OnDeviceBackend.LITERT_LM,
-            modelPath = "litert-community/gemma-4-e4b-it",
+            modelPath = "litert-community/gemma-4-E4B-it-litert-lm",
+            modelFilename = "gemma-4-E4B-it.litertlm",
             minSdk = 31
         ),
         OnDeviceModelSpec(
@@ -98,7 +102,8 @@ object OnDeviceModelRegistry {
             family = "Gemma 3n",
             sizeLabel = "2B",
             backend = OnDeviceBackend.LITERT_LM,
-            modelPath = "litert-community/gemma-3n-e2b-it",
+            modelPath = "google/gemma-3n-E2B-it-litert-lm",
+            modelFilename = "gemma-3n-E2B-it.litertlm",
             minSdk = 31
         ),
         OnDeviceModelSpec(
@@ -107,7 +112,8 @@ object OnDeviceModelRegistry {
             family = "Gemma 3n",
             sizeLabel = "4B",
             backend = OnDeviceBackend.LITERT_LM,
-            modelPath = "litert-community/gemma-3n-e4b-it",
+            modelPath = "google/gemma-3n-E4B-it-litert-lm",
+            modelFilename = "gemma-3n-E4B-it.litertlm",
             minSdk = 31
         )
     )
