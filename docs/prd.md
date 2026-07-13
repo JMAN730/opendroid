@@ -68,6 +68,12 @@ The agent utilizes a four-layered memory structure backed by SQLite (Room Databa
 | **Semantic Memory** | Extracted personal facts (e.g., "wife's name is Sarah") mined via LLM | Room DB (`SemanticFactEntity`) |
 | **Procedural Memory** | User-defined macro sequences (e.g., "morning routine") | Room DB (`MacroEntity`) |
 
+### 3.5. On-Device Model Downloader & Manager (LiteRT-LM)
+* **Background Downloading**: Support downloading fully offline LiteRT models (`.task`/`.litertlm` formats) in the background via Jetpack WorkManager. The downloader must support pausing, resuming (with HTTP Range headers), and canceling.
+* **Hugging Face Authentication**: Enable secure downloading of both public and gated models. Implement a Hugging Face Access Token manager stored in Android's KeyStore-backed `EncryptedSharedPreferences`. Provide verification via the `whoami-v2` endpoint.
+* **Integrity & Compatibility Verification**: Before marking a model as ready for inference, verify that the downloaded file size matches expectations, check the SHA-256 hash (if defined), and ensure the file can be opened and initialized by the LiteRT runtime engine. If verification fails, delete the corrupted file and report the error.
+* **Local Model Import**: Allow users to bypass downloading by importing custom local `.task` or `.litertlm` files, copying them to sandboxed storage, and running the same JNI compatibility validation checks.
+
 ---
 
 ## 4. User Interface & Design Requirements

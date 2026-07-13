@@ -1,5 +1,8 @@
 package com.opendroid.ai.core.llm
 
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Backend
 import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
@@ -159,7 +162,13 @@ class ModelDownloadWorker(
         Log.i(tag, "[DOWNLOAD FLOW] Requesting HTTP Download from model URL: $downloadUrl")
         Log.i(tag, "[DOWNLOAD FLOW] Resume status: $isResume, starting from $startBytes bytes")
 
+        val securePrefs = com.opendroid.ai.core.security.SecurePrefs.get(applicationContext)
+        val hfToken = securePrefs.getString("huggingface_token", null)
+
         val requestBuilder = Request.Builder().url(downloadUrl)
+        if (!hfToken.isNullOrBlank()) {
+            requestBuilder.header("Authorization", "Bearer $hfToken")
+        }
         if (isResume) {
             requestBuilder.header("Range", "bytes=$startBytes-")
         }
@@ -167,12 +176,29 @@ class ModelDownloadWorker(
 
         modelDao.updateModelStatus(modelId, ModelStatus.DOWNLOADING)
 
-        val response = okHttpClient.newCall(request).execute()
+        val response = try {
+            okHttpClient.newCall(request).execute()
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(tag, "[FAILURE] Network connection failed: unknown host", e)
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Internet connection unavailable.", ModelStatus.FAILED)
+            return Result.failure()
+        } catch (e: Exception) {
+            Log.e(tag, "[FAILURE] Network connection error", e)
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Internet connection unavailable.", ModelStatus.FAILED)
+            return Result.failure()
+        }
+
         Log.i(tag, "[DOWNLOAD FLOW] Received Response. Code: ${response.code}, Msg: ${response.message}")
         if (!response.isSuccessful && response.code != 206) {
-            Log.e(tag, "[FAILURE] HTTP request failed with code ${response.code}")
+            val errorMsg = when (response.code) {
+                401 -> "The Hugging Face token is invalid."
+                403 -> "You don't have permission to access this model. You must accept the model license on Hugging Face before downloading."
+                404 -> "Model repository or file not found."
+                else -> "HTTP error ${response.code}: ${response.message}"
+            }
+            Log.e(tag, "[FAILURE] HTTP request failed with code ${response.code}: $errorMsg")
             response.close()
-            modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", errorMsg, ModelStatus.FAILED)
             return Result.failure()
         }
 
@@ -238,7 +264,7 @@ class ModelDownloadWorker(
             if (actualSha.lowercase() != expectedSha.lowercase()) {
                 Log.e(tag, "[FAILURE] SHA-256 verification failed for $modelId. Expected $expectedSha, got $actualSha")
                 tempFile.delete()
-                modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
+                modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
                 return Result.failure()
             }
             Log.i(tag, "[DOWNLOAD FLOW] SHA-256 checksum verified successfully.")
@@ -268,7 +294,7 @@ class ModelDownloadWorker(
             }
         } catch (e: Exception) {
             Log.e(tag, "[FAILURE] Extraction failed", e)
-            modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
             return Result.failure()
         }
 
@@ -276,14 +302,30 @@ class ModelDownloadWorker(
         val finalModelFile = File(targetDir, "model.task")
         if (!finalModelFile.exists()) {
             Log.e(tag, "[FAILURE] Download failed: final model.task file does not exist after copy/extraction at ${finalModelFile.absolutePath}")
-            modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
             return Result.failure()
         }
         val finalSize = finalModelFile.length()
         Log.i(tag, "[DOWNLOAD FLOW] Final model file verified. Path: ${finalModelFile.absolutePath}, Size: $finalSize bytes")
-        if (finalSize <= 0) {
-            Log.e(tag, "[FAILURE] Download failed: final model file is empty (0 bytes)")
-            modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
+        if (expectedSize > 0 && finalSize != expectedSize) {
+            Log.e(tag, "[FAILURE] Download failed: size mismatch. Expected $expectedSize bytes, got $finalSize bytes")
+            finalModelFile.delete()
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
+            return Result.failure()
+        }
+
+        // Verify LiteRT compatibility
+        Log.i(tag, "[DOWNLOAD FLOW] Verifying LiteRT compatibility...")
+        try {
+            val config = EngineConfig(finalModelFile.absolutePath, Backend.CPU())
+            Engine(config).use { engine ->
+                engine.initialize()
+            }
+            Log.i(tag, "[DOWNLOAD FLOW] LiteRT compatibility verified successfully.")
+        } catch (e: Throwable) {
+            Log.e(tag, "[FAILURE] LiteRT failed to open the model file: ${e.message}", e)
+            finalModelFile.delete()
+            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
             return Result.failure()
         }
 

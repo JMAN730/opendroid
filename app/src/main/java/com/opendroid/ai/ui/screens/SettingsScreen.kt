@@ -43,6 +43,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.LocalContext
+import android.content.Context
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +67,7 @@ fun SettingsScreen(
     val config by viewModel.llmConfig.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
+    val hfToken by viewModel.huggingFaceToken.collectAsState()
     
     val providers = listOf(
         "Google Gemini",
@@ -81,6 +88,19 @@ fun SettingsScreen(
     var providerDropdownExpanded by remember { mutableStateOf(false) }
     var keysSectionExpanded by remember { mutableStateOf(false) }
     var voiceSectionExpanded by remember { mutableStateOf(false) }
+
+    var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
+    var licenseUrlForDialog by remember { mutableStateOf("") }
+    var activeImportModelId by remember { mutableStateOf<String?>(null) }
+
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null && activeImportModelId != null) {
+            viewModel.importLocalModel(activeImportModelId!!, uri)
+        }
+        activeImportModelId = null
+    }
 
     Scaffold(
         topBar = {
@@ -633,6 +653,150 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(16.dp))
                             Divider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
+
+                            // ─── Hugging Face Section ───
+                            Text(
+                                text = "HUGGING FACE AUTHENTICATION",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Required only for downloading gated LiteRT models from Hugging Face. Cloud AI providers are NOT affected.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, BorderColor, RoundedCornerShape(10.dp)),
+                                colors = CardDefaults.cardColors(containerColor = CardBackground.copy(alpha = 0.3f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    val validationStatus by viewModel.huggingFaceValidationStatus.collectAsState()
+                                    val lastVerified by viewModel.huggingFaceLastVerified.collectAsState()
+                                    var showToken by remember { mutableStateOf(false) }
+
+                                    OutlinedTextField(
+                                        value = hfToken,
+                                        onValueChange = { viewModel.updateHuggingFaceToken(it) },
+                                        label = { Text("Hugging Face Access Token", fontSize = 12.sp) },
+                                        singleLine = true,
+                                        visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                                        placeholder = { Text("hf_...", fontSize = 12.sp, color = TextSecondary) },
+                                        trailingIcon = {
+                                            IconButton(onClick = { showToken = !showToken }) {
+                                                Icon(
+                                                    imageVector = if (showToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                                    contentDescription = "Toggle Token Visibility",
+                                                    tint = TextSecondary
+                                                )
+                                            }
+                                        },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFFFF9800),
+                                            unfocusedBorderColor = BorderColor,
+                                            focusedTextColor = TextPrimary,
+                                            unfocusedTextColor = TextPrimary
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val context = LocalContext.current
+                                        val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager }
+
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton(
+                                                onClick = {
+                                                    val clip = clipboardManager.primaryClip
+                                                    if (clip != null && clip.itemCount > 0) {
+                                                        val pasted = clip.getItemAt(0).text?.toString() ?: ""
+                                                        viewModel.updateHuggingFaceToken(pasted)
+                                                    }
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("📋 Paste", fontSize = 11.sp, color = Color(0xFFFF9800))
+                                            }
+
+                                            TextButton(
+                                                onClick = { viewModel.updateHuggingFaceToken("") },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("❌ Clear", fontSize = 11.sp, color = Color.Red)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Status display
+                                    val statusDisplay = when (validationStatus) {
+                                        "Valid" -> "✓ Token Valid"
+                                        "Invalid" -> "✗ Invalid Token"
+                                        "Verifying..." -> "Checking token..."
+                                        "Unable to verify" -> "Unable to verify token."
+                                        else -> "⚠ Token Required"
+                                    }
+
+                                    val statusColor = when (validationStatus) {
+                                        "Valid" -> AccentNeonGreen
+                                        "Invalid" -> Color.Red
+                                        "Verifying..." -> AccentCyan
+                                        "Unable to verify" -> Color.Yellow
+                                        else -> TextSecondary
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text("Status: $statusDisplay", fontSize = 11.sp, color = statusColor, fontWeight = FontWeight.Bold)
+                                            Text("Last Verified: $lastVerified", fontSize = 9.sp, color = TextSecondary)
+                                            Text("Storage: Encrypted", fontSize = 9.sp, color = TextSecondary)
+                                        }
+
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(
+                                                onClick = { viewModel.validateHuggingFaceToken() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text("Validate Token", fontSize = 10.sp, color = DarkBackground, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            if (hfToken.isNotBlank()) {
+                                                Button(
+                                                    onClick = { viewModel.removeHuggingFaceToken() },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.2f)),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    modifier = Modifier.height(28.dp)
+                                                ) {
+                                                    Text("Remove Token", fontSize = 10.sp, color = Color.Red, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
                             
                             // ─── LiteRT-LM Backend Section ───
                             Text(
@@ -657,7 +821,7 @@ fun SettingsScreen(
                                 val status = modelEntity?.status ?: ModelStatus.NOT_DOWNLOADED
                                 val progress = modelEntity?.downloadProgress ?: 0
                                 val downloadedSize = modelEntity?.downloadedSize ?: 0L
-                                val totalSize = modelEntity?.size ?: 2_600_000_000L
+                                val totalSize = modelEntity?.size ?: spec.expectedSize
                                 val speed = modelEntity?.downloadSpeed ?: ""
                                 val eta = modelEntity?.etaString ?: ""
                                 
@@ -814,6 +978,29 @@ fun SettingsScreen(
                                                 }
                                             }
                                         }
+
+                                        if (isApiCompatible && status == ModelStatus.FAILED) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            val errorText = modelEntity?.etaString ?: "Download failed"
+                                            Text(
+                                                text = errorText,
+                                                fontSize = 10.sp,
+                                                color = Color.Red,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            if (spec.licenseUrl.isNotEmpty() && (errorText.contains("permission", ignoreCase = true) || errorText.contains("license", ignoreCase = true))) {
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                                                Button(
+                                                    onClick = { uriHandler.openUri(spec.licenseUrl) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800).copy(alpha = 0.2f)),
+                                                    modifier = Modifier.fillMaxWidth().height(28.dp),
+                                                    contentPadding = PaddingValues(vertical = 2.dp)
+                                                ) {
+                                                    Text("Open Model Page", color = Color(0xFFFF9800), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                         
                                         AnimatedVisibility(visible = expanded) {
                                             Column {
@@ -827,12 +1014,32 @@ fun SettingsScreen(
                                                 ) {
                                                     if (status == ModelStatus.NOT_DOWNLOADED || status == ModelStatus.FAILED) {
                                                         Button(
-                                                            onClick = { viewModel.downloadModel(spec.id, simulate = true) },
+                                                            onClick = {
+                                                                val hfTokenVal = hfToken
+                                                                if (spec.authRequired && hfTokenVal.isBlank()) {
+                                                                    showAuthRequiredDialog = spec.displayName
+                                                                    licenseUrlForDialog = spec.licenseUrl
+                                                                } else {
+                                                                    viewModel.downloadModel(spec.id)
+                                                                }
+                                                            },
                                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
                                                             modifier = Modifier.weight(1f).height(32.dp),
                                                             contentPadding = PaddingValues(horizontal = 4.dp)
                                                         ) {
                                                             Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                        }
+
+                                                        Button(
+                                                            onClick = {
+                                                                activeImportModelId = spec.id
+                                                                importLauncher.launch("*/*")
+                                                            },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
+                                                            modifier = Modifier.weight(1f).height(32.dp),
+                                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                                        ) {
+                                                            Text("Import", fontSize = 11.sp, color = TextPrimary)
                                                         }
                                                     }
                                                     
@@ -1658,6 +1865,87 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    val localImportStatus by viewModel.localImportStatus.collectAsState()
+
+    if (showAuthRequiredDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showAuthRequiredDialog = null },
+            title = { Text("Authentication Required", color = TextPrimary) },
+            text = {
+                Text(
+                    text = "This model requires a Hugging Face Access Token to download.\n\nPlease add your token in the Hugging Face Authentication section of Settings.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showAuthRequiredDialog = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                ) {
+                    Text("OK", color = DarkBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAuthRequiredDialog = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CardBackground,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
+    }
+
+    if (localImportStatus != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (localImportStatus != "Importing...") {
+                    viewModel.clearImportStatus()
+                }
+            },
+            title = {
+                Text(
+                    text = when (localImportStatus) {
+                        "Importing..." -> "Importing Model"
+                        "Success" -> "Import Successful"
+                        else -> "Import Failed"
+                    },
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    when (localImportStatus) {
+                        "Importing..." -> {
+                            CircularProgressIndicator(color = Color(0xFFFF9800))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Copying and verifying the model file. This may take a minute...", color = TextSecondary)
+                        }
+                        "Success" -> {
+                            Text("The model was imported and verified successfully. You can now load it.", color = TextSecondary)
+                        }
+                        else -> {
+                            Text("Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.", color = Color.Red)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (localImportStatus != "Importing...") {
+                    Button(
+                        onClick = { viewModel.clearImportStatus() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("OK", color = DarkBackground)
+                    }
+                }
+            },
+            containerColor = CardBackground,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
     }
 }
 

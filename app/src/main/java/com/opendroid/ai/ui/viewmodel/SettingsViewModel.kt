@@ -17,17 +17,35 @@ import javax.inject.Inject
 
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
-import com.opendroid.ai.data.models.ChatMessage
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import dagger.Lazy
+import com.opendroid.ai.data.models.ChatMessage
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     val settingsRepository: SettingsRepository,
     val notificationDao: com.opendroid.ai.data.db.dao.NotificationDao,
     private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>,
     private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>,
-    val modelRepository: com.opendroid.ai.data.repository.ModelRepository
+    val modelRepository: com.opendroid.ai.data.repository.ModelRepository,
+    private val okHttpClient: OkHttpClient
 ) : ViewModel() {
+
+    private val _huggingFaceToken = MutableStateFlow("")
+    val huggingFaceToken: StateFlow<String> = _huggingFaceToken
+
+    private val _huggingFaceValidationStatus = MutableStateFlow("Token Required")
+    val huggingFaceValidationStatus: StateFlow<String> = _huggingFaceValidationStatus
+
+    private val _huggingFaceLastVerified = MutableStateFlow("Never")
+    val huggingFaceLastVerified: StateFlow<String> = _huggingFaceLastVerified
+
+    private val _localImportStatus = MutableStateFlow<String?>(null)
+    val localImportStatus: StateFlow<String?> = _localImportStatus
 
     private val _llmConfig = MutableStateFlow(LLMConfig())
     val llmConfig: StateFlow<LLMConfig> = _llmConfig
@@ -46,6 +64,12 @@ class SettingsViewModel @Inject constructor(
     private var isLoaded = false
 
     init {
+        val prefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
+        _huggingFaceToken.value = prefs.getString("huggingface_token", "") ?: ""
+        _huggingFaceLastVerified.value = prefs.getString("huggingface_last_verified", "Never") ?: "Never"
+        if (_huggingFaceToken.value.isNotBlank()) {
+            _huggingFaceValidationStatus.value = "Token Required"
+        }
         viewModelScope.launch {
             settingsRepository.llmConfig.collect { config ->
                 if (!isLoaded) {
@@ -68,6 +92,75 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.llmConfig.first()
             refreshModels(force = false)
         }
+    }
+
+    fun updateHuggingFaceToken(token: String) {
+        _huggingFaceToken.value = token
+        _huggingFaceValidationStatus.value = "Token Required"
+        com.opendroid.ai.core.security.SecurePrefs.get(context)
+            .edit()
+            .putString("huggingface_token", token)
+            .apply()
+    }
+
+    fun removeHuggingFaceToken() {
+        _huggingFaceToken.value = ""
+        _huggingFaceValidationStatus.value = "Token Required"
+        _huggingFaceLastVerified.value = "Never"
+        com.opendroid.ai.core.security.SecurePrefs.get(context)
+            .edit()
+            .remove("huggingface_token")
+            .remove("huggingface_last_verified")
+            .apply()
+    }
+
+    fun validateHuggingFaceToken() {
+        val token = _huggingFaceToken.value
+        if (token.isBlank()) {
+            _huggingFaceValidationStatus.value = "Token Required"
+            return
+        }
+
+        _huggingFaceValidationStatus.value = "Verifying..."
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("https://huggingface.co/api/whoami-v2")
+                .header("Authorization", "Bearer $token")
+                .build()
+
+            try {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (response.code == 200) {
+                        _huggingFaceValidationStatus.value = "Valid"
+                        val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+                        val dateStr = "Today " + sdf.format(java.util.Date())
+                        _huggingFaceLastVerified.value = dateStr
+                        com.opendroid.ai.core.security.SecurePrefs.get(context)
+                            .edit()
+                            .putString("huggingface_last_verified", dateStr)
+                            .apply()
+                    } else if (response.code == 401) {
+                        _huggingFaceValidationStatus.value = "Invalid"
+                    } else {
+                        _huggingFaceValidationStatus.value = "Unable to verify"
+                    }
+                }
+            } catch (e: Exception) {
+                _huggingFaceValidationStatus.value = "Unable to verify"
+            }
+        }
+    }
+
+    fun importLocalModel(modelId: String, uri: android.net.Uri) {
+        _localImportStatus.value = "Importing..."
+        viewModelScope.launch {
+            val success = modelRepository.importLocalModel(modelId, uri)
+            _localImportStatus.value = if (success) "Success" else "Failed"
+        }
+    }
+
+    fun clearImportStatus() {
+        _localImportStatus.value = null
     }
 
     fun refreshModels(force: Boolean = false) {

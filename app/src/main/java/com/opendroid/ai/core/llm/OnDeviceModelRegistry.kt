@@ -24,19 +24,29 @@ data class OnDeviceModelSpec(
     val id: String,
     /** Human-readable label shown in the model picker. */
     val displayName: String,
-    /** Model family grouping (e.g. "Gemma 4", "Gemma 3n"). */
+    /** Model family grouping (e.g. "Gemma 4", "Gemma 3n", "Qwen"). */
     val family: String,
-    /** Approximate parameter size label (e.g. "2B", "4B"). */
+    /** Approximate parameter size label (e.g. "2B", "4B", "0.5B"). */
     val sizeLabel: String,
     /** Which inference backend this model uses. Not serialized for display — used at runtime. */
     val backend: OnDeviceBackend,
     /**
      * For LiteRT-LM models: the Hugging Face repo path or local asset path to the
-     * `.litertlm` model file.  Ignored for AI_CORE models.
+     * `.litertlm` or `.task` model file.  Ignored for AI_CORE models.
      */
     val modelPath: String = "",
     /** The actual model filename on Hugging Face (e.g. "gemma-4-E2B-it.litertlm"). */
     val modelFilename: String = "model.task",
+    /** Model version identifier. */
+    val version: String = "1.0.0",
+    /** Expected SHA-256 hash checksum of the model file. */
+    val sha256: String = "",
+    /** Expected file size of the model file in bytes. */
+    val expectedSize: Long = 0L,
+    /** Gated repository license terms URL. */
+    val licenseUrl: String = "",
+    /** Whether downloading this model requires Hugging Face authentication. */
+    val authRequired: Boolean = false,
     /** Whether this model is the recommended default for its backend. */
     val isRecommended: Boolean = false,
     /** Minimum Android SDK level required by this model variant. */
@@ -83,6 +93,9 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E2B-it-litert-lm",
             modelFilename = "gemma-4-E2B-it.litertlm",
+            expectedSize = 2588147712L,
+            licenseUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+            authRequired = true,
             isRecommended = true,
             minSdk = 31
         ),
@@ -94,6 +107,9 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E4B-it-litert-lm",
             modelFilename = "gemma-4-E4B-it.litertlm",
+            expectedSize = 3660000000L,
+            licenseUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm",
+            authRequired = true,
             minSdk = 31
         ),
         OnDeviceModelSpec(
@@ -104,6 +120,9 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E2B-it-litert-lm",
             modelFilename = "gemma-3n-E2B-it.litertlm",
+            expectedSize = 2000000000L,
+            licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
+            authRequired = true,
             minSdk = 31
         ),
         OnDeviceModelSpec(
@@ -114,7 +133,24 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E4B-it-litert-lm",
             modelFilename = "gemma-3n-E4B-it.litertlm",
+            expectedSize = 4000000000L,
+            licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
+            authRequired = true,
             minSdk = 31
+        ),
+        OnDeviceModelSpec(
+            id = "qwen-2.5-0.5b-it-litert",
+            displayName = "Qwen 2.5 0.5B-it (LiteRT)",
+            family = "Qwen",
+            sizeLabel = "0.5B",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelPath = "litert-community/Qwen2.5-0.5B-Instruct",
+            modelFilename = "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+            expectedSize = 546660344L,
+            sha256 = "8e1642f8eeed48b840e83851a5cb1a536a23253fe6b000aa532efcd146911eef",
+            licenseUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
+            authRequired = false,
+            minSdk = 26
         )
     )
 

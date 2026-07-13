@@ -91,26 +91,18 @@ class ModelRepository @Inject constructor(
             val entity = ModelEntity(
                 id = spec.id,
                 name = spec.displayName,
-                version = "1.0.0",
-                size = getModelSize(spec.id),
+                version = spec.version,
+                size = spec.expectedSize,
                 downloadUrl = getModelDownloadUrl(spec),
                 localPath = dir.absolutePath,
                 status = currentStatus,
                 downloadProgress = currentProgress,
                 lastUsed = existing?.lastUsed ?: 0L,
                 installedAt = existing?.installedAt ?: (if (hasFiles) System.currentTimeMillis() else 0L),
-                downloadedSize = existing?.downloadedSize ?: (if (hasFiles) getModelSize(spec.id) else 0L)
+                downloadedSize = existing?.downloadedSize ?: (if (hasFiles) spec.expectedSize else 0L)
             )
  
             modelDao.insertModel(entity)
-        }
-    }
-
-    private fun getModelSize(modelId: String): Long {
-        return when {
-            modelId.contains("2b") -> 2_600_000_000L
-            modelId.contains("4b") -> 4_300_000_000L
-            else -> 2_000_000_000L
         }
     }
 
@@ -130,6 +122,7 @@ class ModelRepository @Inject constructor(
             .putString("download_url", entity.downloadUrl)
             .putString("target_path", entity.localPath)
             .putLong("size", entity.size)
+            .putString("sha256", model.sha256)
             .putBoolean("simulate", simulate)
             .build()
 
@@ -143,6 +136,71 @@ class ModelRepository @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             downloadRequest
         )
+    }
+
+    suspend fun importLocalModel(modelId: String, uri: android.net.Uri): Boolean {
+        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
+        val dir = getModelDir(modelId)
+        if (!dir.exists()) dir.mkdirs()
+        val targetFile = File(dir, "model.task")
+
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                targetFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: return false
+
+            val finalSize = targetFile.length()
+            if (finalSize < 10 * 1024 * 1024) { // Must be > 10MB
+                Log.e(tag, "Imported file size is too small: $finalSize bytes")
+                targetFile.delete()
+                return false
+            }
+
+            // Verify LiteRT compatibility
+            Log.i(tag, "Verifying LiteRT compatibility of imported model...")
+            try {
+                val config = com.google.ai.edge.litertlm.EngineConfig(targetFile.absolutePath, com.google.ai.edge.litertlm.Backend.CPU())
+                com.google.ai.edge.litertlm.Engine(config).use { engine ->
+                    engine.initialize()
+                }
+                Log.i(tag, "LiteRT compatibility verified successfully.")
+            } catch (e: Throwable) {
+                Log.e(tag, "Imported file is not LiteRT compatible: ${e.message}", e)
+                targetFile.delete()
+                return false
+            }
+
+            // Write references & manifest
+            val manifestFile = File(dir, "manifest.json")
+            val manifest = org.json.JSONObject().apply {
+                put("model_id", modelId)
+                put("status", "ready")
+                put("format", "litertlm")
+            }
+            manifestFile.writeText(manifest.toString())
+
+            val refFile = File(context.filesDir, "litert_models/${modelId}.litertlm")
+            refFile.parentFile?.mkdirs()
+            refFile.writeText(dir.absolutePath)
+
+            // Update database status
+            modelDao.updateDownloadProgressDetails(
+                modelId,
+                100,
+                finalSize,
+                "",
+                "",
+                ModelStatus.READY
+            )
+
+            return true
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to import local model", e)
+            if (targetFile.exists()) targetFile.delete()
+            return false
+        }
     }
 
     suspend fun pauseDownload(model: OnDeviceModel) {

@@ -81,6 +81,7 @@ erDiagram
 * **NotificationEntity:** Logs system notifications captured by the notification listener service.
 * **SemanticFactEntity:** Stores long-term user context extracted from chat logs (e.g. name, preferences).
 * **MacroEntity:** Stores user-recorded automation sequences (macros).
+* **ModelEntity:** Tracks downloaded LiteRT-LM models, including local file path, installation timestamps, download progress (0..100), speed, ETA, and state status (`ModelStatus`).
 
 ---
 
@@ -96,9 +97,16 @@ When initiating communication (calls/SMS), the agent executes the following casc
 2. **Intent Fallback (Permissions missing):** Fires system intents (`Intent.ACTION_DIAL`, `Intent.ACTION_SENDTO`) with pre-populated phone numbers/messages, overlaying the native system composer over the UI.
 
 ### 3.3. Secure Storage
-All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys) are stored securely:
-* **Storage Backend:** `EncryptedSharedPreferences`
+All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys, Hugging Face Access Tokens) are stored securely:
+* **Storage Backend:** `EncryptedSharedPreferences` (managed via `SecurePrefs.kt`)
 * **Encryption Scheme:** AES256-SIV-HMAC-SHA256 for data and AES128-ECB for keys, managed through Android's system `MasterKey`.
+
+### 3.4. Background Model Downloader (WorkManager)
+* **ModelDownloadWorker**: Implements background downloading via OkHttp. Features:
+  * Chunk-based byte copying with active cancellation checks (mapping to worker stop signals).
+  * Real-time transfer speed calculation and ETA estimation.
+  * SHA-256 checksum validation.
+  * LiteRT engine instantiation compatibility checks using JNI engine bindings to verify download integrity before marking READY.
 
 ---
 

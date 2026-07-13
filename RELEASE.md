@@ -6,8 +6,13 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ## v1.0.1 — On-Device Model Management & Theme Update (Re-release)
 
-### 🔄 Model Management Update (July 13, 2026)
+### 🔄 Model Management & Secure Authentication Update (July 13, 2026)
 *   **On-Demand Model Downloader & Manager**: Created a complete lifecycle manager (`ModelManager` / `ModelRepository`) that supports downloading on-device LiteRT-LM models in the background via WorkManager, pausing, resuming, or canceling downloads, and verifying integrity.
+*   **Hugging Face Access Token Authentication**: Added secure token entry (masked password field with toggle, paste, and clear buttons) in Settings. Token is verified against HF `whoami-v2` API and stored securely using AES-256 via `EncryptedSharedPreferences`.
+*   **Gated Model Gating**: Prompts user with a details dialog if they try to download a gated model (e.g. Gemma 3/4) without configuring a token.
+*   **Diagnostics and Error Page Integration**: Dynamically displays network speed (MB/s), downloaded sizes, and ETA calculations during transfer. Displays exact error causes (unauthorized token, network offline, 404) and shows a quick-link "Open Model Page" button to let users easily accept gated repository license terms on failure.
+*   **Integrity and JNI Loading Verifications**: Before marking a model as ready, the download worker validates the file size, checks the SHA-256 hash (if available), and attempts to load/initialize the model via the LiteRT C++ library to ensure compatibility and prevent archive errors.
+*   **Offline Local Model Import**: Added direct local file selection support to import custom `.task` and `.litertlm` files, copy them to sandboxed app directories, run JNI engine compatibility tests, and register them as Ready.
 *   **Dynamic Progress Tracking & Speed Indicator UI**: Replaced the static status placeholders in Settings with an interactive card for each LiteRT-LM model. Displays live progress percentage, download speed, ETA, and progress bar with pause/resume/cancel buttons.
 *   **Automated Storage Cleanup**: Implemented on-device storage checks showing total/free device space and model space usage, plus a "Delete Unused Models" option to prune inactive models.
 *   **LiteRT Runtime Caching**: Upgraded `LiteRTLMProvider` to cache the `LlmInference` engine across prompts instead of reinstantiating it every time, enabling seamless switching and sub-millisecond execution.
