@@ -139,3 +139,41 @@ Standardized REST endpoints used for integrations:
 ### 5.2. Safety Constraints & Error Boundaries
 * **Debouncing Input:** Auto-saving input fields (API keys, URLs) must debounce keystrokes by 1000ms.
 * **Exception Containment:** File system writes must use `try-catch` blocks to prevent crash propagation if the disk is full or database locks occur.
+
+---
+
+## 6. Project Dependencies & Toolchain Versions
+
+### 6.1. Build Toolchain
+* **Gradle Version:** `8.10.2`
+* **Android Gradle Plugin (AGP):** `8.8.2`
+* **Kotlin Compiler / Gradle Plugin:** `2.4.0`
+* **Compose Compiler Plugin:** `2.4.0`
+* **Kotlin Serialization Plugin:** `2.4.0`
+* **Dagger / Hilt Gradle Plugin:** `2.58`
+* **R8 Optimizer:** `9.1.31`
+* **Target Android SDK:** `35`
+* **Minimum Android SDK:** `26`
+
+### 6.2. Key Libraries & Frameworks
+* **On-Device Inference Engines:**
+  * **LiteRT-LM Android Library:** `com.google.ai.edge.litertlm:litertlm-android:0.14.0`
+  * **Google ML Kit GenAI Prompt API (AI Core):** `com.google.mlkit:genai-prompt:1.0.0-beta2`
+* **Dependency Injection:**
+  * **Dagger-Hilt:** `2.58`
+* **Local Database:**
+  * **Room DB:** `2.8.4` (utilizing Kapt annotation processing with `kotlin-metadata-jvm:2.4.0` metadata support)
+* **Background Scheduling:**
+  * **WorkManager:** `2.9.0`
+* **Networking Client:**
+  * **OkHttp & Logging Interceptor:** `4.12.0`
+  * **Retrofit & Converter Gson:** `2.9.0`
+* **Security & Cryptography:**
+  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06`
+* **User Interface:**
+  * **Jetpack Compose BOM:** `2026.06.01`
+  * **Lifecycle & ViewModel Compose Extensions:** `2.8.7`
+  * **Activity Compose:** `1.9.3`
+  * **Coil (Image Loading):** `2.5.0`
+  * **Lottie Animations:** `6.3.0`
+
