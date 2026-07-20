@@ -15,9 +15,10 @@ object DurationParser {
         var totalSeconds = 0
         var matched = false
 
-        val hourPattern = Regex("""(\d+)\s*(?:h|hr|hrs|hour|hours)\b""")
-        val minutePattern = Regex("""(\d+)\s*(?:m|min|mins|minute|minutes)\b""")
-        val secondPattern = Regex("""(\d+)\s*(?:s|sec|secs|second|seconds)\b""")
+        // Allow compact forms like "1h30m" by treating another digit as a valid unit boundary.
+        val hourPattern = Regex("""(\d+)\s*(?:hours|hour|hrs|hr|h)(?=\d|\b)""")
+        val minutePattern = Regex("""(\d+)\s*(?:minutes|minute|mins|min|m)(?=\d|\b)""")
+        val secondPattern = Regex("""(\d+)\s*(?:seconds|second|secs|sec|s)(?=\d|\b)""")
 
         hourPattern.findAll(normalized).forEach {
             totalSeconds += it.groupValues[1].toInt() * 3600
@@ -34,7 +35,8 @@ object DurationParser {
 
         if (matched) return totalSeconds.coerceAtLeast(1)
 
-        Regex("""(\d+)""").find(normalized)?.let {
+        // Only accept a bare number — avoid hijacking unrelated digits (e.g. "2pm").
+        Regex("""^(\d+)$""").find(normalized)?.let {
             return it.groupValues[1].toIntOrNull()?.coerceAtLeast(1)
         }
 

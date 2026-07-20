@@ -33,6 +33,18 @@ class DurationParserTest {
     }
 
     @Test
+    fun `parses compact adjacent units`() {
+        assertEquals(5400, DurationParser.parseToSeconds("1h30m"))
+        assertEquals(90, DurationParser.parseToSeconds("1m30s"))
+    }
+
+    @Test
+    fun `bare digit fallback ignores embedded numbers`() {
+        assertEquals(5, DurationParser.parseToSeconds("5"))
+        assertNull(DurationParser.parseToSeconds("at 2pm yesterday"))
+    }
+
+    @Test
     fun `returns null for empty input`() {
         assertNull(DurationParser.parseToSeconds(""))
         assertNull(DurationParser.parseToSeconds("   "))
