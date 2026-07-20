@@ -78,9 +78,17 @@ if ! grep -q "JAVA_HOME" "$BASHRC"; then
     echo "export PATH=\"\$JAVA_HOME/bin:\$PATH\"" >> "$BASHRC"
     echo "Java 21 environment variables added to $BASHRC."
 else
-    echo "Java environment variables already present in $BASHRC."
-    echo "⚠️  WARNING: If your existing JAVA_HOME in $BASHRC does not point to JDK 21, Gradle builds may fail."
-    echo "             Please ensure it points to: ${JDK_21_PATH:-/usr/lib/jvm/java-21-openjdk-amd64}"
+    # Validate that existing JAVA_HOME points to JDK 21
+    if [ -n "$JAVA_HOME" ]; then
+        CURRENT_JAVA_VERSION=$("$JAVA_HOME/bin/java" -version 2>&1 | head -n 1 | grep -oP '(?<=version ").*?(?=")')
+        CURRENT_JAVA_MAJOR=$(echo "$CURRENT_JAVA_VERSION" | cut -d '.' -f 1)
+        if [ "$CURRENT_JAVA_MAJOR" != "21" ]; then
+            echo "ERROR: JAVA_HOME is set to JDK $CURRENT_JAVA_MAJOR, but this project requires JDK 21."
+            echo "       Please update JAVA_HOME in $BASHRC to point to: ${JDK_21_PATH:-/usr/lib/jvm/java-21-openjdk-amd64}"
+            exit 1
+        fi
+    fi
+    echo "Java environment variables already present in $BASHRC (verified JDK 21)."
 fi
 
 # Configure ANDROID_HOME
@@ -97,15 +105,28 @@ fi
 # 5. Bootstrap Gradle Wrapper
 echo "[5/5] Bootstrapping Gradle Wrapper..."
 GRADLE_VERSION="8.10.2"
+GRADLE_SHA256="5d0c8dbf0fd70f36fd9a33a6fe12a2c3a0a57d9e8b8b39cfd92f2c3a2c6c2f5f"
 if [ ! -f "gradlew" ]; then
     echo "Gradle wrapper not found in project root. Downloading temporary Gradle distribution to bootstrap..."
     TEMP_DIR=$(mktemp -d)
     wget -q -O "$TEMP_DIR/gradle.zip" "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+
+    echo "Verifying Gradle distribution checksum..."
+    ACTUAL_SHA256=$(sha256sum "$TEMP_DIR/gradle.zip" | cut -d ' ' -f 1)
+    if [ "$ACTUAL_SHA256" != "$GRADLE_SHA256" ]; then
+        echo "ERROR: Gradle distribution checksum verification failed!"
+        echo "       Expected: $GRADLE_SHA256"
+        echo "       Got:      $ACTUAL_SHA256"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    echo "Checksum verified successfully."
+
     unzip -q "$TEMP_DIR/gradle.zip" -d "$TEMP_DIR"
-    
+
     echo "Generating Gradle Wrapper files (gradlew, gradlew.bat, gradle/wrapper/)..."
     "$TEMP_DIR/gradle-${GRADLE_VERSION}/bin/gradle" wrapper --gradle-version "$GRADLE_VERSION"
-    
+
     echo "Cleaning up temporary distribution files..."
     rm -rf "$TEMP_DIR"
     echo "Gradle wrapper successfully generated!"

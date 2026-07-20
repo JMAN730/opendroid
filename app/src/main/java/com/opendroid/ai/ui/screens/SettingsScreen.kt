@@ -599,13 +599,17 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
-                                        try {
-                                            val client = Generation.getClient()
-                                            client.download()
-                                            gemma4Status = "Downloading..."
-                                            showGemma4Download = false
-                                        } catch (e: Exception) {
-                                            gemma4Status = "Download failed: ${e.localizedMessage}"
+                                        coroutineScope.launch {
+                                            try {
+                                                val client = Generation.getClient()
+                                                gemma4Status = "Downloading..."
+                                                showGemma4Download = false
+                                                client.download().collect { }
+                                                gemma4Status = "Download complete"
+                                            } catch (e: Exception) {
+                                                gemma4Status = "Download failed: ${e.localizedMessage}"
+                                                showGemma4Download = true
+                                            }
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
@@ -634,19 +638,23 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
-                                        try {
-                                            val previewConfig = generationConfig {
-                                                modelConfig = modelConfig {
-                                                    releaseStage = ModelReleaseStage.PREVIEW
-                                                    preference = ModelPreference.FAST
+                                        coroutineScope.launch {
+                                            try {
+                                                val previewConfig = generationConfig {
+                                                    modelConfig = modelConfig {
+                                                        releaseStage = ModelReleaseStage.PREVIEW
+                                                        preference = ModelPreference.FAST
+                                                    }
                                                 }
+                                                val client3n = Generation.getClient(previewConfig)
+                                                gemma3nStatus = "Downloading..."
+                                                showGemma3nDownload = false
+                                                client3n.download().collect { }
+                                                gemma3nStatus = "Download complete"
+                                            } catch (e: Exception) {
+                                                gemma3nStatus = "Download failed: ${e.localizedMessage}"
+                                                showGemma3nDownload = true
                                             }
-                                            val client3n = Generation.getClient(previewConfig)
-                                            client3n.download()
-                                            gemma3nStatus = "Downloading..."
-                                            showGemma3nDownload = false
-                                        } catch (e: Exception) {
-                                            gemma3nStatus = "Download failed: ${e.localizedMessage}"
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),

@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +15,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import com.opendroid.ai.core.util.NetworkErrorFormatter
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +33,7 @@ class CopilotProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = formatBaseUrl(config.copilotUrl, "")
+        val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
         if (baseUrl.isEmpty()) {
             throw IllegalStateException("Copilot server URL is not configured. Set it in Settings.")
         }
@@ -116,14 +117,4 @@ class CopilotProvider @Inject constructor(
         return config.copilotUrl.trim().isNotEmpty()
     }
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (target.isNotEmpty() && !target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
 }

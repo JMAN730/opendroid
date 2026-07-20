@@ -2,6 +2,7 @@ package com.opendroid.ai.core.llm
 
 import android.util.Log
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -275,7 +276,7 @@ class ModelFetcher @Inject constructor(
                     }
                 }
                 "Ollama" -> {
-                    val baseUrl = formatBaseUrl(config.ollamaUrl, "")
+                    val baseUrl = UrlUtils.formatBaseUrl(config.ollamaUrl, "")
                     if (baseUrl.isEmpty()) return@withContext Result.success(getOllamaFallback())
                     val request = Request.Builder()
                         .url("$baseUrl/api/tags")
@@ -321,7 +322,7 @@ class ModelFetcher @Inject constructor(
                     })
                 }
                 "Copilot API" -> {
-                    val baseUrl = formatBaseUrl(config.copilotUrl, "")
+                    val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
                     if (baseUrl.isEmpty()) return@withContext Result.success(getCopilotFallback())
                     val requestBuilder = Request.Builder()
                         .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
@@ -356,7 +357,7 @@ class ModelFetcher @Inject constructor(
                 "Custom OpenAI Compatible" -> {
                     val customUrl = config.customEndpoints[provider]?.trim() ?: ""
                     if (customUrl.isEmpty()) return@withContext Result.success(emptyList())
-                    val baseUrl = formatBaseUrl(customUrl, "")
+                    val baseUrl = UrlUtils.formatBaseUrl(customUrl, "")
                     val requestBuilder = Request.Builder()
                         .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
                         .get()
@@ -489,14 +490,4 @@ class ModelFetcher @Inject constructor(
         AIModel("phi3", "Phi 3", "Ollama", isFree = true)
     )
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (target.isNotEmpty() && !target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
 }
