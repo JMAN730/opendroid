@@ -294,13 +294,13 @@ class ModelDownloadWorker(
 
         Log.i(tag, "[DOWNLOAD FLOW] Copying or extracting model payload to target directory: $targetPath")
         try {
-            if (downloadUrl.contains(".zip")) {
+            if (isZipFile(tempFile)) {
                 extractZip(tempFile, targetDir)
             } else {
                 // If it's a single file (like model.task), copy it to targetDir/model.task
                 val modelTaskFile = File(targetDir, "model.task")
                 tempFile.copyTo(modelTaskFile, overwrite = true)
-                
+
                 // Write a dummy manifest.json and config.json
                 val manifestFile = File(targetDir, "manifest.json")
                 val manifest = JSONObject().apply {

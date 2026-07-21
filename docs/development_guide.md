@@ -17,7 +17,7 @@ To build and compile OpenDroid, ensure your workstation meets the following requ
 1. Open Android Studio (Iguana / Jellyfish or newer).
 2. Choose **File > Open** and select the root directory of `opendroid`.
 3. Allow Gradle to sync and resolve dependencies.
-4. Verify that Android Studio is configured to use JDK 17 for gradle compilations (**Settings > Build, Execution, Deployment > Build Tools > Gradle > Gradle JDK**).
+4. Verify that Android Studio is configured to use JDK 21 for gradle compilations (**Settings > Build, Execution, Deployment > Build Tools > Gradle > Gradle JDK**).
 
 ---
 

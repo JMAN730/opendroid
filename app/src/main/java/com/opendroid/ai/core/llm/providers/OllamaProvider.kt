@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -31,7 +33,10 @@ class OllamaProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = formatBaseUrl(config.ollamaUrl, "http://10.0.2.2:11434")
+        val baseUrl = UrlUtils.formatBaseUrl(config.ollamaUrl, "")
+        if (baseUrl.isEmpty()) {
+            throw IllegalStateException("Ollama server URL is not configured. Set it in Settings.")
+        }
         val endpoint = "$baseUrl/api/chat"
 
         val startTime = System.currentTimeMillis()
@@ -92,24 +97,13 @@ class OllamaProvider @Inject constructor(
                 kotlinx.coroutines.delay(50)
             }
         } catch (e: Exception) {
-            emit("Error streaming Ollama: ${e.localizedMessage}")
+            emit("Error streaming Ollama: ${NetworkErrorFormatter.toUserMessage(e)}")
         }
     }
 
     override suspend fun isAvailable(): Boolean {
-        // Ollama runs locally, so it doesn't strict check API keys unless users want.
-        // It is considered always available if active or setup.
-        return true
+        val config = settingsRepository.llmConfig.first()
+        return config.ollamaUrl.trim().isNotEmpty()
     }
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (!target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
 }

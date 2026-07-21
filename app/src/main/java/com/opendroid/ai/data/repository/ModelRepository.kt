@@ -16,6 +16,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +32,10 @@ class ModelRepository @Inject constructor(
     private val tag = "ModelRepository"
     private val scope = CoroutineScope(Dispatchers.IO)
     private val workManager = WorkManager.getInstance(context)
+
+    // Coordinate initialization to ensure it runs exactly once
+    private val initMutex = Mutex()
+    private var isInitialized = false
 
     init {
         scope.launch {
@@ -59,22 +65,31 @@ class ModelRepository @Inject constructor(
     }
 
     private suspend fun initModelsInDatabase() {
+        initMutex.withLock {
+            if (isInitialized) return@withLock
+            isInitialized = true
+        }
+
         val registeredModels = OnDeviceModelRegistry.liteRTOnly
         registeredModels.forEach { spec ->
             val existing = modelDao.getModelById(spec.id)
             val dir = getModelDir(spec.id)
             
             val modelTaskFile = File(dir, "model.task")
-            if (modelTaskFile.exists() && modelTaskFile.length() <= 100 * 1024 * 1024) {
-                Log.w(tag, "Deleting invalid/simulated placeholder model file: ${modelTaskFile.absolutePath} (size: ${modelTaskFile.length()} bytes)")
+            val manifestFile = File(dir, "manifest.json")
+
+            // Only delete placeholder files that lack the imported/verified marker (manifest.json)
+            // Align with importLocalModel's minimum size (10MB) for verified imports
+            if (modelTaskFile.exists() && !manifestFile.exists() && modelTaskFile.length() < 10 * 1024 * 1024) {
+                Log.w(tag, "Deleting unverified placeholder model file: ${modelTaskFile.absolutePath} (size: ${modelTaskFile.length()} bytes, no manifest)")
                 try {
                     modelTaskFile.delete()
                 } catch (e: Exception) {
-                    Log.e(tag, "Failed to delete invalid placeholder model file", e)
+                    Log.e(tag, "Failed to delete placeholder model file", e)
                 }
             }
-            
-            val hasFiles = dir.exists() && modelTaskFile.exists() && modelTaskFile.length() > 100 * 1024 * 1024
+
+            val hasFiles = dir.exists() && modelTaskFile.exists() && modelTaskFile.length() >= 10 * 1024 * 1024
  
             val currentStatus = when {
                 hasFiles -> ModelStatus.READY

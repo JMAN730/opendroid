@@ -212,17 +212,15 @@ class LiteRTLMProvider @Inject constructor(
             )
             val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
             val conversation = engine.createConversation(conversationConfig)
-            
-            var lastLength = 0
-            conversation.sendMessageAsync(prompt).collect { msg ->
-                val fullText = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                if (fullText.length > lastLength) {
-                    val delta = fullText.substring(lastLength)
-                    emit(delta)
-                    lastLength = fullText.length
+
+            try {
+                conversation.sendMessageAsync(prompt).collect { msg ->
+                    val fullText = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+                    emit(fullText)
                 }
+            } finally {
+                conversation.close()
             }
-            conversation.close()
         } catch (e: Throwable) {
             val config = settingsRepository.llmConfig.first()
             val spec = resolveModelSpec(config.activeModel)
@@ -483,11 +481,14 @@ class LiteRTLMProvider @Inject constructor(
                 )
                 val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
                 val conversation = engine.createConversation(conversationConfig)
-                
-                val message = conversation.sendMessage(prompt)
-                val responseText = message.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                conversation.close()
-                responseText
+
+                try {
+                    val message = conversation.sendMessage(prompt)
+                    val responseText = message.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+                    responseText
+                } finally {
+                    conversation.close()
+                }
             } catch (e: Exception) {
                 val cause = e.cause
                 Log.e(TAG, "[INIT FLOW] [FAILURE] Inference execution failed", e)

@@ -93,19 +93,24 @@ class OpenDroidNotificationListener : NotificationListenerService() {
                     // our own reply echoing back as a notification (loop prevention)
                     if (isMessageNotification(sbn)) {
                         val contactName = entity.contactName ?: entity.title
-                        val isBounceback = autoReplyEngine.isOwnReplyBounceback(
-                            sbn.packageName, contactName
-                        )
+
                         // WhatsApp shows your own sent messages as "You: <text>"
+                        // Check for self-authored/outgoing indicators BEFORE bounceback check
                         val isSelfMessage = entity.text.startsWith("You: ") ||
                             entity.title.equals("You", ignoreCase = true)
 
-                        if (isBounceback) {
-                            Log.d(TAG, "Skipping auto-reply: bounceback from own reply to $contactName")
-                        } else if (isSelfMessage) {
-                            Log.d(TAG, "Skipping auto-reply: self-message detected for $contactName")
+                        if (isSelfMessage) {
+                            Log.d(TAG, "Skipping auto-reply: self-message/outgoing detected for $contactName")
                         } else {
-                            autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
+                            // Only check bounceback for incoming messages
+                            val isBounceback = autoReplyEngine.isOwnReplyBounceback(
+                                sbn.packageName, contactName, entity.text
+                            )
+                            if (isBounceback) {
+                                Log.d(TAG, "Skipping auto-reply: bounceback from own reply to $contactName")
+                            } else {
+                                autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
+                            }
                         }
                     }
                 }

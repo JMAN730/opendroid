@@ -2,6 +2,7 @@ package com.opendroid.ai.core.llm
 
 import android.util.Log
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -275,7 +276,8 @@ class ModelFetcher @Inject constructor(
                     }
                 }
                 "Ollama" -> {
-                    val baseUrl = formatBaseUrl(config.ollamaUrl, "http://10.0.2.2:11434")
+                    val baseUrl = UrlUtils.formatBaseUrl(config.ollamaUrl, "")
+                    if (baseUrl.isEmpty()) return@withContext Result.success(getOllamaFallback())
                     val request = Request.Builder()
                         .url("$baseUrl/api/tags")
                         .get()
@@ -320,7 +322,8 @@ class ModelFetcher @Inject constructor(
                     })
                 }
                 "Copilot API" -> {
-                    val baseUrl = formatBaseUrl(config.copilotUrl, "http://10.0.2.2:4141")
+                    val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
+                    if (baseUrl.isEmpty()) return@withContext Result.success(getCopilotFallback())
                     val requestBuilder = Request.Builder()
                         .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
                         .get()
@@ -354,7 +357,7 @@ class ModelFetcher @Inject constructor(
                 "Custom OpenAI Compatible" -> {
                     val customUrl = config.customEndpoints[provider]?.trim() ?: ""
                     if (customUrl.isEmpty()) return@withContext Result.success(emptyList())
-                    val baseUrl = formatBaseUrl(customUrl, "")
+                    val baseUrl = UrlUtils.formatBaseUrl(customUrl, "")
                     val requestBuilder = Request.Builder()
                         .url(if (baseUrl.endsWith("/v1")) "$baseUrl/models" else "$baseUrl/v1/models")
                         .get()
@@ -481,14 +484,10 @@ class ModelFetcher @Inject constructor(
         AIModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "Copilot API")
     )
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (!target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
+    private fun getOllamaFallback() = listOf(
+        AIModel("llama3", "Llama 3", "Ollama", isRecommended = true, isFree = true),
+        AIModel("mistral", "Mistral", "Ollama", isFree = true),
+        AIModel("phi3", "Phi 3", "Ollama", isFree = true)
+    )
+
 }
