@@ -3,6 +3,7 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -32,7 +33,7 @@ class CustomOpenAIProvider @Inject constructor(
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
         val apiKey = config.apiKeys[name] ?: ""
-        val baseUrl = formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
+        val baseUrl = UrlUtils.formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
 
         val startTime = System.currentTimeMillis()
         val selectedModel = config.activeModel.ifBlank { "gpt-4o" }
@@ -104,14 +105,4 @@ class CustomOpenAIProvider @Inject constructor(
         return true
     }
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (!target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
 }

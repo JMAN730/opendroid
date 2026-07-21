@@ -23,9 +23,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import com.opendroid.ai.core.util.NetworkErrorFormatter
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -67,7 +72,11 @@ class AgentLoop @Inject constructor(
     private val reEvalEngine: dagger.Lazy<ReEvaluationEngine>
 ) {
     private val scope = CoroutineScope(Dispatchers.Default)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
+    private val queryMutex = Mutex()
+
+    @Volatile private var lastExecutedAction: String? = null
+    @Volatile private var lastExecutedParams: Map<String, String> = emptyMap()
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
     val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
@@ -120,6 +129,17 @@ class AgentLoop @Inject constructor(
                     return@launch
                 }
 
+                // Serialize query handling so contextual follow-up state cannot race.
+                queryMutex.withLock {
+                    processQueryLocked(userMsg, query, context)
+                }
+            } catch (e: Exception) {
+                _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
+            }
+        }
+    }
+
+    private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context) {
                 _agentState.value = AgentState.Thinking
 
                 // 0. Check if this is a complex, multi-step query
@@ -129,10 +149,16 @@ class AgentLoop @Inject constructor(
 
                 // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
                 if (!isMultiStep) {
+                    val contextual = AliasResolver.resolveContextual(query, lastExecutedAction, lastExecutedParams)
+                    if (contextual != null) {
+                        executeAliasDirect(contextual, query, context)
+                        return
+                    }
+
                     val alias = AliasResolver.resolve(query)
                     if (alias != null) {
                         executeAliasDirect(alias, query, context)
-                        return@launch
+                        return
                     }
 
                     // 1b. Alarm shortcut — bypass LLM for simple alarm requests ONLY
@@ -144,7 +170,20 @@ class AgentLoop @Inject constructor(
                                 mapOf("time" to timeStr, "label" to "Alarm")
                             )
                             executeAliasDirect(alarmHint, query, context)
-                            return@launch
+                            return
+                        }
+                    }
+
+                    // 1c. Timer shortcut — bypass LLM for simple timer requests ONLY
+                    if (AliasResolver.isTimerRequest(query)) {
+                        val durationSecs = AliasResolver.extractTimerDuration(query)
+                        if (durationSecs != null) {
+                            val timerHint = AliasResolver.ActionHint(
+                                "SET_TIMER",
+                                mapOf("duration" to durationSecs.toString(), "label" to "Timer")
+                            )
+                            executeAliasDirect(timerHint, query, context)
+                            return
                         }
                     }
                 }
@@ -156,10 +195,6 @@ class AgentLoop @Inject constructor(
                 } else {
                     executeSimpleQuery(userMsg)
                 }
-            } catch (e: Exception) {
-                _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
-            }
-        }
     }
 
     /**
@@ -186,22 +221,7 @@ class AgentLoop @Inject constructor(
             memoryManager.storeMessage(replyMsg)
 
             // Build a single-step plan from the alias
-            val plan = Plan(
-                planId = UUID.randomUUID().toString(),
-                goal = originalQuery,
-                estimatedDuration = "instant",
-                estimatedSteps = 1,
-                steps = listOf(
-                    PlanStep(
-                        stepId = "s1",
-                        order = 1,
-                        description = "Execute ${alias.action}",
-                        action = alias.action,
-                        params = alias.baseParams,
-                        fallback = ""
-                    )
-                )
-            )
+            val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
 
             planManager.startNewPlan(plan, context)
             executePlanLoop(plan, context)
@@ -275,12 +295,13 @@ class AgentLoop @Inject constructor(
                 }
             }
 
-            val finalReplyMsg = replyMsg.copy(text = currentReplyText)
+            val finalReplyMsg = replyMsg.copy(text = formatStreamedReply(currentReplyText))
+            conversationRepository.insertMessage(finalReplyMsg)
             memoryManager.storeMessage(finalReplyMsg)
-            _agentState.value = AgentState.Speaking(currentReplyText)
-            onSpeakCallback?.invoke(currentReplyText)
+            _agentState.value = AgentState.Speaking(finalReplyMsg.text)
+            onSpeakCallback?.invoke(finalReplyMsg.text)
         } catch (e: Exception) {
-            _agentState.value = AgentState.Error("Simple execution failed: ${e.localizedMessage}")
+            _agentState.value = AgentState.Error(NetworkErrorFormatter.toUserMessage(e))
         }
     }
 
@@ -345,8 +366,7 @@ class AgentLoop @Inject constructor(
                         )
                     )
 
-                    val cleaned = cleanPlanJson(mergeResponse.content)
-                    json.decodeFromString<Plan>(cleaned)
+                    parsePlanFromLlmResponse(mergeResponse.content, userMsg.text)
                 }
             } else {
                 val response = provider.complete(
@@ -358,8 +378,7 @@ class AgentLoop @Inject constructor(
                         responseFormat = ResponseFormat.JSON
                     )
                 )
-                val cleaned = cleanPlanJson(response.content)
-                json.decodeFromString<Plan>(cleaned)
+                parsePlanFromLlmResponse(response.content, userMsg.text)
             }
 
             planManager.startNewPlan(plan, context)
@@ -369,7 +388,7 @@ class AgentLoop @Inject constructor(
                 _agentState.value = AgentState.PlanProposed(plan)
             }
         } catch (e: Exception) {
-            fallbackOrError(userMsg, e)
+            fallbackOrError(userMsg, context, e)
         }
     }
 
@@ -377,31 +396,39 @@ class AgentLoop @Inject constructor(
      * Treat malformed plan JSON as an actionable planning failure. Other provider
      * failures can still degrade to a normal chat response.
      */
-    private suspend fun fallbackOrError(userMsg: ChatMessage, cause: Throwable) {
+    private suspend fun fallbackOrError(userMsg: ChatMessage, context: Context, cause: Throwable) {
         android.util.Log.e("AgentLoop", "Plan generation failed: ${cause.localizedMessage}", cause)
-        val isMalformedPlan = cause is kotlinx.serialization.SerializationException ||
-                cause is IllegalArgumentException
-        if (isMalformedPlan) {
-            val msg = "I understood the request but couldn't build a reliable plan for it. Mind rephrasing, or try a simpler version?"
-            val errMsg = ChatMessage(
-                id = UUID.randomUUID().toString(),
-                text = msg,
-                sender = ChatMessage.Sender.AGENT,
-                modelBadge = "System"
-            )
-            conversationRepository.insertMessage(errMsg)
-            memoryManager.storeMessage(errMsg)
-            _agentState.value = AgentState.Speaking(msg)
-            onSpeakCallback?.invoke(msg)
-        } else {
-            executeSimpleQuery(userMsg)
+
+        val alias = AliasResolver.resolve(userMsg.text)
+            ?: AliasResolver.resolveContextual(userMsg.text, lastExecutedAction, lastExecutedParams)
+        if (alias != null) {
+            executeAliasDirect(alias, userMsg.text, context)
+            return
         }
+
+        try {
+            memoryManager.logTaskExecution(
+                stepId = "plan-gen",
+                planId = "n/a",
+                description = userMsg.text,
+                actionType = "PLAN_GENERATION",
+                params = emptyMap(),
+                success = false,
+                resultData = null,
+                errorMessage = cause.localizedMessage
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
+        }
+        executeSimpleQuery(userMsg)
     }
 
     fun approveProposedPlan(context: Context) {
         scope.launch {
-            val plan = planManager.currentPlan.value ?: return@launch
-            executePlanLoop(plan, context)
+            queryMutex.withLock {
+                val plan = planManager.currentPlan.value ?: return@withLock
+                executePlanLoop(plan, context)
+            }
         }
     }
 
@@ -460,7 +487,24 @@ class AgentLoop @Inject constructor(
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
+            try {
+                memoryManager.logTaskExecution(
+                    stepId = nextStep.stepId,
+                    planId = currentPlanState.planId,
+                    description = nextStep.description,
+                    actionType = nextStep.action,
+                    params = resolvedParams,
+                    success = actionResult.success,
+                    resultData = actionResult.data,
+                    errorMessage = actionResult.error
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
+            }
+
             if (actionResult.success) {
+                lastExecutedAction = nextStep.action
+                lastExecutedParams = resolvedParams
                 planManager.updateStepStatus(
                     nextStep.stepId,
                     StepStatus.COMPLETED,
@@ -874,23 +918,128 @@ class AgentLoop @Inject constructor(
         onSpeakCallback?.invoke(summaryText)
     }
 
-    private fun cleanPlanJson(raw: String): String {
+    private fun formatStreamedReply(text: String): String {
+        if (!text.startsWith("Error streaming")) return text
+        val technical = text.substringAfter(": ", text)
+        return NetworkErrorFormatter.toUserMessage(technical)
+    }
+
+    private fun parsePlanFromLlmResponse(raw: String, userGoal: String): Plan {
+        val stripped = stripMarkdownFences(raw)
+
+        // Prefer wrapper action before unwrapping plan — handles {"action":"...","plan":null}.
+        try {
+            val root = json.parseToJsonElement(stripped)
+            if (root is JsonObject) {
+                val action = root["action"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotBlank() && it != "null" }
+                val planElement = root["plan"]
+                val hasPlanObject = planElement is JsonObject
+
+                if (action != null && !hasPlanObject) {
+                    val params = jsonObjectToStringMap(root["params"]?.jsonObject)
+                    return buildSingleStepPlan(userGoal, action, params)
+                }
+
+                if (hasPlanObject) {
+                    return normalizePlan(json.decodeFromString<Plan>(planElement.toString()))
+                }
+            }
+        } catch (_: Exception) {
+            // Fall through to direct Plan parsing
+        }
+
+        val cleaned = cleanPlanJson(raw)
+        try {
+            return normalizePlan(json.decodeFromString<Plan>(cleaned))
+        } catch (_: Exception) {
+            // Continue with wrapper/single-action parsing below
+        }
+
+        val root = json.parseToJsonElement(cleaned)
+        if (root is JsonObject) {
+            root["plan"]?.let { planElement ->
+                if (planElement is JsonObject) {
+                    try {
+                        return normalizePlan(json.decodeFromString<Plan>(planElement.toString()))
+                    } catch (_: Exception) {
+                        // fall through
+                    }
+                }
+            }
+
+            val action = root["action"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (action != null) {
+                val params = jsonObjectToStringMap(root["params"]?.jsonObject)
+                return buildSingleStepPlan(userGoal, action, params)
+            }
+        }
+
+        throw IllegalArgumentException("Could not parse a valid plan from LLM response")
+    }
+
+    private fun stripMarkdownFences(raw: String): String {
         var content = raw.trim()
         if (content.startsWith("```json")) {
             content = content.removePrefix("```json")
+        } else if (content.startsWith("```")) {
+            content = content.removePrefix("```")
         }
         if (content.endsWith("```")) {
             content = content.removeSuffix("```")
         }
-        content = content.trim()
+        return content.trim()
+    }
+
+    private fun normalizePlan(plan: Plan): Plan {
+        return plan.copy(
+            planId = plan.planId.ifBlank { UUID.randomUUID().toString() },
+            goal = plan.goal.ifBlank { "User request" },
+            estimatedSteps = if (plan.estimatedSteps > 0) plan.estimatedSteps else plan.steps.size.coerceAtLeast(1),
+            steps = plan.steps.map { step ->
+                step.copy(
+                    stepId = step.stepId.ifBlank { "s${step.order}" },
+                    fallback = step.fallback
+                )
+            }
+        )
+    }
+
+    private fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
+        return Plan(
+            planId = UUID.randomUUID().toString(),
+            goal = goal,
+            estimatedDuration = "instant",
+            estimatedSteps = 1,
+            steps = listOf(
+                PlanStep(
+                    stepId = "s1",
+                    order = 1,
+                    description = "Execute $action",
+                    action = action,
+                    params = params,
+                    fallback = ""
+                )
+            )
+        )
+    }
+
+    private fun jsonObjectToStringMap(obj: JsonObject?): Map<String, String> {
+        if (obj == null) return emptyMap()
+        return obj.mapValues { (_, value) ->
+            value.jsonPrimitive.contentOrNull ?: value.toString().trim('"')
+        }
+    }
+
+    private fun cleanPlanJson(raw: String): String {
+        var content = stripMarkdownFences(raw)
         try {
             val jsonElement = json.parseToJsonElement(content)
             if (jsonElement is JsonObject) {
-                if (jsonElement.containsKey("plan")) {
-                    val planElement = jsonElement["plan"]
-                    if (planElement != null) {
-                        return planElement.toString()
-                    }
+                val planElement = jsonElement["plan"]
+                // Only unwrap when plan is an object — preserve wrappers with "plan": null.
+                if (planElement is JsonObject) {
+                    return planElement.toString()
                 }
             }
         } catch (e: Exception) {

@@ -33,19 +33,30 @@ object SecurePrefs {
         return try {
             buildEncryptedPrefs(context)
         } catch (first: Exception) {
-            // Most common cause: the master key was invalidated (device credential
-            // reset, backup restore onto a new device). The stored ciphertext is
-            // unrecoverable, so discard it and start a fresh encrypted store.
-            Log.e(TAG, "EncryptedSharedPreferences init failed, recreating store: ${first.localizedMessage}")
-            context.deleteSharedPreferences(PREFS_NAME)
-            try {
-                buildEncryptedPrefs(context)
-            } catch (second: Exception) {
-                // Never fall back to plaintext storage for secrets.
-                throw SecurityException(
-                    "Unable to initialize encrypted preferences; refusing plaintext fallback",
-                    second
-                )
+            // Check if this is an unrecoverable master-key or keyset failure
+            val isUnrecoverable = first is java.security.GeneralSecurityException ||
+                                   first.cause is java.security.GeneralSecurityException ||
+                                   first.message?.contains("keyset", ignoreCase = true) == true ||
+                                   first.message?.contains("key", ignoreCase = true) == true
+
+            if (isUnrecoverable) {
+                // Most common cause: the master key was invalidated (device credential
+                // reset, backup restore onto a new device). The stored ciphertext is
+                // unrecoverable, so discard it and start a fresh encrypted store.
+                Log.e(TAG, "Unrecoverable master-key/keyset failure, recreating store: ${first.localizedMessage}")
+                context.deleteSharedPreferences(PREFS_NAME)
+                try {
+                    buildEncryptedPrefs(context)
+                } catch (second: Exception) {
+                    // Never fall back to plaintext storage for secrets.
+                    throw SecurityException(
+                        "Unable to initialize encrypted preferences; refusing plaintext fallback",
+                        second
+                    )
+                }
+            } else {
+                // Transient failure (e.g., IOException) — surface it without wiping data
+                throw first
             }
         }
     }
