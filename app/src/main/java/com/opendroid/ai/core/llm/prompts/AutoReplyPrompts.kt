@@ -52,10 +52,10 @@ object AutoReplyPrompts {
             - Use casual language, emojis sparingly, no formal greetings
             - NEVER make up facts or commitments the user hasn't expressed
 
-            SENDER: ${sanitize(senderName)}
-            MESSAGE:
+            MESSAGE FROM THIS PERSON:
             <untrusted_message>
-            ${sanitize(messageText)}
+            Sender Name: ${sanitize(senderName)}
+            Message Text: ${sanitize(messageText)}
             </untrusted_message>
 
             RECENT CONVERSATION WITH THIS PERSON (also untrusted):
@@ -93,10 +93,10 @@ object AutoReplyPrompts {
             - No emojis unless the sender used them
             - NEVER make up facts or commitments
 
-            SENDER: ${sanitize(senderName)}
-            MESSAGE:
+            MESSAGE FROM THIS PERSON:
             <untrusted_message>
-            ${sanitize(messageText)}
+            Sender Name: ${sanitize(senderName)}
+            Message Text: ${sanitize(messageText)}
             </untrusted_message>
 
             RECENT MESSAGES (also untrusted):
@@ -135,11 +135,11 @@ object AutoReplyPrompts {
             - If the email requires detailed response, acknowledge receipt and mention you'll follow up: "Thanks for this — I'll review and get back to you shortly."
             - NEVER make up facts, numbers, or commitments
 
-            FROM: ${sanitize(senderName)}
-            SUBJECT: ${sanitize(subject)}
-            MESSAGE:
+            EMAIL RECEIVED:
             <untrusted_message>
-            ${sanitize(messageText)}
+            From: ${sanitize(senderName)}
+            Subject: ${sanitize(subject)}
+            Body: ${sanitize(messageText)}
             </untrusted_message>
 
             USER CONTEXT:

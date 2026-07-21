@@ -51,23 +51,35 @@ class AutoReplyEngine @Inject constructor(
     private val pendingReplies = mutableMapOf<String, Job>()
 
     // Track when we last sent an auto-reply per contact key to detect bouncebacks
-    private val recentlySentTimestamps = ConcurrentHashMap<String, Long>()
+    // Store both timestamp and the reply text to verify it's actually an echo
+    private data class SentReply(val timestamp: Long, val replyText: String)
+    private val recentlySent = ConcurrentHashMap<String, SentReply>()
 
     /**
      * Returns true if a notification from this package/contact is likely our own
      * auto-reply bouncing back as a notification (e.g. WhatsApp showing "You: ...")
-     * within the cooldown window.
+     * within the cooldown window. Now requires matching reply text to confirm it's
+     * actually an echo, not just any message during the cooldown.
      */
-    fun isOwnReplyBounceback(packageName: String, contactName: String?): Boolean {
+    fun isOwnReplyBounceback(packageName: String, contactName: String?, messageText: String): Boolean {
         val contactKey = "$packageName:${contactName ?: ""}"
-        val lastSentTime = recentlySentTimestamps[contactKey] ?: return false
-        val elapsed = System.currentTimeMillis() - lastSentTime
+        val sentReply = recentlySent[contactKey] ?: return false
+        val elapsed = System.currentTimeMillis() - sentReply.timestamp
+
         if (elapsed < REPLY_BOUNCEBACK_COOLDOWN_MS) {
-            Log.d(TAG, "Suppressing bounceback for $contactKey (sent ${elapsed}ms ago)")
-            return true
+            // Check if the message text matches our sent reply
+            val isMatch = messageText.contains(sentReply.replyText, ignoreCase = true) ||
+                          sentReply.replyText.contains(messageText, ignoreCase = true)
+            if (isMatch) {
+                Log.d(TAG, "Suppressing bounceback for $contactKey (sent ${elapsed}ms ago, text matches)")
+                return true
+            } else {
+                Log.d(TAG, "Not a bounceback for $contactKey: text doesn't match (expected '${sentReply.replyText}', got '$messageText')")
+                return false
+            }
         }
         // Cooldown expired — clean up
-        recentlySentTimestamps.remove(contactKey)
+        recentlySent.remove(contactKey)
         return false
     }
 
@@ -126,9 +138,9 @@ class AutoReplyEngine @Inject constructor(
 
                 val sent = dispatchReply(notification, sbn, replyText, context)
                 if (sent) {
-                    // Record the send timestamp BEFORE marking in DB so the
+                    // Record the send timestamp AND reply text BEFORE marking in DB so the
                     // bounceback check is ready when the echo notification fires
-                    recentlySentTimestamps[contactKey] = System.currentTimeMillis()
+                    recentlySent[contactKey] = SentReply(System.currentTimeMillis(), replyText)
                     notificationDao.markAsAutoReplied(notification.id, replyText)
                     Log.d(TAG, "Auto-reply sent to ${notification.contactName}: ${replyText.take(50)}...")
                 }

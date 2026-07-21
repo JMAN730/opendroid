@@ -87,7 +87,8 @@ class SettingsRepository @Inject constructor(
         } else {
             editor.putString(ELEVENLABS_KEY, config.elevenLabsApiKey)
         }
-        editor.apply()
+        // Use commit() for synchronous persistence instead of apply()
+        editor.commit()
         return config.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
     }
 

@@ -51,20 +51,49 @@ class AdvancedControlActions @Inject constructor() {
 
         private fun resolvePath(pathStr: String): File {
             val trimmed = pathStr.trim()
-            if (trimmed.startsWith("/") || trimmed.startsWith("content://")) {
-                val externalStoragePath = Environment.getExternalStorageDirectory().absolutePath
-                if (trimmed.startsWith(externalStoragePath) ||
-                    trimmed.startsWith("/sdcard") ||
-                    trimmed.startsWith("/storage") ||
-                    trimmed.startsWith("/data")
-                ) {
-                    return File(trimmed)
-                }
-                val relativePath = trimmed.removePrefix("/")
-                return File(Environment.getExternalStorageDirectory(), relativePath)
-            } else {
-                return File(Environment.getExternalStorageDirectory(), trimmed)
+
+            // Reject content:// URIs
+            if (trimmed.startsWith("content://")) {
+                throw SecurityException("content:// URIs are not supported. Use file paths only.")
             }
+
+            // Build candidate file
+            val candidate = if (trimmed.startsWith("/")) {
+                File(trimmed)
+            } else {
+                File(Environment.getExternalStorageDirectory(), trimmed)
+            }
+
+            // Canonicalize to resolve ../ and symlinks
+            val canonicalPath = try {
+                candidate.canonicalPath
+            } catch (e: Exception) {
+                throw SecurityException("Invalid path: cannot resolve canonical path")
+            }
+
+            // Define approved external storage roots
+            val externalStorageRoot = Environment.getExternalStorageDirectory().canonicalPath
+            val approvedRoots = listOf(
+                externalStorageRoot,
+                "/sdcard",  // typically symlinks to externalStorageRoot
+                "/storage/emulated/0"  // another common symlink
+            ).map { File(it).canonicalPath }
+
+            // Reject /data and other private roots
+            if (canonicalPath.startsWith("/data")) {
+                throw SecurityException("Access to /data is not permitted")
+            }
+
+            // Ensure the canonical path is under one of the approved roots
+            val isUnderApprovedRoot = approvedRoots.any { root ->
+                canonicalPath == root || canonicalPath.startsWith("$root/")
+            }
+
+            if (!isUnderApprovedRoot) {
+                throw SecurityException("Path must be under external storage: $canonicalPath")
+            }
+
+            return File(canonicalPath)
         }
     }
 

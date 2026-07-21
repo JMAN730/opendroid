@@ -120,8 +120,8 @@ object OnDeviceModelRegistry {
             sizeLabel = "2B",
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E2B-it-litert-lm",
-            modelFilename = "gemma-3n-E2B-it.litertlm",
-            expectedSize = 2000000000L,
+            modelFilename = "gemma-3n-E2B-it-int4.litertlm",
+            expectedSize = 2000000000L,  // TODO: Replace with actual published artifact size
             licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
             authRequired = true,
             minSdk = 31
@@ -133,8 +133,8 @@ object OnDeviceModelRegistry {
             sizeLabel = "4B",
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E4B-it-litert-lm",
-            modelFilename = "gemma-3n-E4B-it.litertlm",
-            expectedSize = 4000000000L,
+            modelFilename = "gemma-3n-E4B-it-int4.litertlm",
+            expectedSize = 4000000000L,  // TODO: Replace with actual published artifact size
             licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
             authRequired = true,
             minSdk = 31

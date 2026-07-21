@@ -25,6 +25,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
@@ -593,13 +599,17 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
-                                        try {
-                                            val client = Generation.getClient()
-                                            client.download()
-                                            gemma4Status = "Downloading..."
-                                            showGemma4Download = false
-                                        } catch (e: Exception) {
-                                            gemma4Status = "Download failed: ${e.localizedMessage}"
+                                        coroutineScope.launch {
+                                            try {
+                                                val client = Generation.getClient()
+                                                gemma4Status = "Downloading..."
+                                                showGemma4Download = false
+                                                client.download().collect { }
+                                                gemma4Status = "Download complete"
+                                            } catch (e: Exception) {
+                                                gemma4Status = "Download failed: ${e.localizedMessage}"
+                                                showGemma4Download = true
+                                            }
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
@@ -628,19 +638,23 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Button(
                                     onClick = {
-                                        try {
-                                            val previewConfig = generationConfig {
-                                                modelConfig = modelConfig {
-                                                    releaseStage = ModelReleaseStage.PREVIEW
-                                                    preference = ModelPreference.FAST
+                                        coroutineScope.launch {
+                                            try {
+                                                val previewConfig = generationConfig {
+                                                    modelConfig = modelConfig {
+                                                        releaseStage = ModelReleaseStage.PREVIEW
+                                                        preference = ModelPreference.FAST
+                                                    }
                                                 }
+                                                val client3n = Generation.getClient(previewConfig)
+                                                gemma3nStatus = "Downloading..."
+                                                showGemma3nDownload = false
+                                                client3n.download().collect { }
+                                                gemma3nStatus = "Download complete"
+                                            } catch (e: Exception) {
+                                                gemma3nStatus = "Download failed: ${e.localizedMessage}"
+                                                showGemma3nDownload = true
                                             }
-                                            val client3n = Generation.getClient(previewConfig)
-                                            client3n.download()
-                                            gemma3nStatus = "Downloading..."
-                                            showGemma3nDownload = false
-                                        } catch (e: Exception) {
-                                            gemma3nStatus = "Download failed: ${e.localizedMessage}"
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
@@ -1275,18 +1289,10 @@ fun SettingsScreen(
                                 val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
-                                    OutlinedTextField(
+                                    SecureApiKeyField(
                                         value = keyVal,
                                         onValueChange = { viewModel.updateApiKey(providerName, it) },
-                                        label = { Text("$providerName API Key", fontSize = 12.sp) },
-                                        singleLine = true,
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = AccentNeonGreen,
-                                            unfocusedBorderColor = BorderColor,
-                                            focusedTextColor = TextPrimary,
-                                            unfocusedTextColor = TextPrimary
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
+                                        label = "$providerName API Key"
                                     )
                                 }
                             }
@@ -1330,18 +1336,10 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(top = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField(
+                                SecureApiKeyField(
                                     value = config.elevenLabsApiKey,
                                     onValueChange = { viewModel.updateElevenLabsApiKey(it) },
-                                    label = { Text("ElevenLabs API Key", fontSize = 12.sp) },
-                                    singleLine = true,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = AccentNeonGreen,
-                                        unfocusedBorderColor = BorderColor,
-                                        focusedTextColor = TextPrimary,
-                                        unfocusedTextColor = TextPrimary
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
+                                    label = "ElevenLabs API Key"
                                 )
                                 OutlinedTextField(
                                     value = config.elevenLabsVoiceId,
@@ -1954,4 +1952,38 @@ private fun formatBytes(bytes: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
     return String.format("%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
+
+@Composable
+private fun SecureApiKeyField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontSize = 12.sp) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (visible) "Hide API key" else "Show API key",
+                    tint = TextSecondary
+                )
+            }
+        },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = AccentNeonGreen,
+            unfocusedBorderColor = BorderColor,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
 }

@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -31,7 +33,10 @@ class CopilotProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = formatBaseUrl(config.copilotUrl, "http://10.0.2.2:4141")
+        val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
+        if (baseUrl.isEmpty()) {
+            throw IllegalStateException("Copilot server URL is not configured. Set it in Settings.")
+        }
         val endpoint = when {
             baseUrl.endsWith("/v1/chat/completions") || baseUrl.endsWith("/chat/completions") -> baseUrl
             baseUrl.endsWith("/v1") -> "$baseUrl/chat/completions"
@@ -103,22 +108,13 @@ class CopilotProvider @Inject constructor(
                 kotlinx.coroutines.delay(50)
             }
         } catch (e: Exception) {
-            emit("Error streaming Copilot API: ${e.localizedMessage}")
+            emit("Error streaming Copilot API: ${NetworkErrorFormatter.toUserMessage(e)}")
         }
     }
 
     override suspend fun isAvailable(): Boolean {
-        return true
+        val config = settingsRepository.llmConfig.first()
+        return config.copilotUrl.trim().isNotEmpty()
     }
 
-    private fun formatBaseUrl(url: String, defaultUrl: String): String {
-        val trimmed = url.trim()
-        val target = if (trimmed.isEmpty()) defaultUrl else trimmed
-        val withScheme = if (!target.startsWith("http://") && !target.startsWith("https://")) {
-            "http://$target"
-        } else {
-            target
-        }
-        return if (withScheme.endsWith("/")) withScheme.dropLast(1) else withScheme
-    }
 }
