@@ -12,7 +12,7 @@ object UrlUtils {
         val withScheme = when {
             raw.startsWith("http://", ignoreCase = true) ||
                 raw.startsWith("https://", ignoreCase = true) -> raw
-            else -> "http://$raw"
+            else -> "https://$raw"
         }
         return withScheme.trimEnd('/')
     }
