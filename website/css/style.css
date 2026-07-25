@@ -729,10 +729,11 @@ img { max-width: 100%; height: auto; display: block; }
   font-weight: 600;
 }
 
-/* ── Indus badge ── */
-.indus-badge-link { display: inline-flex; align-items: center; transition: transform var(--transition); }
-.indus-badge-link:hover { transform: translateY(-2px); }
+/* ── Indus & Product Hunt badge ── */
+.indus-badge-link, .producthunt-badge-link { display: inline-flex; align-items: center; transition: transform var(--transition); }
+.indus-badge-link:hover, .producthunt-badge-link:hover { transform: translateY(-2px); }
 .indus-badge-img { height: 44px; width: auto; }
+.producthunt-badge-link img { height: 54px; width: auto; max-width: 100%; }
 
 /* ── Screenshots Showcase ── */
 .screenshots-section {
