@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 
+import com.opendroid.ai.core.llm.ImportLocalModelResult
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
 import android.content.Context
@@ -154,8 +155,13 @@ class SettingsViewModel @Inject constructor(
     fun importLocalModel(modelId: String, uri: android.net.Uri) {
         _localImportStatus.value = "Importing..."
         viewModelScope.launch {
-            val success = modelRepository.importLocalModel(modelId, uri)
-            _localImportStatus.value = if (success) "Success" else "Failed"
+            // Repository already switches to Dispatchers.IO; yield so "Importing..." can paint first.
+            when (val result = modelRepository.importLocalModel(modelId, uri)) {
+                is ImportLocalModelResult.Success ->
+                    _localImportStatus.value = "Success"
+                is ImportLocalModelResult.Failure ->
+                    _localImportStatus.value = result.reason
+            }
         }
     }
 

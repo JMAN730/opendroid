@@ -49,12 +49,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +95,7 @@ fun SettingsScreen(
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -1897,17 +1895,19 @@ fun SettingsScreen(
     }
 
     if (localImportStatus != null) {
+        val isImporting = localImportStatus == "Importing..."
+        val isSuccess = localImportStatus == "Success"
         AlertDialog(
             onDismissRequest = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     viewModel.clearImportStatus()
                 }
             },
             title = {
                 Text(
-                    text = when (localImportStatus) {
-                        "Importing..." -> "Importing Model"
-                        "Success" -> "Import Successful"
+                    text = when {
+                        isImporting -> "Importing Model"
+                        isSuccess -> "Import Successful"
                         else -> "Import Failed"
                     },
                     color = TextPrimary
@@ -1915,23 +1915,27 @@ fun SettingsScreen(
             },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    when (localImportStatus) {
-                        "Importing..." -> {
+                    when {
+                        isImporting -> {
                             CircularProgressIndicator(color = Color(0xFFFF9800))
                             Spacer(modifier = Modifier.height(12.dp))
                             Text("Copying and verifying the model file. This may take a minute...", color = TextSecondary)
                         }
-                        "Success" -> {
+                        isSuccess -> {
                             Text("The model was imported and verified successfully. You can now load it.", color = TextSecondary)
                         }
                         else -> {
-                            Text("Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.", color = Color.Red)
+                            Text(
+                                text = localImportStatus
+                                    ?: "Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.",
+                                color = Color.Red
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     Button(
                         onClick = { viewModel.clearImportStatus() },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
