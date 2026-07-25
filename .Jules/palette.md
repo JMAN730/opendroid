@@ -1,0 +1,3 @@
+## 2026-07-24 - [Developer Tool Premium Design System Transition]
+**Learning:** Moving static sites from a generic, high-contrast, AI-generator emoji style to a high-quality dark-mode layout (zinc/gray scales `#09090b` + desaturated accents like `#10b981`) requires replacing low-fidelity graphics/emojis with stroke-based inline SVG vector iconography and wrapping real app previews inside custom CSS device mockups to establish a real-product identity.
+**Action:** Always clean out flat-color emojis from navigation, buttons, and titles, replacing them with semantic, high-quality, monochrome inline SVG elements using a stroke width of 1.5px inheriting `currentColor`, and preserve keyboard focus ring readability via `:focus-visible` selectors.

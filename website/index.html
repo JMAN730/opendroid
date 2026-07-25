@@ -65,7 +65,10 @@
           <li><a href="privacy.html">Privacy</a></li>
         </ul>
       </li>
-      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta">Download ↓</a></li>
+      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta" aria-label="Download OpenDroid">
+        Download
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </a></li>
     </ul>
   </div>
 </nav>
@@ -81,27 +84,30 @@
         </div>
         <h1>Your Open<br><span class="gradient-text">Autonomous Android</span><br>Agent</h1>
         <p class="hero-description">
-          A production-ready AI assistant that breaks complex goals into sequential sub-tasks,
-          executes them through direct device controls, and dynamically replans when conditions change.
+          A production-ready, modular AI assistant designed to execute complex device workflows and automate multi-step tasks autonomously.
         </p>
         <div class="hero-buttons">
-          <a href="https://github.com/yashab-cyber/opendroid/releases" class="btn btn-primary" id="download-btn">
-            ⬇ Download APK
+          <a href="https://github.com/yashab-cyber/opendroid/releases" class="btn btn-primary" id="download-btn" aria-label="Download APK">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download APK
           </a>
-          <a href="https://indusapp.store/wphbqhzu" target="_blank" class="indus-badge-link" id="indus-badge-btn">
+          <a href="https://indusapp.store/wphbqhzu" target="_blank" class="indus-badge-link" id="indus-badge-btn" aria-label="Get it on Indus Appstore">
             <img src="assets/indus-badge.png" alt="Get it on Indus Appstore" class="indus-badge-img">
           </a>
           <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer" class="producthunt-badge-link" id="producthunt-badge-btn">
             <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205420&amp;theme=light&amp;t=1784972318707" alt="Opendroid - Autonomous A.I agent for Android. | Product Hunt" width="250" height="54">
           </a>
-          <a href="https://github.com/yashab-cyber/opendroid" target="_blank" class="btn btn-secondary" id="github-btn">
-            ⭐ Star on GitHub
+          <a href="https://github.com/yashab-cyber/opendroid" target="_blank" class="btn btn-secondary" id="github-btn" aria-label="Star on GitHub">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            Star on GitHub
           </a>
         </div>
       </div>
       <div class="hero-visual">
-        <div class="hero-bot-wrapper">
-          <img src="assets/bot.png" alt="OpenDroid AI Bot" id="hero-bot">
+        <div class="device-frame-wrapper">
+          <div class="device-frame-screen">
+            <img src="assets/screenshot/Screenshot_20260528-234508_OpenDroid.png" alt="OpenDroid Interface Screen Preview">
+          </div>
         </div>
       </div>
     </div>
@@ -163,34 +169,58 @@
     </div>
     <div class="feature-grid">
       <div class="glass-card feature-card reveal" id="feat-planning">
-        <div class="icon">🧠</div>
-        <h3>Autonomous Planning</h3>
-        <p>Breaks complex multi-step commands into logical sub-tasks, executes sequentially, and dynamically replans on failure.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1 0-3.12 3 3 0 0 1 0-4.88 2.5 2.5 0 0 1 0-3.12A2.5 2.5 0 0 1 9.5 2z"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 0-3.12 3 3 0 0 0 0-4.88 2.5 2.5 0 0 0 0-3.12A2.5 2.5 0 0 0 14.5 2z"></path></svg>
+          </div>
+          <h3>Autonomous Planning</h3>
+          <p>Breaks complex multi-step commands into logical sub-tasks, executes sequentially, and dynamically replans on failure.</p>
+        </div>
       </div>
       <div class="glass-card feature-card reveal" id="feat-device">
-        <div class="icon">📱</div>
-        <h3>Full Device Control</h3>
-        <p>Brightness, Wi-Fi, Bluetooth, flashlight, alarms, timers, calendar, calls, SMS — all controlled autonomously.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          </div>
+          <h3>Full Device Control</h3>
+          <p>Brightness, Wi-Fi, Bluetooth, flashlight, alarms, timers, calendar, calls, SMS — all controlled autonomously.</p>
+        </div>
       </div>
       <div class="glass-card feature-card reveal" id="feat-accessibility">
-        <div class="icon"><img src="assets/bot.png" alt="" aria-hidden="true" style="width: 24px; height: 24px; object-fit: contain;"></div>
-        <h3>Accessibility Automation</h3>
-        <p>Clicks, scrolls, reads screens, and automates third-party apps like WhatsApp and Maps via Accessibility Services.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+          </div>
+          <h3>Accessibility Automation</h3>
+          <p>Clicks, scrolls, reads screens, and automates third-party apps like WhatsApp and Maps via Accessibility Services.</p>
+        </div>
       </div>
       <div class="glass-card feature-card reveal" id="feat-vision">
-        <div class="icon">📸</div>
-        <h3>Vision Engine</h3>
-        <p>Captures and analyzes screenshots using multimodal LLMs. Falls back to text-scraping on older devices.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          </div>
+          <h3>Vision Engine</h3>
+          <p>Captures and analyzes screenshots using multimodal LLMs. Falls back to text-scraping on older devices.</p>
+        </div>
       </div>
       <div class="glass-card feature-card reveal" id="feat-memory">
-        <div class="icon">🗄️</div>
-        <h3>Multi-Tier Memory</h3>
-        <p>Working, episodic, semantic, and procedural memory systems for persistent context and user preference learning.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path></svg>
+          </div>
+          <h3>Multi-Tier Memory</h3>
+          <p>Working, episodic, semantic, and procedural memory systems for persistent context and user preference learning.</p>
+        </div>
       </div>
       <div class="glass-card feature-card reveal" id="feat-voice">
-        <div class="icon">🎙️</div>
-        <h3>Voice Interface</h3>
-        <p>Hands-free wake word detection, speech recognition, and high-fidelity TTS with ElevenLabs fallback support.</p>
+        <div class="feature-card-content">
+          <div class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+          </div>
+          <h3>Voice Interface</h3>
+          <p>Hands-free wake word detection, speech recognition, and high-fidelity TTS with ElevenLabs fallback support.</p>
+        </div>
       </div>
     </div>
     <div class="text-center mt-4 reveal">
@@ -233,50 +263,69 @@
   <div class="container">
     <div class="section-header reveal">
       <span class="label">Architecture</span>
-      <h2>Modular, Clean &amp; Extensible</h2>
-      <p>Built with Dagger-Hilt dependency injection, clean architecture layers, and Jetpack Compose UI.</p>
+      <h2>Modular, Clean &amp; Extensible Flow</h2>
+      <p>A visual breakdown of OpenDroid's core modular system — connecting services, models, databases, and UI components.</p>
     </div>
-    <div class="arch-grid reveal">
-      <div class="arch-card">
-        <div class="emoji">♿</div>
-        <h4>Accessibility</h4>
-        <p>Services & app automators</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">⚡</div>
-        <h4>Actions</h4>
-        <p>System, comms, productivity</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">🧠</div>
-        <h4>Agent Core</h4>
-        <p>Planner, classifier, resolver</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">🔗</div>
-        <h4>LLM Layer</h4>
-        <p>10+ provider integrations</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">💾</div>
-        <h4>Memory</h4>
-        <p>4-tier persistent memory</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">🎤</div>
-        <h4>Voice</h4>
-        <p>Wake word, STT, TTS</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">🗃️</div>
-        <h4>Data</h4>
-        <p>Room DB, repos, models</p>
-      </div>
-      <div class="arch-card">
-        <div class="emoji">🎨</div>
-        <h4>UI</h4>
-        <p>Compose screens & themes</p>
-      </div>
+    <div class="arch-diagram-wrapper reveal">
+      <svg class="arch-svg" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+        <!-- Definitions for markers and filters -->
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#10b981" />
+          </marker>
+        </defs>
+
+        <!-- UI / Presentation Layer (Top) -->
+        <g transform="translate(30, 20)">
+          <rect class="node-rect" width="240" height="60" rx="6" />
+          <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Jetpack Compose UI</text>
+        </g>
+        <g transform="translate(310, 20)">
+          <rect class="node-rect" width="260" height="60" rx="6" style="fill: rgba(16, 185, 129, 0.05); stroke: #10b981;" />
+          <text x="130" y="35" font-weight="700" font-size="14" text-anchor="middle" fill="#10b981">Agent Core (Planner &amp; Resolver)</text>
+        </g>
+        <g transform="translate(610, 20)">
+          <rect class="node-rect" width="260" height="60" rx="6" />
+          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Accessibility Automation</text>
+        </g>
+
+        <!-- Middle Layers (Services & Processors) -->
+        <g transform="translate(30, 150)">
+          <rect class="node-rect" width="240" height="60" rx="6" />
+          <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Voice Engine (STT / TTS)</text>
+        </g>
+        <g transform="translate(310, 150)">
+          <rect class="node-rect" width="260" height="60" rx="6" />
+          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">LLM Gateway (10+ Providers)</text>
+        </g>
+        <g transform="translate(610, 150)">
+          <rect class="node-rect" width="260" height="60" rx="6" />
+          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">System Actions Handler</text>
+        </g>
+
+        <!-- Base Layers (Data & Memory) -->
+        <g transform="translate(170, 280)">
+          <rect class="node-rect" width="260" height="60" rx="6" />
+          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Room Database &amp; Repositories</text>
+        </g>
+        <g transform="translate(470, 280)">
+          <rect class="node-rect" width="260" height="60" rx="6" />
+          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Multi-Tier Persistent Memory</text>
+        </g>
+
+        <!-- Connection Lines / Flows (Top to Middle) -->
+        <path class="flow-line" d="M 150,80 L 150,150" marker-end="url(#arrow)" />
+        <path class="flow-line" d="M 440,80 L 440,150" marker-end="url(#arrow)" />
+        <path class="flow-line" d="M 740,80 L 740,150" marker-end="url(#arrow)" />
+
+        <!-- Bi-directional connections in Middle Layer -->
+        <path class="flow-line" d="M 270,180 L 310,180" marker-end="url(#arrow)" />
+        <path class="flow-line" d="M 610,180 L 570,180" marker-end="url(#arrow)" />
+
+        <!-- Connections from Middle to Base -->
+        <path class="flow-line" d="M 310,50 Q 230,50 230,150 T 300,280" marker-end="url(#arrow)" />
+        <path class="flow-line" d="M 570,50 Q 600,50 600,150 T 600,280" marker-end="url(#arrow)" />
+      </svg>
     </div>
   </div>
 </section>
