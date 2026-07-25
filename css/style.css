@@ -162,9 +162,10 @@ img{max-width:100%;height:auto;display:block;}
 .version-table td{color:var(--text-body);}
 .badge-supported{display:inline-block;padding:3px 12px;background:var(--accent-light);color:var(--accent-dark);border-radius:100px;font-size:0.75rem;font-weight:600;}
 .badge-unsupported{display:inline-block;padding:3px 12px;background:#fee2e2;color:#dc2626;border-radius:100px;font-size:0.75rem;font-weight:600;}
-.indus-badge-link{display:inline-flex;align-items:center;transition:transform var(--transition);}
-.indus-badge-link:hover{transform:translateY(-2px);}
+.indus-badge-link,.producthunt-badge-link{display:inline-flex;align-items:center;transition:transform var(--transition);}
+.indus-badge-link:hover,.producthunt-badge-link:hover{transform:translateY(-2px);}
 .indus-badge-img{height:44px;width:auto;}
+.producthunt-badge-link img{height:54px;width:auto;max-width:100%;}
 .screenshots-section{padding:80px 0;background:var(--bg-primary);}
 .screenshots-scroll{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;padding:0 24px;}
 .screenshot-item{position:relative;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--surface-border);box-shadow:var(--shadow-md);transition:all var(--transition);max-width:240px;flex-shrink:0;}
