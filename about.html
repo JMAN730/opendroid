@@ -56,7 +56,10 @@
           <li><a href="privacy.html">Privacy</a></li>
         </ul>
       </li>
-      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta">Download ↓</a></li>
+      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta" aria-label="Download OpenDroid">
+        Download
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </a></li>
     </ul>
   </div>
 </nav>
@@ -81,8 +84,25 @@
           <p>We're building the most capable, transparent, and privacy-respecting autonomous Android agent — completely open source. While big tech gatekeeps AI agents behind proprietary ecosystems, OpenDroid puts the power directly in your hands.</p>
           <p>No cloud dependencies. No data harvesting. No subscriptions. Just a genuinely intelligent assistant that lives on your device, understands your goals, and acts on them autonomously.</p>
         </div>
-        <div class="about-image">
-          <img src="assets/bot.png" alt="OpenDroid Bot">
+        <div class="reveal" style="display: flex; gap: 16px; flex-direction: column;">
+          <div class="glass-card showcase-card">
+            <div class="showcase-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            </div>
+            <div>
+              <h3>Absolute Speed</h3>
+              <p>We optimize for low latency across every system module. From optimized local speech processing to quick action dispatchers, OpenDroid is built to act fast.</p>
+            </div>
+          </div>
+          <div class="glass-card showcase-card">
+            <div class="showcase-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </div>
+            <div>
+              <h3>Deep Local Privacy</h3>
+              <p>We support fully local offline operations. Connect with Ollama, run on-device models, and store all memory tiers in a secure local Room Database.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -99,34 +119,58 @@
       </div>
       <div class="feature-grid">
         <div class="glass-card feature-card reveal">
-          <div class="icon">🔓</div>
-          <h3>Open Source First</h3>
-          <p>Every line of code is public. Audit it, fork it, improve it. Transparency is not optional — it's foundational to trust in AI.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            </div>
+            <h3>Open Source First</h3>
+            <p>Every line of code is public. Audit it, fork it, improve it. Transparency is not optional — it's foundational to trust in AI.</p>
+          </div>
         </div>
         <div class="glass-card feature-card reveal">
-          <div class="icon">🛡️</div>
-          <h3>Privacy by Design</h3>
-          <p>Data stays on your device. No telemetry, no analytics, no cloud sync. You own your data completely.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </div>
+            <h3>Privacy by Design</h3>
+            <p>Data stays on your device. No telemetry, no analytics, no cloud sync. You own your data completely.</p>
+          </div>
         </div>
         <div class="glass-card feature-card reveal">
-          <div class="icon">🧩</div>
-          <h3>Modular Architecture</h3>
-          <p>Clean separation of concerns, dependency injection, and extensible modules. Built for contributors to build upon.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            </div>
+            <h3>Modular Architecture</h3>
+            <p>Clean separation of concerns, dependency injection, and extensible modules. Built for contributors to build upon.</p>
+          </div>
         </div>
         <div class="glass-card feature-card reveal">
-          <div class="icon">🌍</div>
-          <h3>Community Driven</h3>
-          <p>Shaped by contributors and users. Features are proposed, discussed, and built together in the open.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            </div>
+            <h3>Community Driven</h3>
+            <p>Shaped by contributors and users. Features are proposed, discussed, and built together in the open.</p>
+          </div>
         </div>
         <div class="glass-card feature-card reveal">
-          <div class="icon">🔌</div>
-          <h3>Provider Agnostic</h3>
-          <p>Bring your own LLM. Support for 10+ providers means you choose the AI brain — or run it fully offline with Ollama.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+            </div>
+            <h3>Provider Agnostic</h3>
+            <p>Bring your own LLM. Support for 10+ providers means you choose the AI brain — or run it fully offline with Ollama.</p>
+          </div>
         </div>
         <div class="glass-card feature-card reveal">
-          <div class="icon">⚡</div>
-          <h3>Production Ready</h3>
-          <p>Not a toy or prototype. OpenDroid is engineered for reliability with robust error handling, fallback chains, and re-evaluation.</p>
+          <div class="feature-card-content">
+            <div class="icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            </div>
+            <h3>Production Ready</h3>
+            <p>Not a toy or prototype. OpenDroid is engineered for reliability with robust error handling, fallback chains, and re-evaluation.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -139,50 +183,56 @@
     <div class="container">
       <div class="section-header reveal">
         <span class="label">Under the Hood</span>
-        <h2>Technology Stack</h2>
+        <h2>Technology Flow Diagram</h2>
         <p>Built with modern Android best practices and cutting-edge AI integration.</p>
       </div>
-      <div class="arch-grid reveal">
-        <div class="arch-card">
-          <div class="emoji"><img src="assets/bot.png" alt="" aria-hidden="true" style="width: 32px; height: 32px; object-fit: contain;"></div>
-          <h4>Kotlin</h4>
-          <p>100% Kotlin codebase</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">🎨</div>
-          <h4>Jetpack Compose</h4>
-          <p>Modern declarative UI</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">💉</div>
-          <h4>Dagger-Hilt</h4>
-          <p>Dependency injection</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">🗃️</div>
-          <h4>Room Database</h4>
-          <p>Local persistence layer</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">🔗</div>
-          <h4>Retrofit + OkHttp</h4>
-          <p>API communication</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">♿</div>
-          <h4>Accessibility API</h4>
-          <p>Device automation</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">🎤</div>
-          <h4>Android STT</h4>
-          <p>Voice recognition</p>
-        </div>
-        <div class="arch-card">
-          <div class="emoji">📐</div>
-          <h4>Clean Architecture</h4>
-          <p>Modular layered design</p>
-        </div>
+      <div class="arch-diagram-wrapper reveal">
+        <svg class="arch-svg" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#10b981" />
+            </marker>
+          </defs>
+          <g transform="translate(30, 20)">
+            <rect class="node-rect" width="240" height="60" rx="6" />
+            <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Jetpack Compose UI</text>
+          </g>
+          <g transform="translate(310, 20)">
+            <rect class="node-rect" width="260" height="60" rx="6" style="fill: rgba(16, 185, 129, 0.05); stroke: #10b981;" />
+            <text x="130" y="35" font-weight="700" font-size="14" text-anchor="middle" fill="#10b981">Agent Core (Planner &amp; Resolver)</text>
+          </g>
+          <g transform="translate(610, 20)">
+            <rect class="node-rect" width="260" height="60" rx="6" />
+            <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Accessibility Automation</text>
+          </g>
+          <g transform="translate(30, 150)">
+            <rect class="node-rect" width="240" height="60" rx="6" />
+            <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Voice Engine (STT / TTS)</text>
+          </g>
+          <g transform="translate(310, 150)">
+            <rect class="node-rect" width="260" height="60" rx="6" />
+            <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">LLM Gateway (10+ Providers)</text>
+          </g>
+          <g transform="translate(610, 150)">
+            <rect class="node-rect" width="260" height="60" rx="6" />
+            <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">System Actions Handler</text>
+          </g>
+          <g transform="translate(170, 280)">
+            <rect class="node-rect" width="260" height="60" rx="6" />
+            <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Room Database &amp; Repositories</text>
+          </g>
+          <g transform="translate(470, 280)">
+            <rect class="node-rect" width="260" height="60" rx="6" />
+            <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Multi-Tier Persistent Memory</text>
+          </g>
+          <path class="flow-line" d="M 150,80 L 150,150" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 440,80 L 440,150" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 740,80 L 740,150" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 270,180 L 310,180" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 610,180 L 570,180" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 310,50 Q 230,50 230,150 T 300,280" marker-end="url(#arrow)" />
+          <path class="flow-line" d="M 570,50 Q 600,50 600,150 T 600,280" marker-end="url(#arrow)" />
+        </svg>
       </div>
     </div>
   </section>
@@ -199,8 +249,14 @@
       </div>
       <div class="text-center reveal">
         <div class="cta-buttons">
-          <a href="https://github.com/yashab-cyber" target="_blank" class="btn btn-secondary">🧑‍💻 GitHub Profile</a>
-          <a href="https://discord.gg/knRMyFmvpp" target="_blank" class="btn btn-secondary">💬 Join Discord</a>
+          <a href="https://github.com/yashab-cyber" target="_blank" class="btn btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+            GitHub Profile
+          </a>
+          <a href="https://discord.gg/knRMyFmvpp" target="_blank" class="btn btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            Join Discord
+          </a>
         </div>
       </div>
     </div>
