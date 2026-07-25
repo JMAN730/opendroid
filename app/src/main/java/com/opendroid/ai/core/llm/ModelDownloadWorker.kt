@@ -143,13 +143,16 @@ class ModelDownloadWorker(
         val tokenizerFile = File(targetDir, "tokenizer.model")
         tokenizerFile.writeText("mock_tokenizer_data")
 
-        // Create mock model.task (or model.litertlm)
-        val taskFile = File(targetDir, "model.task")
-        taskFile.writeText("mock_model_task_binary_data")
+        // Create mock model binary using the registry filename
+        val spec = OnDeviceModelRegistry.findById(modelId)
+        val modelFile = if (spec != null) {
+            ModelStoragePaths.targetFile(targetDir, spec)
+        } else {
+            File(targetDir, ModelStoragePaths.LEGACY_TASK_FILENAME)
+        }
+        modelFile.writeText("mock_model_task_binary_data")
 
-        // Let's also create the model file that LiteRTLMProvider checks
-        // In LiteRTLMProvider.kt, getModelFilePath returns: files/litert_models/{modelId}.litertlm
-        // Let's create it as a reference file pointing to targetDir/model.task
+        // Reference file pointing at the model directory (legacy LiteRTLMProvider layout)
         val refFile = File(applicationContext.filesDir, "litert_models/${modelId}.litertlm")
         refFile.parentFile?.mkdirs()
         refFile.writeText(targetDir.absolutePath)
@@ -293,20 +296,24 @@ class ModelDownloadWorker(
         if (!targetDir.exists()) targetDir.mkdirs()
 
         Log.i(tag, "[DOWNLOAD FLOW] Copying or extracting model payload to target directory: $targetPath")
+        val spec = OnDeviceModelRegistry.findById(modelId)
+        val targetModelFile = if (spec != null) {
+            ModelStoragePaths.targetFile(targetDir, spec)
+        } else {
+            File(targetDir, ModelStoragePaths.LEGACY_TASK_FILENAME)
+        }
         try {
             if (isZipFile(tempFile)) {
                 extractZip(tempFile, targetDir)
             } else {
-                // If it's a single file (like model.task), copy it to targetDir/model.task
-                val modelTaskFile = File(targetDir, "model.task")
-                tempFile.copyTo(modelTaskFile, overwrite = true)
+                tempFile.copyTo(targetModelFile, overwrite = true)
 
-                // Write a dummy manifest.json and config.json
                 val manifestFile = File(targetDir, "manifest.json")
                 val manifest = JSONObject().apply {
                     put("model_id", modelId)
                     put("status", "ready")
                     put("format", "litertlm")
+                    put("filename", targetModelFile.name)
                 }
                 manifestFile.writeText(manifest.toString())
             }
@@ -316,10 +323,16 @@ class ModelDownloadWorker(
             return Result.failure()
         }
 
-        // Verify final file size and existence
-        val finalModelFile = File(targetDir, "model.task")
-        if (!finalModelFile.exists()) {
-            Log.e(tag, "[FAILURE] Download failed: final model.task file does not exist after copy/extraction at ${finalModelFile.absolutePath}")
+        // Prefer registry filename, then legacy model.task (zip may extract either)
+        val finalModelFile = when {
+            spec != null -> ModelStoragePaths.resolveExistingFile(targetDir, spec)
+            else -> {
+                val legacy = File(targetDir, ModelStoragePaths.LEGACY_TASK_FILENAME)
+                if (legacy.exists()) legacy else null
+            }
+        }
+        if (finalModelFile == null || !finalModelFile.exists()) {
+            Log.e(tag, "[FAILURE] Download failed: final model file does not exist after copy/extraction at ${targetDir.absolutePath}")
             modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
             return Result.failure()
         }
@@ -335,7 +348,11 @@ class ModelDownloadWorker(
         // Verify LiteRT compatibility
         Log.i(tag, "[DOWNLOAD FLOW] Verifying LiteRT compatibility...")
         try {
-            val config = EngineConfig(finalModelFile.absolutePath, Backend.CPU())
+            val config = EngineConfig(
+                modelPath = finalModelFile.absolutePath,
+                backend = Backend.CPU(),
+                cacheDir = applicationContext.cacheDir.absolutePath
+            )
             Engine(config).use { engine ->
                 engine.initialize()
             }
