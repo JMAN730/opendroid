@@ -105,7 +105,7 @@ fi
 # 5. Bootstrap Gradle Wrapper
 echo "[5/5] Bootstrapping Gradle Wrapper..."
 GRADLE_VERSION="8.10.2"
-GRADLE_SHA256="5d0c8dbf0fd70f36fd9a33a6fe12a2c3a0a57d9e8b8b39cfd92f2c3a2c6c2f5f"
+GRADLE_SHA256="31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26"
 if [ ! -f "gradlew" ]; then
     echo "Gradle wrapper not found in project root. Downloading temporary Gradle distribution to bootstrap..."
     TEMP_DIR=$(mktemp -d)
