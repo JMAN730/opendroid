@@ -1943,17 +1943,19 @@ fun SettingsScreen(
     }
 
     if (localImportStatus != null) {
+        val isImporting = localImportStatus == "Importing..."
+        val isSuccess = localImportStatus == "Success"
         AlertDialog(
             onDismissRequest = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     viewModel.clearImportStatus()
                 }
             },
             title = {
                 Text(
-                    text = when (localImportStatus) {
-                        "Importing..." -> "Importing Model"
-                        "Success" -> "Import Successful"
+                    text = when {
+                        isImporting -> "Importing Model"
+                        isSuccess -> "Import Successful"
                         else -> "Import Failed"
                     },
                     color = TextPrimary
@@ -1961,23 +1963,27 @@ fun SettingsScreen(
             },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    when (localImportStatus) {
-                        "Importing..." -> {
+                    when {
+                        isImporting -> {
                             CircularProgressIndicator(color = Color(0xFFFF9800))
                             Spacer(modifier = Modifier.height(12.dp))
                             Text("Copying and verifying the model file. This may take a minute...", color = TextSecondary)
                         }
-                        "Success" -> {
+                        isSuccess -> {
                             Text("The model was imported and verified successfully. You can now load it.", color = TextSecondary)
                         }
                         else -> {
-                            Text("Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.", color = Color.Red)
+                            Text(
+                                text = localImportStatus
+                                    ?: "Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.",
+                                color = Color.Red
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     Button(
                         onClick = { viewModel.clearImportStatus() },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))

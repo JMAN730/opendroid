@@ -35,8 +35,7 @@ object UrlUtils {
         // local Ollama/Copilot-proxy servers are typically plain HTTP on a LAN.
         val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
 
-        // Collapse any trailing slashes so callers never end up with "//" when
-        // they concatenate a path suffix onto the result.
         return withScheme.trimEnd('/')
     }
 }
+

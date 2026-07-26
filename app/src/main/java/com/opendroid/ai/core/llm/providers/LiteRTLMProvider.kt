@@ -44,7 +44,6 @@ class LiteRTLMProvider @Inject constructor(
 
     companion object {
         private const val TAG = "LiteRTLMProvider"
-        private const val MODELS_DIR = "litert_models"
     }
 
     override val name: String = "LiteRT-LM (On-device)"
@@ -63,27 +62,18 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     /**
-     * Returns the local file path where a model should be stored.
+     * Returns the local file path where a model should be stored / loaded from.
      */
     private fun getModelFilePath(spec: OnDeviceModelSpec): String {
-        val folderName = when (spec.id) {
-            "gemma-4-e2b-it-litert" -> "Gemma4-E2B"
-            "gemma-4-e4b-it-litert" -> "Gemma4-E4B"
-            "gemma-3n-e2b-it-litert" -> "Gemma3n-E2B"
-            "gemma-3n-e4b-it-litert" -> "Gemma3n-E4B"
-            else -> spec.id.replace("-", "").replace("litert", "").replace("it", "")
-        }
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-        val modelDir = File(File(baseDir, "models"), folderName)
-        val taskFile = File(modelDir, "model.task")
-        if (taskFile.exists() && taskFile.length() > 0) {
-            return taskFile.absolutePath
+        val modelDir = ModelStoragePaths.modelDir(File(baseDir, "models"), spec.id)
+        if (!modelDir.exists()) modelDir.mkdirs()
+
+        ModelStoragePaths.resolveExistingFile(modelDir, spec)?.let { existing ->
+            return existing.absolutePath
         }
 
-        // Legacy path fallback
-        val modelsDir = File(context.filesDir, MODELS_DIR)
-        if (!modelsDir.exists()) modelsDir.mkdirs()
-        return File(modelsDir, "${spec.id}.litertlm").absolutePath
+        return ModelStoragePaths.targetFile(modelDir, spec).absolutePath
     }
 
     /**
@@ -400,7 +390,8 @@ class LiteRTLMProvider @Inject constructor(
             val config = EngineConfig(
                 modelPath = modelPath,
                 backend = Backend.CPU(), // Run on CPU for compatibility
-                maxNumTokens = maxTokens
+                maxNumTokens = maxTokens,
+                cacheDir = context.cacheDir.absolutePath
             )
             
             Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")

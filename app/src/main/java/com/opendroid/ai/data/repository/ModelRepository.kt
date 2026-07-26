@@ -12,12 +12,16 @@ import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelEntity
 import com.opendroid.ai.data.db.entities.ModelStatus
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,16 +57,8 @@ class ModelRepository @Inject constructor(
         return modelsDir
     }
 
-    private fun getModelDir(modelId: String): File {
-        val folderName = when (modelId) {
-            "gemma-4-e2b-it-litert" -> "Gemma4-E2B"
-            "gemma-4-e4b-it-litert" -> "Gemma4-E4B"
-            "gemma-3n-e2b-it-litert" -> "Gemma3n-E2B"
-            "gemma-3n-e4b-it-litert" -> "Gemma3n-E4B"
-            else -> modelId.replace("-", "").replace("litert", "").replace("it", "")
-        }
-        return File(getModelsDirectory(), folderName)
-    }
+    private fun getModelDir(modelId: String): File =
+        ModelStoragePaths.modelDir(getModelsDirectory(), modelId)
 
     private suspend fun initModelsInDatabase() {
         initMutex.withLock {
@@ -74,29 +70,28 @@ class ModelRepository @Inject constructor(
         registeredModels.forEach { spec ->
             val existing = modelDao.getModelById(spec.id)
             val dir = getModelDir(spec.id)
-            
-            val modelTaskFile = File(dir, "model.task")
             val manifestFile = File(dir, "manifest.json")
 
-            // Only delete placeholder files that lack the imported/verified marker (manifest.json)
-            // Align with importLocalModel's minimum size (10MB) for verified imports
-            if (modelTaskFile.exists() && !manifestFile.exists() && modelTaskFile.length() < 10 * 1024 * 1024) {
-                Log.w(tag, "Deleting unverified placeholder model file: ${modelTaskFile.absolutePath} (size: ${modelTaskFile.length()} bytes, no manifest)")
+            // Delete unverified placeholders (no manifest) under the min size gate
+            val candidate = ModelStoragePaths.resolveExistingFile(dir, spec)
+                ?: ModelStoragePaths.targetFile(dir, spec)
+            if (candidate.exists() && !manifestFile.exists() && candidate.length() < ModelStoragePaths.MIN_VERIFIED_BYTES) {
+                Log.w(tag, "Deleting unverified placeholder model file: ${candidate.absolutePath} (size: ${candidate.length()} bytes, no manifest)")
                 try {
-                    modelTaskFile.delete()
+                    candidate.delete()
                 } catch (e: Exception) {
                     Log.e(tag, "Failed to delete placeholder model file", e)
                 }
             }
 
-            val hasFiles = dir.exists() && modelTaskFile.exists() && modelTaskFile.length() >= 10 * 1024 * 1024
- 
+            val hasFiles = dir.exists() && ModelStoragePaths.hasVerifiedModel(dir, spec)
+
             val currentStatus = when {
                 hasFiles -> ModelStatus.READY
                 existing != null && (existing.status == ModelStatus.DOWNLOADING || existing.status == ModelStatus.PAUSED) -> existing.status
                 else -> ModelStatus.NOT_DOWNLOADED
             }
- 
+
             val currentProgress = when {
                 hasFiles -> 100
                 existing != null && (existing.status == ModelStatus.DOWNLOADING || existing.status == ModelStatus.PAUSED) -> existing.downloadProgress
@@ -153,84 +148,103 @@ class ModelRepository @Inject constructor(
         )
     }
 
-    suspend fun importLocalModel(modelId: String, uri: android.net.Uri): Boolean {
-        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
-        try {
-            OnDeviceModelRegistry.checkDeviceMemoryCompatibility(context, spec)
-        } catch (e: IllegalStateException) {
-            Log.e(tag, "RAM check failed for import: ${e.message}")
-            modelDao.updateDownloadProgressDetails(
-                modelId,
-                0,
-                0L,
-                "",
-                e.localizedMessage ?: "Insufficient device memory.",
-                ModelStatus.FAILED
-            )
-            return false
-        }
-        val dir = getModelDir(modelId)
-        if (!dir.exists()) dir.mkdirs()
-        val targetFile = File(dir, "model.task")
+    suspend fun importLocalModel(modelId: String, uri: android.net.Uri): ImportLocalModelResult =
+        withContext(Dispatchers.IO) {
+            val spec = OnDeviceModelRegistry.findById(modelId)
+                ?: return@withContext ImportLocalModelResult.Failure("Unknown model id: $modelId")
 
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                targetFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return false
-
-            val finalSize = targetFile.length()
-            if (finalSize < 10 * 1024 * 1024) { // Must be > 10MB
-                Log.e(tag, "Imported file size is too small: $finalSize bytes")
-                targetFile.delete()
-                return false
-            }
-
-            // Verify LiteRT compatibility
-            Log.i(tag, "Verifying LiteRT compatibility of imported model...")
             try {
-                val config = com.google.ai.edge.litertlm.EngineConfig(targetFile.absolutePath, com.google.ai.edge.litertlm.Backend.CPU())
-                com.google.ai.edge.litertlm.Engine(config).use { engine ->
-                    engine.initialize()
+                OnDeviceModelRegistry.checkDeviceMemoryCompatibility(context, spec)
+            } catch (e: IllegalStateException) {
+                val reason = e.localizedMessage ?: "Insufficient device memory."
+                Log.e(tag, "RAM check failed for import: ${e.message}")
+                modelDao.updateDownloadProgressDetails(
+                    modelId,
+                    0,
+                    0L,
+                    "",
+                    reason,
+                    ModelStatus.FAILED
+                )
+                return@withContext ImportLocalModelResult.Failure(reason)
+            }
+
+            val dir = getModelDir(modelId)
+            if (!dir.exists()) dir.mkdirs()
+            val targetFile = ModelStoragePaths.targetFile(dir, spec)
+
+            try {
+                val input = context.contentResolver.openInputStream(uri)
+                if (input == null) {
+                    return@withContext ImportLocalModelResult.Failure(
+                        "Could not open the selected file. Try another file manager or copy the model to Downloads first."
+                    )
                 }
-                Log.i(tag, "LiteRT compatibility verified successfully.")
-            } catch (e: Throwable) {
-                Log.e(tag, "Imported file is not LiteRT compatible: ${e.message}", e)
-                targetFile.delete()
-                return false
+                input.use { stream ->
+                    targetFile.outputStream().use { output ->
+                        stream.copyTo(output)
+                    }
+                }
+
+                val finalSize = targetFile.length()
+                if (finalSize < ModelStoragePaths.MIN_VERIFIED_BYTES) {
+                    Log.e(tag, "Imported file size is too small: $finalSize bytes")
+                    targetFile.delete()
+                    return@withContext ImportLocalModelResult.Failure(
+                        "Imported file is too small (${finalSize} bytes). Expected a LiteRT model (.litertlm or .task) larger than 10 MB."
+                    )
+                }
+
+                Log.i(tag, "Verifying LiteRT compatibility of imported model at ${targetFile.absolutePath}...")
+                try {
+                    val config = EngineConfig(
+                        modelPath = targetFile.absolutePath,
+                        backend = Backend.CPU(),
+                        cacheDir = context.cacheDir.absolutePath
+                    )
+                    Engine(config).use { engine ->
+                        engine.initialize()
+                    }
+                    Log.i(tag, "LiteRT compatibility verified successfully.")
+                } catch (e: Throwable) {
+                    Log.e(tag, "Imported file is not LiteRT compatible: ${e.message}", e)
+                    targetFile.delete()
+                    val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                    return@withContext ImportLocalModelResult.Failure(
+                        "LiteRT could not open this file ($detail). Ensure it is a valid .litertlm or .task model."
+                    )
+                }
+
+                val manifestFile = File(dir, "manifest.json")
+                val manifest = org.json.JSONObject().apply {
+                    put("model_id", modelId)
+                    put("status", "ready")
+                    put("format", "litertlm")
+                    put("filename", targetFile.name)
+                }
+                manifestFile.writeText(manifest.toString())
+
+                val refFile = File(context.filesDir, "litert_models/${modelId}.litertlm")
+                refFile.parentFile?.mkdirs()
+                refFile.writeText(dir.absolutePath)
+
+                modelDao.updateDownloadProgressDetails(
+                    modelId,
+                    100,
+                    finalSize,
+                    "",
+                    "",
+                    ModelStatus.READY
+                )
+
+                ImportLocalModelResult.Success
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to import local model", e)
+                if (targetFile.exists()) targetFile.delete()
+                val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                ImportLocalModelResult.Failure("Import failed: $detail")
             }
-
-            // Write references & manifest
-            val manifestFile = File(dir, "manifest.json")
-            val manifest = org.json.JSONObject().apply {
-                put("model_id", modelId)
-                put("status", "ready")
-                put("format", "litertlm")
-            }
-            manifestFile.writeText(manifest.toString())
-
-            val refFile = File(context.filesDir, "litert_models/${modelId}.litertlm")
-            refFile.parentFile?.mkdirs()
-            refFile.writeText(dir.absolutePath)
-
-            // Update database status
-            modelDao.updateDownloadProgressDetails(
-                modelId,
-                100,
-                finalSize,
-                "",
-                "",
-                ModelStatus.READY
-            )
-
-            return true
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to import local model", e)
-            if (targetFile.exists()) targetFile.delete()
-            return false
         }
-    }
 
     suspend fun pauseDownload(model: OnDeviceModel) {
         workManager.cancelUniqueWork("download_${model.id}")
@@ -288,8 +302,9 @@ class ModelRepository @Inject constructor(
     }
 
     override suspend fun isDownloaded(model: OnDeviceModel): Boolean {
+        val spec = OnDeviceModelRegistry.findById(model.id) ?: return false
         val dir = getModelDir(model.id)
-        return dir.exists() && File(dir, "model.task").exists() && File(dir, "model.task").length() > 0
+        return dir.exists() && ModelStoragePaths.resolveExistingFile(dir, spec) != null
     }
 
     override suspend fun currentModel(): OnDeviceModel? {
