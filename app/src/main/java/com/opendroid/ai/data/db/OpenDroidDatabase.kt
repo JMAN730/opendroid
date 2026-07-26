@@ -4,11 +4,13 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.opendroid.ai.data.db.dao.ChatSessionDao
 import com.opendroid.ai.data.db.dao.ConversationDao
 import com.opendroid.ai.data.db.dao.MacroDao
 import com.opendroid.ai.data.db.dao.MemoryDao
 import com.opendroid.ai.data.db.dao.PlanDao
 import com.opendroid.ai.data.db.dao.TaskHistoryDao
+import com.opendroid.ai.data.db.entities.ChatSessionEntity
 import com.opendroid.ai.data.db.entities.ConversationEntity
 import com.opendroid.ai.data.db.entities.MacroEntity
 import com.opendroid.ai.data.db.entities.MemoryEntity
@@ -26,6 +28,7 @@ import androidx.room.TypeConverters
 @Database(
     entities = [
         ConversationEntity::class,
+        ChatSessionEntity::class,
         PlanEntity::class,
         MemoryEntity::class,
         TaskHistoryEntity::class,
@@ -34,12 +37,13 @@ import androidx.room.TypeConverters
         NotificationEntity::class,
         ModelEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
+    abstract fun chatSessionDao(): ChatSessionDao
     abstract fun planDao(): PlanDao
     abstract fun memoryDao(): MemoryDao
     abstract fun taskHistoryDao(): TaskHistoryDao
@@ -49,6 +53,10 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun modelDao(): ModelDao
 
     companion object {
+        // Id of the single session that pre-existing conversation rows are
+        // backfilled onto by MIGRATION_5_6. Not used post-migration - new
+        // sessions get randomly generated ids (see ConversationRepository).
+        private const val DEFAULT_SESSION_ID = "default_session"
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE conversations ADD COLUMN contactPickerData TEXT DEFAULT NULL")
@@ -100,6 +108,45 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                         etaString TEXT NOT NULL DEFAULT ''
                     )
                 """)
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 1. New table backing multiple chat histories.
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        isCurrent INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+
+                // 2. Seed exactly one session that existing chat history will be
+                // attached to. INSERT OR IGNORE makes this safe to re-run.
+                val now = System.currentTimeMillis()
+                database.execSQL(
+                    "INSERT OR IGNORE INTO chat_sessions (id, title, createdAt, updatedAt, isCurrent) " +
+                        "VALUES ('$DEFAULT_SESSION_ID', 'Chat', $now, $now, 1)"
+                )
+
+                // 3. Add the session pointer to conversations. SQLite backfills the
+                // DEFAULT value into every pre-existing row as part of this ALTER,
+                // and the explicit UPDATE below makes that backfill unmistakable -
+                // no existing chat history is lost by this migration.
+                database.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN sessionId TEXT NOT NULL DEFAULT '$DEFAULT_SESSION_ID'"
+                )
+                database.execSQL(
+                    "UPDATE conversations SET sessionId = '$DEFAULT_SESSION_ID'"
+                )
+
+                // 4. Matches the @Index Room expects on ConversationEntity.sessionId.
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_conversations_sessionId ON conversations(sessionId)"
+                )
             }
         }
     }

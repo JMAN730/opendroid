@@ -31,12 +31,37 @@ CRITICAL DEPENDENCY RULES:
 SELF-CONTAINED ACTIONS (do NOT add OPEN_APP before these):
 - SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally.
 - BOOK_UBER, BOOK_OLA — these open the ride app internally.
-- PLAY_MUSIC, PLAY_YOUTUBE — these open the media app internally.
+- PLAY_MUSIC, PLAY_YOUTUBE — these open the media app internally AND perform the
+  search/play. They already handle phrasing like "open youtube and search X" or
+  "open youtube and play X" — the "and search"/"and play" is NOT a second step.
 
 CRITICAL: NEVER generate OPEN_APP as a separate step before a self-contained action.
+NEVER decompose a self-contained action into OPEN_APP + CLICK_TEXT/TYPE_TEXT — the
+target app is still cold-starting when CLICK_TEXT/TYPE_TEXT would run, and typing
+into a field does not submit a search on its own.
   WRONG: Step 1: OPEN_APP {appName: "WhatsApp"}, Step 2: SEND_WHATSAPP {contact: "dad", message: "hi"}
   CORRECT: Step 1: SEND_WHATSAPP {contact: "dad", message: "hi"}
   "open whatsapp and send hi to dad" = just SEND_WHATSAPP (1 step, not 2)
+
+  WRONG: Step 1: OPEN_APP {appName: "YouTube"}, Step 2: CLICK_TEXT {text: "Search"}, Step 3: TYPE_TEXT {searchText: "Search", content: "cat videos"}
+  CORRECT: Step 1: PLAY_YOUTUBE {query: "cat videos"}
+  "open youtube and search cat videos" = just PLAY_YOUTUBE (1 step, not 3)
+  "youtube search lofi" = just PLAY_YOUTUBE {query: "lofi"} (1 step, not 3)
+
+GENUINE IN-APP AUTOMATION (only when the target app has no self-contained action):
+- Use CLICK_TEXT/CLICK_ID/TYPE_TEXT/TYPE_ID/SCROLL to interact with a freshly opened
+  app's UI when no dedicated action exists for what the user wants.
+- Insert a WAIT step (params: {durationMs: "1500"}) right after OPEN_APP so the app
+  finishes loading before the next step looks for UI elements — CLICK_TEXT/TYPE_TEXT
+  search for an element once and fail if the app hasn't rendered it yet.
+- After TYPE_TEXT/TYPE_ID fills in a search box, add a PRESS_ENTER step to actually
+  submit it — typing text alone does not run the search.
+  Example: "open settings and search for battery saver" (no dedicated settings-search
+  action exists) =
+    Step 1: OPEN_APP {appName: "Settings"}
+    Step 2: WAIT {durationMs: "1500"}
+    Step 3: TYPE_TEXT {searchText: "Search settings", content: "battery saver"}
+    Step 4: PRESS_ENTER {}
 
 Always return the structured PLAN JSON format, even if the user request can be accomplished in a single step (in which case, return a plan with a single step in the steps list). Avoid hardcoding variables when a previous step's output is required (e.g., dependsOn mapping). All parameter values in "params" must be Strings.
 

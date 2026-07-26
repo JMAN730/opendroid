@@ -260,6 +260,20 @@ class ActionAutoMapper @Inject constructor() {
         "CHANGE_BRIGHTNESS"       to "SET_BRIGHTNESS",
         "ADJUST_BRIGHTNESS"       to "SET_BRIGHTNESS",
 
+        // ── Wait/delay variants (WAIT after OPEN_APP, before automation steps) ──
+        "SLEEP"                   to "WAIT",
+        "DELAY"                   to "WAIT",
+        "PAUSE_EXECUTION"         to "WAIT",
+        "WAIT_FOR_APP"            to "WAIT",
+        "WAIT_SECONDS"            to "WAIT",
+
+        // ── Submit/Enter variants (submit a search box after TYPE_TEXT/TYPE_ID) ──
+        "SUBMIT"                  to "PRESS_ENTER",
+        "SUBMIT_SEARCH"           to "PRESS_ENTER",
+        "PRESS_SEARCH"            to "PRESS_ENTER",
+        "IME_ENTER"               to "PRESS_ENTER",
+        "TAP_ENTER"               to "PRESS_ENTER",
+
         // ── Navigation/directions variants ──────────────────────────
         "NAVIGATE"                to "GET_DIRECTIONS",
         "DIRECTIONS"              to "GET_DIRECTIONS",
@@ -586,6 +600,26 @@ class ActionAutoMapper @Inject constructor() {
                     ?: originalParams["city"]
                     ?: originalParams["place"]
                 if (location != null) mapOf("location" to location) else originalParams
+            }
+
+            "WAIT" -> {
+                val msValue = originalParams["durationMs"]
+                    ?: originalParams["duration"]
+                    ?: originalParams["ms"]
+                    ?: originalParams["milliseconds"]
+                val secondsValue = originalParams["seconds"] ?: originalParams["time"]
+                when {
+                    msValue != null -> mapOf("durationMs" to msValue)
+                    secondsValue != null -> {
+                        val seconds = secondsValue.toDoubleOrNull()
+                        if (seconds != null) {
+                            mapOf("durationMs" to (seconds * 1000).toLong().toString())
+                        } else {
+                            originalParams
+                        }
+                    }
+                    else -> originalParams
+                }
             }
 
             else -> originalParams

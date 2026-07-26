@@ -15,11 +15,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -43,12 +46,8 @@ fun OpenDroidNavigation(
                 onNavigateNext = {
                     val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
                     val isOnboardingCompleted = sharedPrefs.getBoolean("onboarding_completed", false)
-                    val hasAudioPermission = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.RECORD_AUDIO
-                    ) == PackageManager.PERMISSION_GRANTED
-                    
-                    val destination = if (isOnboardingCompleted && hasAudioPermission) "main" else "onboarding"
+
+                    val destination = if (isOnboardingCompleted) "main" else "onboarding"
                     navController.navigate(destination) {
                         popUpTo("splash") { inclusive = true }
                     }
@@ -91,6 +90,9 @@ fun OpenDroidNavigation(
                 },
                 onNavigateToNotificationHistory = {
                     navController.navigate("notification_history")
+                },
+                onNavigateToPermissions = {
+                    navController.navigate("permissions")
                 }
             )
         }
@@ -164,6 +166,14 @@ fun OpenDroidNavigation(
                 }
             )
         }
+
+        composable("permissions") {
+            PermissionsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
@@ -185,12 +195,30 @@ fun MainDashboard(
     onNavigateToLicense: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToAutoReply: () -> Unit = {},
-    onNavigateToNotificationHistory: () -> Unit = {}
+    onNavigateToNotificationHistory: () -> Unit = {},
+    onNavigateToPermissions: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            com.opendroid.ai.core.service.OpenDroidService.start(context)
+
+    // Start the service as soon as RECORD_AUDIO is granted, and keep checking on every
+    // resume - not just once on first composition - so a user who grants the microphone
+    // from Settings > Permissions (rather than at onboarding) gets the service started
+    // immediately on returning here, with no app restart required.
+    var recordAudioServiceStarted by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                if (granted && !recordAudioServiceStarted) {
+                    recordAudioServiceStarted = true
+                    com.opendroid.ai.core.service.OpenDroidService.start(context)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -271,7 +299,8 @@ fun MainDashboard(
                     onNavigateToLicense = onNavigateToLicense,
                     onNavigateToAbout = onNavigateToAbout,
                     onNavigateToAutoReply = onNavigateToAutoReply,
-                    onNavigateToNotificationHistory = onNavigateToNotificationHistory
+                    onNavigateToNotificationHistory = onNavigateToNotificationHistory,
+                    onNavigateToPermissions = onNavigateToPermissions
                 )
             }
         }

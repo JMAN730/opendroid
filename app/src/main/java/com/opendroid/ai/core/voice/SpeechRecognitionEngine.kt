@@ -13,6 +13,15 @@ class SpeechRecognitionEngine(private val context: Context) {
     private var speechRecognizer: SpeechRecognizer? = null
     private var recognizerIntent: Intent? = null
 
+    // Identifies the currently active recognition session. Every startListening() call mints a
+    // new token and each RecognitionListener callback closure captures the token it was created
+    // with, comparing it against [activeSessionId] before delivering anything. This guards
+    // against a stale onResults/onPartialResults/onError callback arriving from a session that
+    // was already cancelled (isCancelled-style guard) *and* from a session that was superseded by
+    // a newer startListening() call - either case bumps [activeSessionId] so the old callback's
+    // captured token no longer matches and the delivery is dropped.
+    private var activeSessionId = 0
+
     init {
         initializeRecognizer()
     }
@@ -43,14 +52,21 @@ class SpeechRecognitionEngine(private val context: Context) {
             return
         }
 
+        // Mint a new session token and let this specific listener closure capture it. Any
+        // callback delivered to a listener whose captured token no longer matches
+        // [activeSessionId] belongs to a cancelled or superseded session and is dropped.
+        activeSessionId += 1
+        val sessionId = activeSessionId
+
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
-            
+
             override fun onError(error: Int) {
+                if (sessionId != activeSessionId) return
                 val message = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                     SpeechRecognizer.ERROR_CLIENT -> "Client side error"
@@ -67,6 +83,7 @@ class SpeechRecognitionEngine(private val context: Context) {
             }
 
             override fun onResults(results: Bundle?) {
+                if (sessionId != activeSessionId) return
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     onResult(matches[0])
@@ -76,6 +93,7 @@ class SpeechRecognitionEngine(private val context: Context) {
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
+                if (sessionId != activeSessionId) return
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     onPartialResult(matches[0])
@@ -92,7 +110,22 @@ class SpeechRecognitionEngine(private val context: Context) {
         speechRecognizer?.stopListening()
     }
 
+    /**
+     * Cancels the in-progress recognition session outright. Unlike [stopListening], the
+     * recognizer is guaranteed not to deliver a subsequent onResults/onPartialResults callback
+     * for this session - any such callback still in flight is dropped because the session token
+     * it captured no longer matches [activeSessionId] once it has been bumped here.
+     */
+    fun cancel() {
+        activeSessionId += 1
+        speechRecognizer?.cancel()
+    }
+
     fun destroy() {
+        // Invalidate the active session so a callback that was already in flight cannot fire
+        // (e.g. deliver a result) after this engine - and the Composable that owns it - has
+        // been disposed.
+        activeSessionId += 1
         speechRecognizer?.destroy()
         speechRecognizer = null
     }

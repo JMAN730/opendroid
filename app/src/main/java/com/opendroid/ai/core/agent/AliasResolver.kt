@@ -243,6 +243,35 @@ object AliasResolver {
     }
 
     /**
+     * Matches "open youtube and search/play/watch X", "youtube search/play/watch X",
+     * and "search/play/watch X on youtube" style phrasings, capturing X as the query.
+     * These read as compound (an "and" with an action verb on both sides) but are
+     * really a single PLAY_YOUTUBE call — see [extractYoutubeQuery].
+     */
+    private val youtubeQueryPatterns = listOf(
+        Regex("""^open\s+youtube\s+and\s+(?:search(?:\s+for)?|play|watch)\s+(.+)$"""),
+        Regex("""^youtube\s+(?:search(?:\s+for)?|play|watch)\s+(.+)$"""),
+        Regex("""^(?:search|play|watch)\s+(.+?)\s+on\s+youtube$""")
+    )
+
+    /**
+     * Extracts the search query from a "open youtube and search cat videos",
+     * "youtube search lofi", "search cat videos on youtube" style phrasing.
+     * Returns null when the input doesn't match one of these YouTube phrasings —
+     * in particular a bare "youtube" or "open youtube" (no query) always returns
+     * null so those keep falling through to their existing behavior.
+     */
+    fun extractYoutubeQuery(input: String): String? {
+        val cleaned = cleanInput(input)
+        for (regex in youtubeQueryPatterns) {
+            val match = regex.find(cleaned) ?: continue
+            val query = match.groupValues[1].trim()
+            if (query.isNotEmpty()) return query
+        }
+        return null
+    }
+
+    /**
      * Resolve user input to an ActionHint.
      * Returns null if no alias matches.
      */
@@ -253,6 +282,14 @@ object AliasResolver {
         // 1. Exact match (always wins)
         aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
+
+        // 1b. YouTube search/play/watch extraction — routes straight to the working
+        //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
+        //     below (which would otherwise swallow this because it contains "search"
+        //     or "play") or the LLM planner's broken OPEN_APP + CLICK_TEXT/TYPE_TEXT plan.
+        extractYoutubeQuery(input)?.let { query ->
+            return ActionHint("PLAY_YOUTUBE", mapOf("query" to query))
+        }
 
         // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
         //    This runs BEFORE compound-intent guard so the LLM doesn't need to handle it.
