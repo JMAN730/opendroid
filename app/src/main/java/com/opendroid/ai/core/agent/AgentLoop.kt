@@ -8,11 +8,14 @@ import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.memory.MemoryManager
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStatus
 import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
+import com.opendroid.ai.data.models.effectiveGrantedActions
+import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.data.repository.ConversationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -542,8 +545,10 @@ class AgentLoop @Inject constructor(
             }
 
             planManager.startNewPlan(plan, context)
-            if (config.autoConfirmPlans) {
-                executePlanLoop(plan, context, sessionId)
+            val autoMode = config.resolvedAutoMode()
+            if (AutoApprovalPolicy.shouldAutoApprove(autoMode, config.effectiveGrantedActions().keys, plan)) {
+                recordAutoApprovedTrace(plan, autoMode, sessionId)
+                executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {
                 proposedPlanSessionId = sessionId
                 _agentState.value = AgentState.PlanProposed(plan)
@@ -589,9 +594,22 @@ class AgentLoop @Inject constructor(
         executeSimpleQuery(userMsg, sessionId)
     }
 
-    fun approveProposedPlan(context: Context) {
+    fun approveProposedPlan(context: Context, grantActions: Set<String> = emptySet()) {
         currentJob?.cancel()
         val job = scope.launch {
+            // "Always allow" checkboxes from the approval modal: persist BEFORE
+            // executing so a crash mid-plan can't lose an explicit user grant.
+            // Filter through isGrantable - neverAutoApprove actions can never
+            // enter the allowlist no matter what the UI sends.
+            val toGrant = grantActions.filter { AutoApprovalPolicy.isGrantable(it) }
+            if (toGrant.isNotEmpty()) {
+                val grantedAt = System.currentTimeMillis()
+                settingsRepository.updateConfig { current ->
+                    current.copy(
+                        grantedActions = current.effectiveGrantedActions() + toGrant.associateWith { grantedAt }
+                    )
+                }
+            }
             // Approving a proposed plan starts a new task in its own right (the plan may
             // have been proposed in an earlier, now-idle turn), so pin its session here too -
             // same rationale as processQuery, see activeTaskSessionId. Executes in the
@@ -740,7 +758,7 @@ class AgentLoop @Inject constructor(
         }
     }
 
-    private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String) {
+    private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String, autoApproved: Boolean = false) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
 
@@ -871,6 +889,27 @@ class AgentLoop @Inject constructor(
                                         currentPlanState.steps.none { it.stepId == step.stepId }
                                     }
                             planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps), context)
+                            // Auto-approved plans: silently injected steps must not run
+                            // past the allowlist. Re-check the merged plan's pending
+                            // steps; if any is blocked, park the WHOLE remainder back
+                            // in the PlanProposed gate. YOLO skips like all other
+                            // checks; manually-approved plans keep today's behavior.
+                            if (autoApproved) {
+                                val liveConfig = settingsRepository.llmConfig.first()
+                                val liveMode = liveConfig.resolvedAutoMode()
+                                if (liveMode != AutoMode.YOLO) {
+                                    val mergedPlan = planManager.currentPlan.value
+                                    val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
+                                    val blocked = AutoApprovalPolicy.blockedActions(
+                                        liveConfig.effectiveGrantedActions().keys, pending
+                                    )
+                                    if (blocked.isNotEmpty() && mergedPlan != null) {
+                                        proposedPlanSessionId = sessionId
+                                        _agentState.value = AgentState.PlanProposed(mergedPlan)
+                                        return
+                                    }
+                                }
+                            }
                         }
                     }
                     else -> {
@@ -1186,6 +1225,26 @@ class AgentLoop @Inject constructor(
             actionDispatcher.execute(actionName, newParams, context),
             newParams
         )
+    }
+
+    /**
+     * Auto-approved plans never show the approval modal, so leave a badged
+     * trace message in the chat instead - the audit trail the spec requires.
+     * Speech leads with "Running:" so a hands-free user knows no approval
+     * prompt is coming.
+     */
+    private suspend fun recordAutoApprovedTrace(plan: Plan, mode: AutoMode, sessionId: String) {
+        val badge = if (mode == AutoMode.YOLO) "YOLO" else "Auto-approved"
+        val stepLines = plan.steps.joinToString("\n") { "• ${it.description}" }
+        val traceMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = "Running: ${plan.goal} (${plan.steps.size} steps)\n$stepLines",
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = badge
+        )
+        conversationRepository.insertMessage(sessionId, traceMsg)
+        memoryManager.storeMessage(traceMsg, sessionId)
+        onSpeakCallback?.invoke("Running: ${plan.goal}")
     }
 
     private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean, sessionId: String) {
