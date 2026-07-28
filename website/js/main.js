@@ -1,3 +1,25 @@
+// ── Theme Toggle ──
+(function () {
+  const toggle = document.getElementById('theme-toggle');
+  if (!toggle) return;
+  const root = document.documentElement;
+  const STORAGE_KEY = 'opendroid-theme';
+
+  const updateA11y = () => {
+    const isLight = root.getAttribute('data-theme') === 'light';
+    toggle.setAttribute('aria-pressed', String(isLight));
+    toggle.setAttribute('aria-label', isLight ? 'Activer le mode sombre' : 'Activer le mode clair');
+  };
+  updateA11y();
+
+  toggle.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* storage unavailable, ignore */ }
+    updateA11y();
+  });
+})();
+
 // ── Hamburger Menu ──
 const hamburger = document.getElementById('nav-hamburger');
 const navLinks = document.getElementById('nav-links');
