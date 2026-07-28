@@ -259,6 +259,20 @@ See [SECURITY.md](SECURITY.md) for details.
 
 ---
 
+## ⭐ Star History
+
+<p align="center">
+  <a href="https://star-history.com/#yashab-cyber/opendroid&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=yashab-cyber/opendroid&type=Date&theme=dark">
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=yashab-cyber/opendroid&type=Date">
+      <img alt="Star History Chart for yashab-cyber/opendroid" src="https://api.star-history.com/svg?repos=yashab-cyber/opendroid&type=Date" width="600">
+    </picture>
+  </a>
+</p>
+
+---
+
 ## 📜 License
 
 ```
