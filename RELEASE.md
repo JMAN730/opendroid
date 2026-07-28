@@ -9,13 +9,13 @@ This document tracks release updates, changelogs, and binary verification checks
 Developer-facing pre-release for sideload testing. Not a Play Store production upload.
 
 ### Highlights since v1.0.1
-*   **Auto Mode & Safety Controls**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals.
-*   **Android 14/15 Foreground Service Fix**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService`.
-*   **LiteRT Prompt Context Overflow Prevention**: Added `PromptBudget` token calculations and expanded on-device model context windows (1280 for Qwen 2.5 0.5B, 4096 for Gemma) to eliminate native C++ `SIGABRT` crashes.
+*   **Auto Mode & Safety Controls (#23)**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals (PR #23).
+*   **Android 14/15 Foreground Service Fix (#22)**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService` (PR #22).
+*   **GitHub Star History Chart (#19, #21)**: Added interactive GitHub Star History chart to `README.md` with theme-aware (light/dark mode) embeds, legend rendering, and direct link to interactive chart page (Closes #17, PR #19, PR #21).
+*   **LiteRT Prompt Context Overflow Prevention (#20)**: Added `PromptBudget` token calculations and expanded on-device model context windows (1280 for Qwen 2.5 0.5B, 4096 for Gemma) to eliminate native C++ `SIGABRT` crashes (Fixes #15, PR #20).
 *   **UI Redesign & Iconography**: Premium developer-tool palette, Auto Mode settings/UI, and iconography upgrades.
 *   **Security Hardening**: Strengthened storage, auto-reply handling, and release build signing posture.
 *   **Package ID**: `applicationId` updated to `com.opendroid.aiagent` (includes Play Store verification token).
-*   **Documentation**: Integrated GitHub Star History chart into `README.md`.
 *   **Toolchain Alignment**: Android SDK 35, Java 21, Kotlin 2.4.0, Hilt 2.58, Room 2.8.4.
 
 ### Release Assets
