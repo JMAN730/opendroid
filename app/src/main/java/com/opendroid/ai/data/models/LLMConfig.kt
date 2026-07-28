@@ -12,6 +12,13 @@ data class LLMConfig(
     // Off by default: LLM-generated plans must be confirmed by the user before
     // executing device actions (calls, messages, settings changes).
     val autoConfirmPlans: Boolean = false,
+    // Auto mode (see docs: upstream issue 18 spec). null = never set; resolvedAutoMode()
+    // migrates the legacy autoConfirmPlans flag (true behaved like YOLO).
+    val autoMode: AutoMode? = null,
+    // Action name -> grant timestamp (epoch millis; 0L = seeded default).
+    // null = never seeded; effectiveGrantedActions() falls back to defaults.
+    // An explicit empty map means "user revoked everything" and stays empty.
+    val grantedActions: Map<String, Long>? = null,
     val latencyBenchmarks: Map<String, Long> = emptyMap(), // Provider -> latency Ms
     val elevenLabsApiKey: String = "",
     val elevenLabsVoiceId: String = "",
@@ -24,3 +31,8 @@ data class LLMConfig(
     val modelCache: Map<String, List<AIModel>> = emptyMap() // Provider -> cached AIModels list
 )
 
+fun LLMConfig.resolvedAutoMode(): AutoMode =
+    autoMode ?: if (autoConfirmPlans) AutoMode.YOLO else AutoMode.OFF
+
+fun LLMConfig.effectiveGrantedActions(): Map<String, Long> =
+    grantedActions ?: AutoMode.DEFAULT_GRANTS.associateWith { 0L }
