@@ -75,7 +75,7 @@ class OpenDroidService : Service() {
 
         // Start Foreground Notification
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        startForegroundCompat()
 
         // Monitor floating button config to start/stop wake word detection dynamically
         serviceScope.launch {
@@ -87,6 +87,39 @@ class OpenDroidService : Service() {
                     startWakeWordDetection()
                 }
             }
+        }
+    }
+
+    private fun startForegroundCompat() {
+        val notification = createNotification()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Starting a microphone-type FGS without RECORD_AUDIO granted throws a
+            // SecurityException on Android 14+, and starting one from BOOT_COMPLETED is
+            // prohibited on Android 15 even with the permission. Fall back to specialUse
+            // until the microphone is actually usable.
+            val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val type = if (micGranted) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            }
+            try {
+                androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+            } catch (e: SecurityException) {
+                androidx.core.app.ServiceCompat.startForeground(
+                    this, NOTIFICATION_ID, notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            }
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.core.app.ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
