@@ -108,13 +108,13 @@ class OpenDroidService : Service() {
             agentLoop.agentState.collectLatest { state ->
                 if (state is AgentState.PlanProposed && state.plan.planId != promptedPlanId) {
                     promptedPlanId = state.plan.planId
+                    if (!showFloatingButton) {
+                        pendingApprovalListen = true
+                    }
                     textToSpeechEngine.speak(
                         "I've planned: ${state.plan.goal}, ${state.plan.estimatedSteps} steps. " +
                         "Say approve to run, or cancel."
                     )
-                    if (!showFloatingButton) {
-                        pendingApprovalListen = true
-                    }
                 }
             }
         }
