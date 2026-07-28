@@ -14,11 +14,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -40,6 +48,7 @@ import androidx.core.content.ContextCompat
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.ui.components.ContactPickerCard
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.ChatViewModel
@@ -58,15 +67,80 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val history by viewModel.conversationHistory.collectAsState()
-    val agentState by viewModel.agentState.collectAsState()
-    
+    // Scoped to whichever chat is on screen right now - a task that's actually running
+    // in a DIFFERENT chat (safe since the pinned-session fix: it keeps writing there,
+    // not wherever the user has navigated to) must never be displayed as if it were
+    // happening here. See ChatViewModel.visibleAgentState.
+    val visibleAgentState by viewModel.visibleAgentState.collectAsState()
+    // Id of whichever chat (if any) has a task actively running, regardless of which
+    // chat is currently displayed - drives the chat-picker's "still running" indicator.
+    val runningSessionId by viewModel.runningSessionId.collectAsState()
+    val sessions by viewModel.sessions.collectAsState()
+    val currentSessionId = sessions.firstOrNull { it.isCurrent }?.id
+    val runningElsewhere = runningSessionId != null && runningSessionId != currentSessionId
+
     val listState = rememberLazyListState()
     var inputQuery by remember { mutableStateOf("") }
     var isListening by remember { mutableStateOf(false) }
     var transcriptionText by remember { mutableStateOf("") }
+    var voiceError by remember { mutableStateOf<String?>(null) }
+    var showChatMenu by remember { mutableStateOf(false) }
+    var sessionPendingDelete by remember { mutableStateOf<ChatSession?>(null) }
+    var sessionPendingRename by remember { mutableStateOf<ChatSession?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var editingMessageId by remember { mutableStateOf<String?>(null) }
+    var textBeforeEdit by remember { mutableStateOf("") }
 
-    // Scroll to bottom on history change
-    LaunchedEffect(history.size, agentState) {
+    // Merges a piece of dictated text into whatever the user already typed, so review/edit
+    // never clobbers text entered before dictation started.
+    fun mergeDictatedText(newText: String) {
+        if (newText.isBlank()) return
+        inputQuery = if (inputQuery.isBlank()) {
+            newText
+        } else {
+            inputQuery.trimEnd() + " " + newText.trimStart()
+        }
+    }
+
+    // Loads a previously sent user message into the input field for editing, remembering
+    // whatever was already typed so cancelling the edit can restore it untouched.
+    fun startEditingMessage(message: ChatMessage) {
+        if (editingMessageId == null) {
+            textBeforeEdit = inputQuery
+        }
+        editingMessageId = message.id
+        inputQuery = message.text
+    }
+
+    // Restores the input to whatever it held before the edit started; the conversation
+    // itself is never touched until a resend is actually submitted.
+    fun cancelEditingMessage() {
+        editingMessageId = null
+        inputQuery = textBeforeEdit
+        textBeforeEdit = ""
+    }
+
+    // Single submit path for both a normal send and an edit-resend, wired to both the
+    // keyboard "Send" action and the send button below.
+    fun submitInput() {
+        val text = inputQuery
+        if (text.isBlank()) return
+        val editing = editingMessageId
+        if (editing != null) {
+            viewModel.editAndResend(editing, text, context)
+            editingMessageId = null
+            textBeforeEdit = ""
+        } else {
+            viewModel.sendMessage(text, context)
+        }
+        inputQuery = ""
+    }
+
+    // Scroll to bottom on history change. Keyed on currentSessionId too: keying on
+    // history.size alone left the scroll position from the PREVIOUS chat in place
+    // whenever the newly switched-to chat happened to have the same message count -
+    // including currentSessionId forces a re-anchor to the bottom on every chat switch.
+    LaunchedEffect(currentSessionId, history.size, visibleAgentState) {
         if (history.isNotEmpty()) {
             listState.animateScrollToItem(history.size - 1)
         }
@@ -79,11 +153,12 @@ fun ChatScreen(
     ) { isGranted ->
         if (isGranted) {
             isListening = true
+            voiceError = null
+            transcriptionText = ""
             speechRecognizer.startListening(
                 onResult = { text ->
                     isListening = false
-                    inputQuery = text
-                    viewModel.sendMessage(text, context)
+                    mergeDictatedText(text)
                     transcriptionText = ""
                 },
                 onPartialResult = { partial ->
@@ -91,7 +166,9 @@ fun ChatScreen(
                 },
                 onError = { err ->
                     isListening = false
+                    mergeDictatedText(transcriptionText)
                     transcriptionText = ""
+                    voiceError = err
                 }
             )
         }
@@ -116,10 +193,114 @@ fun ChatScreen(
                             fontSize = 20.sp,
                             letterSpacing = 2.sp
                         )
-                        AgentStatusSubtitle(agentState)
+                        AgentStatusSubtitle(visibleAgentState, runningElsewhere)
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.newChat() }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New chat",
+                            tint = TextSecondary
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { showChatMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Forum,
+                                contentDescription = "Chats",
+                                tint = TextSecondary
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showChatMenu,
+                            onDismissRequest = { showChatMenu = false },
+                            modifier = Modifier.background(DarkSurface)
+                        ) {
+                            if (sessions.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No chats yet", color = TextSecondary, fontSize = 13.sp) },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                            }
+                            sessions.forEach { session ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = session.title,
+                                                color = if (session.isCurrent) AccentNeonGreen else TextPrimary,
+                                                fontWeight = if (session.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                fontSize = 13.sp,
+                                                maxLines = 1
+                                            )
+                                            // Small "still running" dot: a task can now keep
+                                            // executing in a chat the user has switched away
+                                            // from, so this is the only place that fact is
+                                            // visible once its row scrolls out of the top bar.
+                                            if (runningSessionId == session.id) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(6.dp)
+                                                        .clip(CircleShape)
+                                                        .background(AccentNeonGreen)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = if (session.isCurrent) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = AccentNeonGreen,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    trailingIcon = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = {
+                                                    renameText = session.title
+                                                    sessionPendingRename = session
+                                                    showChatMenu = false
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = "Rename chat",
+                                                    tint = TextSecondary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    sessionPendingDelete = session
+                                                    showChatMenu = false
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Delete chat",
+                                                    tint = AccentRed,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        showChatMenu = false
+                                        viewModel.switchToSession(session.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
                     TextButton(onClick = { viewModel.clearChat() }) {
                         Text("Clear", color = TextSecondary, fontSize = 12.sp)
                     }
@@ -151,20 +332,28 @@ fun ChatScreen(
                     contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
                 ) {
                     items(history) { msg ->
-                        ChatBubble(msg, viewModel, context)
+                        ChatBubble(
+                            message = msg,
+                            viewModel = viewModel,
+                            context = context,
+                            onEditRequested = { startEditingMessage(it) }
+                        )
                     }
                     
-                    // Show a typing/thinking bubble if thinking
-                    if (agentState is AgentState.Thinking) {
+                    // Show a typing/thinking bubble if thinking - scoped to this chat, see
+                    // visibleAgentState.
+                    if (visibleAgentState is AgentState.Thinking) {
                         item {
                             ThinkingBubble()
                         }
                     }
                 }
 
-                // If agent proposed a plan, show a modal prompt to approve or reject
-                if (agentState is AgentState.PlanProposed) {
-                    val proposedPlan = (agentState as AgentState.PlanProposed).plan
+                // If agent proposed a plan for THIS chat, show a modal prompt to approve or
+                // reject. A plan proposed for a different chat must never surface here - the
+                // user could approve/reject the wrong chat's plan without realizing it.
+                if (visibleAgentState is AgentState.PlanProposed) {
+                    val proposedPlan = (visibleAgentState as AgentState.PlanProposed).plan
                     ProposedPlanPrompt(
                         goal = proposedPlan.goal,
                         stepsCount = proposedPlan.estimatedSteps,
@@ -188,134 +377,256 @@ fun ChatScreen(
                     )
                     .padding(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Floating Orb for Speech
-                    FloatingOrb(
-                        isListening = isListening,
-                        agentState = agentState,
-                        onClick = {
-                            if (isListening) {
-                                speechRecognizer.stopListening()
-                                isListening = false
-                            } else {
-                                val audioPerm = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO
-                                )
-                                if (audioPerm == PackageManager.PERMISSION_GRANTED) {
-                                    isListening = true
-                                    transcriptionText = "Listening..."
-                                    speechRecognizer.startListening(
-                                        onResult = { text ->
-                                            isListening = false
-                                            viewModel.sendMessage(text, context)
-                                            transcriptionText = ""
-                                        },
-                                        onPartialResult = { partial ->
-                                            transcriptionText = partial
-                                        },
-                                        onError = { err ->
-                                            isListening = false
-                                            transcriptionText = ""
-                                        }
-                                    )
-                                } else {
-                                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            }
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // Text Input Field / Voice Waveform Area
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(CardBackground)
-                            .border(1.dp, BorderColor, RoundedCornerShape(28.dp))
-                            .padding(horizontal = 16.dp),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        if (isListening) {
-                            VoiceWaveform(text = transcriptionText)
-                        } else {
-                            TextField(
-                                value = inputQuery,
-                                onValueChange = { inputQuery = it },
-                                placeholder = { Text("Ask OpenDroid to run an autonomous task...", color = TextSecondary, fontSize = 14.sp) },
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    disabledContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                keyboardActions = KeyboardActions(onSend = {
-                                    if (inputQuery.isNotBlank()) {
-                                        viewModel.sendMessage(inputQuery, context)
-                                        inputQuery = ""
-                                    }
-                                }),
-                                modifier = Modifier.fillMaxWidth()
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (editingMessageId != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 4.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = AccentCyan,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Editing message",
+                                fontSize = 11.sp,
+                                color = AccentCyan,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cancel edit",
+                                tint = TextSecondary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { cancelEditingMessage() }
                             )
                         }
                     }
-
-                    if (!isListening && inputQuery.isNotBlank()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
+                    if (voiceError != null) {
+                        Text(
+                            text = voiceError.orEmpty(),
+                            fontSize = 11.sp,
+                            color = AccentRed,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Floating Orb for Speech
+                        FloatingOrb(
+                            isListening = isListening,
+                            agentState = visibleAgentState,
                             onClick = {
-                                viewModel.sendMessage(inputQuery, context)
-                                inputQuery = ""
-                            },
+                                if (isListening) {
+                                    // True cancel: no final result will be delivered for this
+                                    // session, so whatever partial transcript we already have is
+                                    // handed back to the input field instead of being lost.
+                                    speechRecognizer.cancel()
+                                    isListening = false
+                                    mergeDictatedText(transcriptionText)
+                                    transcriptionText = ""
+                                } else {
+                                    val audioPerm = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO
+                                    )
+                                    if (audioPerm == PackageManager.PERMISSION_GRANTED) {
+                                        isListening = true
+                                        voiceError = null
+                                        transcriptionText = ""
+                                        speechRecognizer.startListening(
+                                            onResult = { text ->
+                                                isListening = false
+                                                mergeDictatedText(text)
+                                                transcriptionText = ""
+                                            },
+                                            onPartialResult = { partial ->
+                                                transcriptionText = partial
+                                            },
+                                            onError = { err ->
+                                                isListening = false
+                                                mergeDictatedText(transcriptionText)
+                                                transcriptionText = ""
+                                                voiceError = err
+                                            }
+                                        )
+                                    } else {
+                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                }
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Text Input Field / Voice Waveform Area
+                        Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(AccentNeonGreen)
+                                .weight(1f)
+                                .heightIn(min = 56.dp, max = 120.dp)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(CardBackground)
+                                .border(1.dp, BorderColor, RoundedCornerShape(28.dp))
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Send",
-                                tint = DarkBackground
-                            )
+                            if (isListening) {
+                                VoiceWaveform(
+                                    text = transcriptionText,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(vertical = 12.dp)
+                                )
+                            } else {
+                                TextField(
+                                    value = inputQuery,
+                                    onValueChange = { inputQuery = it; voiceError = null },
+                                    placeholder = { Text("Ask OpenDroid to run an autonomous task...", color = TextSecondary, fontSize = 14.sp) },
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        disabledContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary
+                                    ),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                    keyboardActions = KeyboardActions(onSend = { submitInput() }),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        if (!isListening && inputQuery.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { submitInput() },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentNeonGreen)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Send",
+                                    tint = DarkBackground
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    sessionPendingDelete?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionPendingDelete = null },
+            containerColor = DarkSurface,
+            title = { Text("Delete chat?", color = TextPrimary) },
+            text = {
+                Text(
+                    "\"${session.title}\" and its messages will be permanently deleted.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteChat(session.id)
+                    sessionPendingDelete = null
+                }) {
+                    Text("Delete", color = AccentRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionPendingDelete = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    sessionPendingRename?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionPendingRename = null },
+            containerColor = DarkSurface,
+            title = { Text("Rename chat", color = TextPrimary) },
+            text = {
+                TextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = AccentNeonGreen,
+                        unfocusedIndicatorColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.renameSession(session.id, renameText)
+                    sessionPendingRename = null
+                }) {
+                    Text("Save", color = AccentNeonGreen, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionPendingRename = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-fun AgentStatusSubtitle(state: AgentState) {
-    val text = when (state) {
-        is AgentState.Idle -> "Online & Ready"
-        is AgentState.Listening -> "Listening to voice input..."
-        is AgentState.Thinking -> "Analyzing intent & planning..."
-        is AgentState.PlanProposed -> "Requires Plan Approval"
-        is AgentState.ExecutingPlan -> "Executing: ${state.currentStepDesc}"
-        is AgentState.Speaking -> "Speaking: ${state.text.take(30)}..."
-        is AgentState.Error -> "Execution Error"
+fun AgentStatusSubtitle(state: AgentState, runningElsewhere: Boolean = false) {
+    // runningElsewhere means [state] has already been forced to Idle because the real
+    // activity belongs to a different chat (see ChatViewModel.visibleAgentState) - say
+    // so explicitly instead of showing a plain "Online & Ready" that would hide the
+    // fact that a task is still going in the background.
+    val text = if (runningElsewhere) {
+        "Online & Ready · Task running in another chat"
+    } else {
+        when (state) {
+            is AgentState.Idle -> "Online & Ready"
+            is AgentState.Listening -> "Listening to voice input..."
+            is AgentState.Thinking -> "Analyzing intent & planning..."
+            is AgentState.PlanProposed -> "Requires Plan Approval"
+            is AgentState.ExecutingPlan -> "Executing: ${state.currentStepDesc}"
+            is AgentState.Speaking -> "Speaking: ${state.text.take(30)}..."
+            is AgentState.Error -> "Execution Error"
+        }
     }
-    
-    val color = when (state) {
-        is AgentState.Idle -> AccentNeonGreen
-        is AgentState.Listening -> AccentRed
-        is AgentState.Thinking -> AccentPurple
-        is AgentState.PlanProposed -> AccentCyan
-        is AgentState.ExecutingPlan -> AccentNeonGreen
-        is AgentState.Speaking -> AccentCyan
-        is AgentState.Error -> AccentRed
+
+    val color = if (runningElsewhere) {
+        AccentPurple
+    } else {
+        when (state) {
+            is AgentState.Idle -> AccentNeonGreen
+            is AgentState.Listening -> AccentRed
+            is AgentState.Thinking -> AccentPurple
+            is AgentState.PlanProposed -> AccentCyan
+            is AgentState.ExecutingPlan -> AccentNeonGreen
+            is AgentState.Speaking -> AccentCyan
+            is AgentState.Error -> AccentRed
+        }
     }
 
     Text(
@@ -327,7 +638,12 @@ fun AgentStatusSubtitle(state: AgentState) {
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage, viewModel: ChatViewModel? = null, context: android.content.Context? = null) {
+fun ChatBubble(
+    message: ChatMessage,
+    viewModel: ChatViewModel? = null,
+    context: android.content.Context? = null,
+    onEditRequested: ((ChatMessage) -> Unit)? = null
+) {
     val isAgent = message.sender == ChatMessage.Sender.AGENT
     val alignment = if (isAgent) Alignment.Start else Alignment.End
     val bubbleColor = if (isAgent) CardBackground else AccentPurple.copy(alpha = 0.25f)
@@ -418,13 +734,31 @@ fun ChatBubble(message: ChatMessage, viewModel: ChatViewModel? = null, context: 
                 )
                 
                 Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = timeFormat.format(Date(message.timestamp)),
-                    fontSize = 9.sp,
-                    color = TextSecondary,
-                    modifier = Modifier.align(Alignment.End)
-                )
+
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Edit affordance: user messages only, never on agent replies or the
+                    // contact-picker card (which is always an agent message, so it's
+                    // already excluded by the isAgent check above never reaching here).
+                    if (!isAgent && onEditRequested != null) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit message",
+                            tint = TextSecondary,
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clickable { onEditRequested(message) }
+                        )
+                    }
+                    Text(
+                        text = timeFormat.format(Date(message.timestamp)),
+                        fontSize = 9.sp,
+                        color = TextSecondary
+                    )
+                }
             }
         }
     }
@@ -606,7 +940,7 @@ fun FloatingOrb(
 }
 
 @Composable
-fun VoiceWaveform(text: String) {
+fun VoiceWaveform(text: String, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "waveform")
     val heightScale1 by infiniteTransition.animateFloat(
         initialValue = 4f,
@@ -637,8 +971,8 @@ fun VoiceWaveform(text: String) {
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = modifier,
+        verticalAlignment = Alignment.Top
     ) {
         Row(
             modifier = Modifier.width(60.dp),
@@ -652,12 +986,15 @@ fun VoiceWaveform(text: String) {
             Box(modifier = Modifier.width(4.dp).height(heightScale1.dp).clip(CircleShape).background(AccentRed))
         }
         Spacer(modifier = Modifier.width(8.dp))
+        // No maxLines cap - long dictation wraps across multiple lines and the container
+        // (see the input Box in ChatScreen) scrolls once it exceeds its bounded max height.
         Text(
             text = text,
             fontSize = 13.sp,
             color = TextPrimary,
             fontFamily = FontFamily.SansSerif,
-            maxLines = 1
+            lineHeight = 18.sp,
+            modifier = Modifier.weight(1f)
         )
     }
 }

@@ -14,8 +14,13 @@ import com.opendroid.ai.data.models.PlanStatus
 import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
 import com.opendroid.ai.data.repository.ConversationRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,22 +80,96 @@ class AgentLoop @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
     private val queryMutex = Mutex()
 
-    @Volatile private var lastExecutedAction: String? = null
-    @Volatile private var lastExecutedParams: Map<String, String> = emptyMap()
+    // The currently in-flight processQuery/approveProposedPlan job, if any. Tracked so a
+    // fresh query (or an explicit cancel) can stop whatever the agent is doing right now.
+    // NOT reassigned when processQuery is merely delivering a reply to a pending
+    // awaitUserResponse() prompt - that reply belongs to the job already running.
+    @Volatile private var currentJob: Job? = null
+
+    // The session id pinned for whichever task currentJob is currently running end-to-end.
+    // Resolved ONCE, right when a genuinely new task starts (processQuery for a fresh query,
+    // or approveProposedPlan), then threaded as a plain parameter through that task's whole
+    // call chain, so every message the task writes - plan execution, contact-picker prompts,
+    // the final summary - uses that same id and never re-resolves "current session" mid-task.
+    // If the user switches (or starts) a chat while the task is still running, its writes
+    // keep landing in the chat it was pinned to, not wherever the user has navigated to.
+    //
+    // That parameter-threading is what makes pinning safe against races: this field is only
+    // ever read back in one place - relaying a reply to THIS SAME task's awaitUserResponse()
+    // prompt (see processQuery) - never by the task's own ongoing execution, so a later task
+    // overwriting this field can't redirect an earlier task's still-unwinding writes.
+    @Volatile private var activeTaskSessionId: String = ""
+
+    // The last successfully executed action/params, scoped PER SESSION so a contextual
+    // follow-up (AliasResolver.resolveContextual - "turn it off", "stop it", ...) in one
+    // chat can only ever resolve against that same chat's own history, never leftover
+    // state from an unrelated conversation. Previously this was a pair of process-global
+    // @Volatile fields, which meant a device toggle executed in chat A would silently be
+    // replayed by a generic contextual phrase typed in chat B. Bundled into one data class
+    // per session (rather than two parallel maps) so an action and its params can never be
+    // read back mismatched.
+    private data class LastExecutedAction(val action: String, val params: Map<String, String>)
+    private val lastExecutedActionsBySession = java.util.concurrent.ConcurrentHashMap<String, LastExecutedAction>()
+
+    // Session id the currently PlanProposed plan (if any) was proposed in, or null when
+    // agentState isn't PlanProposed. planManager.currentPlan and agentState are both
+    // single global values with no session affiliation of their own, so this is what lets
+    // a genuinely new task starting in a DIFFERENT session (see resolveStaleProposedPlan)
+    // recognize "there's a proposal out there that isn't mine" before it does anything
+    // that would otherwise silently clobber it.
+    @Volatile private var proposedPlanSessionId: String? = null
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
     val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
 
-    private val _userInputFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
-    var isWaitingForUserInput: Boolean = false
-        private set
+    // A single pending awaitUserResponse() prompt, identified by [requestId] - not just a
+    // session id, so that even a second prompt opened for the SAME session can never be
+    // resolved by a reply aimed at an earlier, already-abandoned one. [deferred] is
+    // completed exactly once, by the reply path in processQuery, and ONLY if it is still
+    // the value installed here (re-validated at completion time, not just when the reply
+    // was scheduled) - there is deliberately no buffering flow a stale reply could sit in
+    // and later be picked up by some unrelated future prompt. See processQuery.
+    private data class PendingUserInput(
+        val sessionId: String,
+        val requestId: String,
+        val deferred: CompletableDeferred<String>
+    )
 
-    suspend fun awaitUserResponse(): String {
-        isWaitingForUserInput = true
+    @Volatile private var pendingUserInput: PendingUserInput? = null
+
+    // Session id of whichever task is currently parked inside awaitUserResponse(), or null
+    // when nothing is waiting. Session-affiliated (not a bare boolean) so processQuery can
+    // tell a genuine reply to THIS prompt (arriving from the same session) apart from an
+    // unrelated new message that happens to arrive in some other chat while this prompt is
+    // still open - see processQuery.
+    @Volatile private var waitingSessionId: String? = null
+
+    val isWaitingForUserInput: Boolean
+        get() = waitingSessionId != null
+
+    /**
+     * Suspends until the user answers a prompt this task just posted. Defaults to
+     * whichever session the currently running task is pinned to (activeTaskSessionId) -
+     * correct for every existing internal caller, since a call to this function only ever
+     * happens from within that task's own execution. Pass a session explicitly only if
+     * that assumption doesn't hold.
+     */
+    suspend fun awaitUserResponse(sessionId: String = activeTaskSessionId): String {
+        val request = PendingUserInput(sessionId, UUID.randomUUID().toString(), CompletableDeferred())
+        waitingSessionId = sessionId
+        pendingUserInput = request
         try {
-            return _userInputFlow.first()
+            return request.deferred.await()
         } finally {
-            isWaitingForUserInput = false
+            // Only clear state that is still ours - a newer prompt for the same (or a
+            // different) session, or an explicit abandon/cancel, may already have
+            // replaced or cleared it, and clobbering that would be wrong.
+            if (pendingUserInput === request) {
+                pendingUserInput = null
+            }
+            if (waitingSessionId == sessionId) {
+                waitingSessionId = null
+            }
         }
     }
 
@@ -101,9 +180,68 @@ class AgentLoop @Inject constructor(
     // Speak callback to be implemented by TTS service
     var onSpeakCallback: ((String) -> Unit)? = null
 
-    fun processQuery(query: String, context: Context) {
-        scope.launch {
+    /**
+     * @param explicitSessionId The session this message actually belongs to (whatever chat
+     * the caller was looking at when the user hit send), if the caller can determine it.
+     * Used to decide whether this message answers a pending awaitUserResponse() prompt -
+     * see below - and, for a genuinely new query, which session it's stored in. Callers
+     * that cannot determine this (e.g. voice input via OpenDroidService, which has no
+     * notion of "which chat" a spoken query belongs to) pass null, which preserves the
+     * pre-multi-session behavior: a null session is always assumed to answer whatever
+     * prompt is currently pending, and otherwise falls back to resolving "current".
+     */
+    fun processQuery(query: String, context: Context, explicitSessionId: String? = null) {
+        // processQuery is also the delivery path for a reply to a pending
+        // awaitUserResponse() prompt (see below). That's ONLY true when this message comes
+        // from the SAME session the waiting task is pinned to (waitingSessionId) - a
+        // message from a different session is a genuinely new query, never an answer to
+        // some other chat's prompt, no matter how it compares to the global "is anything
+        // waiting" state.
+        val waitingSession = waitingSessionId
+        // Snapshot of the exact prompt that is pending right now, at the moment this
+        // reply was scheduled. The reply is only ever allowed to resolve THIS SAME
+        // instance - re-checked below, inside the launched coroutine, right before
+        // completing it - never whatever happens to be pending by the time that
+        // coroutine actually runs.
+        val pendingAtScheduleTime = pendingUserInput
+        val isAnsweringPendingQuestion = waitingSession != null &&
+                (explicitSessionId == null || explicitSessionId == waitingSession)
+
+        if (waitingSession != null && !isAnsweringPendingQuestion) {
+            // A brand-new message arrived in a different session while another task is
+            // still parked on a prompt in `waitingSession`. Nobody there is ever going to
+            // answer that prompt now - kill it and leave a short, honest message in ITS OWN
+            // session saying it stopped waiting, rather than either routing this message
+            // into the wrong chat or leaving that chat hanging silently forever.
+            abandonWaitingTask(waitingSession)
+        } else if (!isAnsweringPendingQuestion) {
+            currentJob?.cancel()
+        }
+
+        val job = scope.launch {
             try {
+                // Pin the session THIS task writes to, resolved once, right here, before any
+                // message is written. A genuinely new query pins whatever session the caller
+                // says this message belongs to (falling back to whatever is current if the
+                // caller couldn't say); a reply to a pending prompt reuses the session the
+                // task it's replying to already pinned via activeTaskSessionId - it must NOT
+                // re-resolve "current", since the user may have switched (or created) chats
+                // while that task was still waiting on them.
+                val sessionId = if (isAnsweringPendingQuestion) {
+                    activeTaskSessionId
+                } else {
+                    (explicitSessionId ?: conversationRepository.ensureCurrentSessionId())
+                        .also { activeTaskSessionId = it }
+                }
+
+                if (!isAnsweringPendingQuestion) {
+                    // This is a genuinely new task. If some OTHER session still has an
+                    // unresolved plan proposal sitting in agentState/planManager, resolve
+                    // it explicitly right now, before anything below can silently
+                    // overwrite it out from under that chat - see resolveStaleProposedPlan.
+                    resolveStaleProposedPlan(sessionId)
+                }
+
                 // Only capture the screen when the query actually asks about it.
                 // Attaching a screenshot to every request would silently send
                 // whatever is on screen (messages, banking apps, ...) to the LLM.
@@ -121,25 +259,39 @@ class AgentLoop @Inject constructor(
                     modelBadge = null,
                     imageBase64 = screenshotBase64
                 )
-                memoryManager.storeMessage(userMsg)
-                conversationRepository.insertMessage(userMsg)
+                memoryManager.storeMessage(userMsg, sessionId)
+                conversationRepository.insertMessage(sessionId, userMsg)
 
-                if (isWaitingForUserInput) {
-                    _userInputFlow.emit(query)
+                if (isAnsweringPendingQuestion) {
+                    // Re-validate at delivery time, not just at schedule time: only
+                    // complete the EXACT prompt this reply was aimed at (matched by
+                    // requestId, not merely by session). If it's gone - already answered,
+                    // abandoned, or superseded by a newer prompt in the meantime - there
+                    // is nothing to buffer it for; just drop it.
+                    val pending = pendingUserInput
+                    if (pending != null && pending.requestId == pendingAtScheduleTime?.requestId) {
+                        pending.deferred.complete(query)
+                    }
                     return@launch
                 }
 
                 // Serialize query handling so contextual follow-up state cannot race.
                 queryMutex.withLock {
-                    processQueryLocked(userMsg, query, context)
+                    processQueryLocked(userMsg, query, context, sessionId)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
             }
         }
+
+        if (!isAnsweringPendingQuestion) {
+            currentJob = job
+        }
     }
 
-    private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context) {
+    private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context, sessionId: String) {
                 _agentState.value = AgentState.Thinking
 
                 // 0. Check if this is a complex, multi-step query
@@ -149,15 +301,16 @@ class AgentLoop @Inject constructor(
 
                 // 1. Alias resolution — bypass LLM for simple, single-action commands ONLY
                 if (!isMultiStep) {
-                    val contextual = AliasResolver.resolveContextual(query, lastExecutedAction, lastExecutedParams)
+                    val lastExecuted = lastExecutedActionsBySession[sessionId]
+                    val contextual = AliasResolver.resolveContextual(query, lastExecuted?.action, lastExecuted?.params)
                     if (contextual != null) {
-                        executeAliasDirect(contextual, query, context)
+                        executeAliasDirect(contextual, query, context, sessionId)
                         return
                     }
 
                     val alias = AliasResolver.resolve(query)
                     if (alias != null) {
-                        executeAliasDirect(alias, query, context)
+                        executeAliasDirect(alias, query, context, sessionId)
                         return
                     }
 
@@ -169,7 +322,7 @@ class AgentLoop @Inject constructor(
                                 "SET_ALARM",
                                 mapOf("time" to timeStr, "label" to "Alarm")
                             )
-                            executeAliasDirect(alarmHint, query, context)
+                            executeAliasDirect(alarmHint, query, context, sessionId)
                             return
                         }
                     }
@@ -182,7 +335,7 @@ class AgentLoop @Inject constructor(
                                 "SET_TIMER",
                                 mapOf("duration" to durationSecs.toString(), "label" to "Timer")
                             )
-                            executeAliasDirect(timerHint, query, context)
+                            executeAliasDirect(timerHint, query, context, sessionId)
                             return
                         }
                     }
@@ -191,9 +344,9 @@ class AgentLoop @Inject constructor(
                 // 2. Intent Classification
                 val requiresAction = intentClassifier.requiresAction(query)
                 if (requiresAction) {
-                    generatePlan(userMsg, context)
+                    generatePlan(userMsg, context, sessionId)
                 } else {
-                    executeSimpleQuery(userMsg)
+                    executeSimpleQuery(userMsg, sessionId)
                 }
     }
 
@@ -204,7 +357,8 @@ class AgentLoop @Inject constructor(
     private suspend fun executeAliasDirect(
         alias: AliasResolver.ActionHint,
         originalQuery: String,
-        context: Context
+        context: Context,
+        sessionId: String
     ) {
         try {
             val speechText = humanizePreSpeech(alias.action)
@@ -217,24 +371,26 @@ class AgentLoop @Inject constructor(
                 sender = ChatMessage.Sender.AGENT,
                 modelBadge = "alias"
             )
-            conversationRepository.insertMessage(replyMsg)
-            memoryManager.storeMessage(replyMsg)
+            conversationRepository.insertMessage(sessionId, replyMsg)
+            memoryManager.storeMessage(replyMsg, sessionId)
 
             // Build a single-step plan from the alias
             val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
 
             planManager.startNewPlan(plan, context)
-            executePlanLoop(plan, context)
+            executePlanLoop(plan, context, sessionId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _agentState.value = AgentState.Error("Alias execution failed: ${e.localizedMessage}")
         }
     }
 
-    private suspend fun executeSimpleQuery(userMsg: ChatMessage) {
+    private suspend fun executeSimpleQuery(userMsg: ChatMessage, sessionId: String) {
         try {
             val provider = llmProviderFactory.getActiveProvider()
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
-            
+
             val systemPrompt = """
                 You are OpenDroid, a friendly and helpful Android AI assistant.
                 Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
@@ -248,7 +404,7 @@ class AgentLoop @Inject constructor(
                 $relevantContext
             """.trimIndent()
 
-            val lastMsgs = conversationRepository.getLastMessages(10).map { msg ->
+            val lastMsgs = conversationRepository.getLastMessages(sessionId, 10).map { msg ->
                 if (msg.id == userMsg.id) {
                     msg.copy(imageBase64 = userMsg.imageBase64)
                 } else {
@@ -264,7 +420,7 @@ class AgentLoop @Inject constructor(
                 sender = ChatMessage.Sender.AGENT,
                 modelBadge = provider.name
             )
-            conversationRepository.insertMessage(replyMsg)
+            conversationRepository.insertMessage(sessionId, replyMsg)
 
             try {
                 provider.streamComplete(
@@ -277,8 +433,10 @@ class AgentLoop @Inject constructor(
                     )
                 ).collect { chunk ->
                     currentReplyText += chunk
-                    conversationRepository.insertMessage(replyMsg.copy(text = currentReplyText))
+                    conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
                 }
+            } catch (streamError: CancellationException) {
+                throw streamError
             } catch (streamError: Exception) {
                 if (currentReplyText.isEmpty()) {
                     val response = provider.complete(
@@ -291,21 +449,23 @@ class AgentLoop @Inject constructor(
                         )
                     )
                     currentReplyText = response.content.trim()
-                    conversationRepository.insertMessage(replyMsg.copy(text = currentReplyText))
+                    conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
                 }
             }
 
             val finalReplyMsg = replyMsg.copy(text = formatStreamedReply(currentReplyText))
-            conversationRepository.insertMessage(finalReplyMsg)
-            memoryManager.storeMessage(finalReplyMsg)
+            conversationRepository.insertMessage(sessionId, finalReplyMsg)
+            memoryManager.storeMessage(finalReplyMsg, sessionId)
             _agentState.value = AgentState.Speaking(finalReplyMsg.text)
             onSpeakCallback?.invoke(finalReplyMsg.text)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _agentState.value = AgentState.Error(NetworkErrorFormatter.toUserMessage(e))
         }
     }
 
-    private suspend fun generatePlan(userMsg: ChatMessage, context: Context) {
+    private suspend fun generatePlan(userMsg: ChatMessage, context: Context, sessionId: String) {
         try {
             val provider = llmProviderFactory.getActiveProvider()
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
@@ -383,12 +543,15 @@ class AgentLoop @Inject constructor(
 
             planManager.startNewPlan(plan, context)
             if (config.autoConfirmPlans) {
-                executePlanLoop(plan, context)
+                executePlanLoop(plan, context, sessionId)
             } else {
+                proposedPlanSessionId = sessionId
                 _agentState.value = AgentState.PlanProposed(plan)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            fallbackOrError(userMsg, context, e)
+            fallbackOrError(userMsg, context, e, sessionId)
         }
     }
 
@@ -396,13 +559,14 @@ class AgentLoop @Inject constructor(
      * Treat malformed plan JSON as an actionable planning failure. Other provider
      * failures can still degrade to a normal chat response.
      */
-    private suspend fun fallbackOrError(userMsg: ChatMessage, context: Context, cause: Throwable) {
+    private suspend fun fallbackOrError(userMsg: ChatMessage, context: Context, cause: Throwable, sessionId: String) {
         android.util.Log.e("AgentLoop", "Plan generation failed: ${cause.localizedMessage}", cause)
 
+        val lastExecuted = lastExecutedActionsBySession[sessionId]
         val alias = AliasResolver.resolve(userMsg.text)
-            ?: AliasResolver.resolveContextual(userMsg.text, lastExecutedAction, lastExecutedParams)
+            ?: AliasResolver.resolveContextual(userMsg.text, lastExecuted?.action, lastExecuted?.params)
         if (alias != null) {
-            executeAliasDirect(alias, userMsg.text, context)
+            executeAliasDirect(alias, userMsg.text, context, sessionId)
             return
         }
 
@@ -417,50 +581,202 @@ class AgentLoop @Inject constructor(
                 resultData = null,
                 errorMessage = cause.localizedMessage
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("AgentLoop", "Failed to log plan generation failure: ${e.localizedMessage}")
         }
-        executeSimpleQuery(userMsg)
+        executeSimpleQuery(userMsg, sessionId)
     }
 
     fun approveProposedPlan(context: Context) {
-        scope.launch {
+        currentJob?.cancel()
+        val job = scope.launch {
+            // Approving a proposed plan starts a new task in its own right (the plan may
+            // have been proposed in an earlier, now-idle turn), so pin its session here too -
+            // same rationale as processQuery, see activeTaskSessionId. Executes in the
+            // session the plan was actually PROPOSED for, never wherever the user happens
+            // to be looking right now - falls back to "current" only if somehow nothing
+            // was pinned (there is no proposal to misattribute in that case anyway).
+            val sessionId = (proposedPlanSessionId ?: conversationRepository.ensureCurrentSessionId())
+                .also { activeTaskSessionId = it }
+            proposedPlanSessionId = null
             queryMutex.withLock {
                 val plan = planManager.currentPlan.value ?: return@withLock
-                executePlanLoop(plan, context)
+                executePlanLoop(plan, context, sessionId)
             }
         }
+        currentJob = job
     }
 
     fun rejectProposedPlan() {
+        proposedPlanSessionId = null
         planManager.clearPlan()
         _agentState.value = AgentState.Idle
     }
 
-    private suspend fun executePlanLoop(plan: Plan, context: Context) {
+    /**
+     * Forgets a session's contextual follow-up state (see
+     * [lastExecutedActionsBySession]). Call this once a session is gone for good
+     * (ChatViewModel.deleteChat -> ConversationRepository.deleteSession) so its
+     * entry doesn't sit in the map forever - a deleted chat can never come back
+     * to ask "turn it off" against whatever it last did. Harmless no-op if the
+     * session never executed an action, or is already gone.
+     */
+    fun forgetSession(sessionId: String) {
+        lastExecutedActionsBySession.remove(sessionId)
+    }
+
+    /**
+     * Cancels whatever the agent is currently doing - a running plan, a query in
+     * flight, or a pending "waiting for user input" prompt - and returns the loop
+     * to Idle. Safe to call when nothing is running: when there is no job to
+     * cancel there is nothing in flight for planManager.cancelPlan() to affect
+     * either, so it's skipped entirely rather than invoked pointlessly - it would
+     * otherwise land on whatever plan is still sitting in PlanManager from the
+     * last finished task (kept there deliberately so the Plan tab can keep
+     * showing it - see PlanManager.updatePlanStatus) and relabel it, which is
+     * exactly what PlanManager's own terminal-status guard on cancelPlan() also
+     * defends against - see that doc comment for why that guard is the
+     * load-bearing one.
+     *
+     * The join-then-cancel below runs on its own coroutine, so it can finish
+     * arbitrarily later - potentially after a brand-new, unrelated task has
+     * already started (see the class-level race this guards against). It must
+     * NOT resolve "the plan to cancel" by asking PlanManager what's current at
+     * that later point; the only trustworthy identity is whatever plan was
+     * actually current RIGHT NOW, captured synchronously before [jobToCancel]
+     * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
+     * read, not suspending, so this capture is safe to do here.
+     */
+    fun cancelCurrentTask() {
+        val jobToCancel = currentJob
+        currentJob = null
+        waitingSessionId = null
+        proposedPlanSessionId = null
+        _agentState.value = AgentState.Idle
+        jobToCancel?.cancel() ?: return
+        val planIdToCancel = planManager.currentPlan.value?.planId
+        scope.launch {
+            // Wait for the cancelled job to actually finish unwinding before marking
+            // the plan cancelled, so its own (best-effort) status writes can't race
+            // ahead of and overwrite the CANCELLED status set here.
+            jobToCancel.join()
+            if (planIdToCancel != null) {
+                planManager.cancelPlan(planIdToCancel)
+            }
+        }
+    }
+
+    /**
+     * Called right before a genuinely new task starts (see processQuery), never for a
+     * reply to a pending awaitUserResponse() prompt. If [newSessionId] is about to take
+     * over agentState/planManager's single global slots and some OTHER session still has
+     * a plan sitting in AgentState.PlanProposed - proposed, but never approved, rejected,
+     * or cancelled - resolve it explicitly right now instead of letting it be silently
+     * destroyed: cancel it in planManager and leave a short, honest message in ITS OWN
+     * session, mirroring the treatment abandonWaitingTask() gives an abandoned prompt.
+     * A no-op when there is nothing stale to resolve, or when the proposal already
+     * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
+     */
+    private suspend fun resolveStaleProposedPlan(newSessionId: String) {
+        val staleSessionId = proposedPlanSessionId
+        if (staleSessionId == null || staleSessionId == newSessionId) return
+        val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
+
+        proposedPlanSessionId = null
+        _agentState.value = AgentState.Idle
+        // Target the exact plan this state was carrying, not "whatever is
+        // current" - see cancelPlan's expectedPlanId doc comment. There is no
+        // job-join race here (the task that proposed this plan already
+        // finished), but pinning the identity explicitly keeps this call
+        // consistent with cancelCurrentTask/abandonWaitingTask rather than
+        // relying on a coincidence that nothing else changed it in between.
+        planManager.cancelPlan(proposedState.plan.planId)
+
+        val stoppedMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = "I cancelled the plan I proposed here since you started a new task elsewhere.",
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(staleSessionId, stoppedMsg)
+        memoryManager.storeMessage(stoppedMsg, staleSessionId)
+    }
+
+    /**
+     * Cancels a task that is parked in awaitUserResponse() for [staleSessionId] because a
+     * genuinely new message just arrived in a different session - nobody in
+     * [staleSessionId] is ever going to answer that prompt now. Mirrors
+     * [cancelCurrentTask]'s join-then-cancel-plan ordering, and additionally leaves a
+     * short, honest message in the abandoned prompt's OWN session so that chat doesn't
+     * just sit there silently forever.
+     */
+    private fun abandonWaitingTask(staleSessionId: String) {
+        val jobToCancel = currentJob
+        currentJob = null
+        waitingSessionId = null
+        _agentState.value = AgentState.Idle
+        jobToCancel?.cancel()
+        // Same identity-pinning rationale as cancelCurrentTask: capture now,
+        // synchronously, before jobToCancel unwinds - never resolve "the plan
+        // to cancel" from whatever PlanManager holds once the join below
+        // finally completes.
+        val planIdToCancel = planManager.currentPlan.value?.planId
+        scope.launch {
+            jobToCancel?.join()
+            if (planIdToCancel != null) {
+                planManager.cancelPlan(planIdToCancel)
+            }
+
+            val stoppedMsg = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = "I stopped waiting for your reply here since you started a new conversation elsewhere.",
+                sender = ChatMessage.Sender.AGENT,
+                modelBadge = "System"
+            )
+            conversationRepository.insertMessage(staleSessionId, stoppedMsg)
+            memoryManager.storeMessage(stoppedMsg, staleSessionId)
+        }
+    }
+
+    private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
 
         while (true) {
+            // Cooperative cancellation checkpoint: ensures a cancelCurrentTask() call
+            // stops this loop promptly even on iterations that finish without ever
+            // hitting a suspending call that would otherwise surface the cancellation.
+            currentCoroutineContext().ensureActive()
+
             val nextStep = planManager.getActiveStep()
             if (nextStep == null) {
                 // If there are any failed steps, plan is failed. Otherwise, completed!
                 val hasFailed = currentPlanState.steps.any { it.status == StepStatus.FAILED }
                 if (hasFailed) {
                     planManager.updatePlanStatus(PlanStatus.FAILED)
-                    speakAndSaveSummary(currentPlanState, false)
+                    speakAndSaveSummary(currentPlanState, false, sessionId)
                 } else {
                     planManager.updatePlanStatus(PlanStatus.COMPLETED)
-                    speakAndSaveSummary(currentPlanState, true)
+                    speakAndSaveSummary(currentPlanState, true, sessionId)
                 }
                 break
             }
 
-            _agentState.value = AgentState.ExecutingPlan(nextStep.description)
             planManager.updateStepStatus(nextStep.stepId, StepStatus.RUNNING)
 
+            // Re-read the step's current description/action/params immediately before
+            // dispatching. getStepSnapshot takes the same mutex the Plan-tab editor's
+            // mutators (updateStepDescription / updateStepParams) hold, so this always
+            // observes whichever edit last committed to the DB - never the stale copy
+            // getActiveStep() handed back at the top of this loop iteration, which a
+            // concurrent edit landing in between would otherwise silently outrun.
+            val stepToExecute = planManager.getStepSnapshot(nextStep.stepId) ?: nextStep
+            _agentState.value = AgentState.ExecutingPlan(stepToExecute.description)
+
             // Resolve parameters from prior step results
-            val resolvedParams = nextStep.params.mapValues { (_, value) ->
+            val resolvedParams = stepToExecute.params.mapValues { (_, value) ->
                 var newValue = value
                 currentPlanState.steps.forEach { completedStep ->
                     if (completedStep.status == StepStatus.COMPLETED && completedStep.result != null) {
@@ -479,40 +795,43 @@ class AgentLoop @Inject constructor(
 
             // Execute the action dispatcher
             var actionResult = try {
-                var result = actionDispatcher.execute(nextStep.action, resolvedParams, context)
-                
-                resolveNeedsInput(result, nextStep.action, resolvedParams, context)
+                var result = actionDispatcher.execute(stepToExecute.action, resolvedParams, context)
+
+                resolveNeedsInput(result, stepToExecute.action, resolvedParams, context, sessionId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                android.util.Log.e("AgentLoop", "Exception executing action ${nextStep.action}: ${e.localizedMessage}", e)
+                android.util.Log.e("AgentLoop", "Exception executing action ${stepToExecute.action}: ${e.localizedMessage}", e)
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
             try {
                 memoryManager.logTaskExecution(
-                    stepId = nextStep.stepId,
+                    stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = nextStep.description,
-                    actionType = nextStep.action,
+                    description = stepToExecute.description,
+                    actionType = stepToExecute.action,
                     params = resolvedParams,
                     success = actionResult.success,
                     resultData = actionResult.data,
                     errorMessage = actionResult.error
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("AgentLoop", "Failed to log task execution: ${e.localizedMessage}")
             }
 
             if (actionResult.success) {
-                lastExecutedAction = nextStep.action
-                lastExecutedParams = resolvedParams
+                lastExecutedActionsBySession[sessionId] = LastExecutedAction(stepToExecute.action, resolvedParams)
                 planManager.updateStepStatus(
-                    nextStep.stepId,
+                    stepToExecute.stepId,
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
                 )
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
-                    nextStep.stepId,
+                    stepToExecute.stepId,
                     StepStatus.FAILED,
                     error = actionResult.error ?: "Action execution failed."
                 )
@@ -521,7 +840,7 @@ class AgentLoop @Inject constructor(
                 currentPlanState = planManager.currentPlan.value ?: break
 
                 // Trigger learning extraction
-                reEvalEngine.get().extractLearning(nextStep.action, currentPlanState.goal)
+                reEvalEngine.get().extractLearning(stepToExecute.action, currentPlanState.goal)
 
                 // Trigger silent replanning
                 val completed = currentPlanState.steps.filter { it.status == StepStatus.COMPLETED }
@@ -529,7 +848,7 @@ class AgentLoop @Inject constructor(
 
                 val replan = reEvalEngine.get().replanAfterUnknownAction(
                     originalGoal = currentPlanState.goal,
-                    failedStep = nextStep,
+                    failedStep = stepToExecute,
                     completedSteps = completed,
                     remainingSteps = remaining,
                     planId = currentPlanState.planId
@@ -542,7 +861,7 @@ class AgentLoop @Inject constructor(
                 when (replan.decision.uppercase()) {
                     "ABANDON" -> {
                         planManager.updatePlanStatus(PlanStatus.FAILED)
-                        speakAndSaveSummary(currentPlanState, false)
+                        speakAndSaveSummary(currentPlanState, false, sessionId)
                         return
                     }
                     "MODIFY" -> {
@@ -556,7 +875,7 @@ class AgentLoop @Inject constructor(
                     }
                     else -> {
                         planManager.updatePlanStatus(PlanStatus.FAILED)
-                        speakAndSaveSummary(currentPlanState, false)
+                        speakAndSaveSummary(currentPlanState, false, sessionId)
                         return
                     }
                 }
@@ -566,28 +885,30 @@ class AgentLoop @Inject constructor(
                 continue
             } else {
                 // Try fallback action
-                if (nextStep.fallback.isNotEmpty() && actionDispatcher.hasAction(nextStep.fallback)) {
+                if (stepToExecute.fallback.isNotEmpty() && actionDispatcher.hasAction(stepToExecute.fallback)) {
                     val fallbackResult = try {
-                        actionDispatcher.execute(nextStep.fallback, resolvedParams, context)
+                        actionDispatcher.execute(stepToExecute.fallback, resolvedParams, context)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
                     }
                     if (fallbackResult.success) {
                         planManager.updateStepStatus(
-                            nextStep.stepId,
+                            stepToExecute.stepId,
                             StepStatus.COMPLETED,
                             result = "Primary failed: ${actionResult.error}. Fallback execution succeeded: ${fallbackResult.data}"
                         )
                     } else {
                         planManager.updateStepStatus(
-                            nextStep.stepId,
+                            stepToExecute.stepId,
                             StepStatus.FAILED,
                             error = "Primary failed: ${actionResult.error}. Fallback failed: ${fallbackResult.error}"
                         )
                     }
                 } else {
                     planManager.updateStepStatus(
-                        nextStep.stepId,
+                        stepToExecute.stepId,
                         StepStatus.FAILED,
                         error = actionResult.error ?: "Action execution failed."
                     )
@@ -622,7 +943,7 @@ class AgentLoop @Inject constructor(
             when (reEval.decision.uppercase()) {
                 "ABANDON" -> {
                     planManager.updatePlanStatus(PlanStatus.FAILED)
-                    speakAndSaveSummary(currentPlanState, false)
+                    speakAndSaveSummary(currentPlanState, false, sessionId)
                     return
                 }
                 "MODIFY" -> {
@@ -664,7 +985,8 @@ class AgentLoop @Inject constructor(
         initialResult: ActionResult,
         actionName: String,
         initialParams: Map<String, String>,
-        context: Context
+        context: Context,
+        sessionId: String
     ): ActionResult {
         var result = initialResult
         var params = initialParams
@@ -672,9 +994,9 @@ class AgentLoop @Inject constructor(
         repeat(MAX_NEEDS_INPUT_PROMPTS) {
             val needsInput = result as? ActionResult.NeedsInput ?: return result
             val retry = if (needsInput.metadata["type"] == "contact_picker") {
-                handleContactPicker(needsInput, actionName, params, context)
+                handleContactPicker(needsInput, actionName, params, context, sessionId)
             } else {
-                handleNeedsInput(needsInput, actionName, params, context)
+                handleNeedsInput(needsInput, actionName, params, context, sessionId)
             }
             result = retry.result
             params = retry.params
@@ -694,7 +1016,8 @@ class AgentLoop @Inject constructor(
         pickerResult: ActionResult.NeedsInput,
         actionName: String,
         originalParams: Map<String, String>,
-        context: Context
+        context: Context,
+        sessionId: String
     ): NeedsInputRetry {
         val meta = pickerResult.metadata
         val matchesJson = meta["matches"] ?: return NeedsInputRetry(pickerResult, originalParams)
@@ -720,11 +1043,11 @@ class AgentLoop @Inject constructor(
             modelBadge = "System",
             contactPickerData = matchesJson
         )
-        conversationRepository.insertMessage(pickerMsg)
+        conversationRepository.insertMessage(sessionId, pickerMsg)
         onSpeakCallback?.invoke(pickerResult.question)
 
         // Wait for user response
-        val userSelection = awaitUserResponse()
+        val userSelection = awaitUserResponse(sessionId)
 
         // Save user's response as a chat message
         val userPickMsg = ChatMessage(
@@ -732,7 +1055,7 @@ class AgentLoop @Inject constructor(
             text = userSelection,
             sender = ChatMessage.Sender.USER
         )
-        conversationRepository.insertMessage(userPickMsg)
+        conversationRepository.insertMessage(sessionId, userPickMsg)
 
         // Resolve user selection to a contact
         val selectedContact = when {
@@ -767,7 +1090,7 @@ class AgentLoop @Inject constructor(
                 sender = ChatMessage.Sender.AGENT,
                 modelBadge = "System"
             )
-            conversationRepository.insertMessage(failMsg)
+            conversationRepository.insertMessage(sessionId, failMsg)
             return NeedsInputRetry(
                 ActionResult.Failure(
                     errorMsg = "Contact selection not understood",
@@ -799,7 +1122,7 @@ class AgentLoop @Inject constructor(
             sender = ChatMessage.Sender.AGENT,
             modelBadge = "System"
         )
-        conversationRepository.insertMessage(confirmMsg)
+        conversationRepository.insertMessage(sessionId, confirmMsg)
 
         // Re-execute the original action with resolved contact
         val resolvedParams = originalParams.toMutableMap()
@@ -822,7 +1145,8 @@ class AgentLoop @Inject constructor(
         needsInput: ActionResult.NeedsInput,
         actionName: String,
         originalParams: Map<String, String>,
-        context: Context
+        context: Context,
+        sessionId: String
     ): NeedsInputRetry {
         val optionsText = if (needsInput.options.isNotEmpty()) {
             "\n\n" + needsInput.options.joinToString("\n") { "- $it" }
@@ -835,10 +1159,10 @@ class AgentLoop @Inject constructor(
             sender = ChatMessage.Sender.AGENT,
             modelBadge = "System"
         )
-        conversationRepository.insertMessage(promptMsg)
+        conversationRepository.insertMessage(sessionId, promptMsg)
         onSpeakCallback?.invoke(needsInput.question)
 
-        val answer = awaitUserResponse().trim()
+        val answer = awaitUserResponse(sessionId).trim()
         if (answer.isEmpty()) {
             return NeedsInputRetry(
                 ActionResult.Failure(
@@ -854,7 +1178,7 @@ class AgentLoop @Inject constructor(
             text = answer,
             sender = ChatMessage.Sender.USER
         )
-        conversationRepository.insertMessage(userEcho)
+        conversationRepository.insertMessage(sessionId, userEcho)
 
         val paramKey = paramKeyForNeedsInput(needsInput, actionName)
         val newParams = originalParams.toMutableMap().apply { put(paramKey, answer) }
@@ -864,7 +1188,7 @@ class AgentLoop @Inject constructor(
         )
     }
 
-    private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean) {
+    private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean, sessionId: String) {
         val summaryText = if (isSuccess) {
             // Build a natural, human-sounding summary from step results
             val stepSummaries = plan.steps
@@ -911,8 +1235,8 @@ class AgentLoop @Inject constructor(
             sender = ChatMessage.Sender.AGENT,
             modelBadge = "System"
         )
-        memoryManager.storeMessage(assistantMsg)
-        conversationRepository.insertMessage(assistantMsg)
+        memoryManager.storeMessage(assistantMsg, sessionId)
+        conversationRepository.insertMessage(sessionId, assistantMsg)
 
         _agentState.value = AgentState.Speaking(summaryText)
         onSpeakCallback?.invoke(summaryText)

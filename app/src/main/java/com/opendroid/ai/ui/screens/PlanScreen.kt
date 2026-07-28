@@ -76,11 +76,14 @@ fun PlanScreen(
         ) {
             // Main Section: Current Active Plan
             if (displayPlan != null) {
+                val isCurrentActivePlan = displayPlan!!.planId == currentPlan?.planId
+
                 item {
                     PlanHeaderCard(
                         plan = displayPlan!!,
-                        isCurrentActive = displayPlan!!.planId == currentPlan?.planId,
-                        onClearSelection = { selectedPlanId = null }
+                        isCurrentActive = isCurrentActivePlan,
+                        onClearSelection = { selectedPlanId = null },
+                        onStop = { viewModel.stopTask() }
                     )
                 }
 
@@ -95,8 +98,18 @@ fun PlanScreen(
                     )
                 }
 
-                items(displayPlan!!.steps) { step ->
-                    PlanStepCard(step = step)
+                items(displayPlan!!.steps, key = { it.stepId }) { step ->
+                    val isStepEditable = isCurrentActivePlan &&
+                        displayPlan!!.status == PlanStatus.RUNNING &&
+                        step.status == StepStatus.PENDING
+                    PlanStepCard(
+                        step = step,
+                        editable = isStepEditable,
+                        onSaveEdit = { description, params ->
+                            viewModel.editStep(step.stepId, description, params)
+                        },
+                        onDeleteStep = { viewModel.deleteStep(step.stepId) }
+                    )
                 }
             } else {
                 item {
@@ -135,7 +148,8 @@ fun PlanScreen(
 fun PlanHeaderCard(
     plan: Plan,
     isCurrentActive: Boolean,
-    onClearSelection: () -> Unit
+    onClearSelection: () -> Unit,
+    onStop: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -154,6 +168,7 @@ fun PlanHeaderCard(
                         PlanStatus.COMPLETED -> AccentNeonGreen
                         PlanStatus.RUNNING -> AccentCyan
                         PlanStatus.FAILED -> AccentRed
+                        PlanStatus.CANCELLED -> Color(0xFFFFB300) // Amber, matches PlanStepCard's in-between/warning states
                         else -> TextSecondary
                     }
                     Box(
@@ -219,6 +234,32 @@ fun PlanHeaderCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Estimated duration", fontSize = 10.sp, color = TextSecondary)
                     Text(plan.estimatedDuration, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            }
+
+            if (isCurrentActive && plan.status == PlanStatus.RUNNING) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Divider(color = BorderColor)
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onStop,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed, contentColor = TextPrimary),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "STOP TASK",
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.sp
+                    )
                 }
             }
         }
@@ -312,12 +353,14 @@ fun PastPlanRow(
                 imageVector = when (plan.status) {
                     PlanStatus.COMPLETED -> Icons.Default.Check
                     PlanStatus.FAILED -> Icons.Default.Close
+                    PlanStatus.CANCELLED -> Icons.Default.Cancel
                     else -> Icons.Default.Info
                 },
                 contentDescription = plan.status.name,
                 tint = when (plan.status) {
                     PlanStatus.COMPLETED -> AccentNeonGreen
                     PlanStatus.FAILED -> AccentRed
+                    PlanStatus.CANCELLED -> Color(0xFFFFB300) // Amber, matches PlanHeaderCard's CANCELLED color
                     else -> TextSecondary
                 },
                 modifier = Modifier.size(16.dp)

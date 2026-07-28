@@ -85,6 +85,17 @@ class IntentClassifier @Inject constructor(
     fun classifyComplexity(query: String): QueryComplexity {
         val lowercaseQuery = query.lowercase()
 
+        // ── Fast-path: "open youtube and search X" / "youtube search X" /
+        //    "search X on youtube" style phrasings. These LOOK compound (an "and"
+        //    with an action verb on both sides, e.g. "open" + "search") and would
+        //    otherwise fall through to the LLM planner, which has no way to wait for
+        //    YouTube to cold-start or submit a typed search. AliasResolver resolves
+        //    the exact same phrasing straight to the working single-shot PLAY_YOUTUBE
+        //    action, so this must be checked BEFORE the compound-indicator check below.
+        if (AliasResolver.extractYoutubeQuery(lowercaseQuery) != null) {
+            return QueryComplexity.SIMPLE
+        }
+
         // Check for compound indicators FIRST — these always indicate multi-step tasks
         val compoundIndicators = listOf(
             " and then ", " then ", " after that ", " after ",

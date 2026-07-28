@@ -1029,6 +1029,29 @@ object ActionSchema {
             examples = listOf("click at position"),
             category = ActionCategory.ADVANCED
         ),
+        ActionDefinition(
+            name = "PRESS_ENTER",
+            description = """Performs the IME 'enter/search/go' action on the currently
+                focused text field to submit it. ALWAYS use this after TYPE_TEXT or
+                TYPE_ID when the goal is to run a search — typing text alone does not
+                submit it.""",
+            params = emptyList(),
+            examples = listOf("press enter", "submit the search", "press search"),
+            category = ActionCategory.ADVANCED
+        ),
+        ActionDefinition(
+            name = "WAIT",
+            description = """Pauses plan execution for a short duration. Use this right
+                after OPEN_APP (or any app-launch step) so the app finishes loading
+                before the next step tries to CLICK_TEXT/TYPE_TEXT into it — those
+                actions look for UI elements once and fail if the app is still
+                cold-starting. Capped at 10 seconds.""",
+            params = listOf(
+                ParamDefinition("durationMs", ParamType.INT, false, "Milliseconds to wait, max 10000", defaultValue = 2000)
+            ),
+            examples = listOf("wait 2 seconds", "wait for the app to load", "pause for a moment"),
+            category = ActionCategory.ADVANCED
+        ),
 
         // ── AGENT ───────────────────────────────────────
 
