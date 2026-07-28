@@ -5,9 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.data.repository.ConversationRepository
+import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,8 +24,12 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val agentLoop: AgentLoop,
-    private val conversationRepository: ConversationRepository
+    private val conversationRepository: ConversationRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
+
+    val llmConfig: StateFlow<LLMConfig> = settingsRepository.llmConfig
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LLMConfig())
 
     // Scoped to whichever session is current; re-collects automatically when the
     // user switches chats since the repository's flow is driven off the same
@@ -134,9 +142,25 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun approvePlan(context: Context) {
+    fun approvePlan(context: Context, grants: Set<String> = emptySet()) {
         pinTaskSessionSnapshot()
-        agentLoop.approveProposedPlan(context)
+        agentLoop.approveProposedPlan(context, grants)
+    }
+
+    /** Chip tap: Off <-> Auto only. YOLO is entered solely from Settings behind
+     *  its warning dialog and exits to OFF from here (tapping the red chip is
+     *  an explicit "get me out of YOLO", which is always safe). */
+    fun cycleAutoMode() {
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                val next = when (current.resolvedAutoMode()) {
+                    AutoMode.OFF -> AutoMode.AUTO
+                    AutoMode.AUTO -> AutoMode.OFF
+                    AutoMode.YOLO -> AutoMode.OFF
+                }
+                current.copy(autoMode = next, autoConfirmPlans = next == AutoMode.YOLO)
+            }
+        }
     }
 
     fun rejectPlan() {

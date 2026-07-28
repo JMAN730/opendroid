@@ -1,6 +1,7 @@
 package com.opendroid.ai.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +33,10 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveGrantedActions
+import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.google.mlkit.genai.prompt.*
@@ -1383,33 +1387,107 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Auto-Execute Plans",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "Run planned actions automatically without requiring manual approval.",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
-                                )
+                        var showYoloWarning by remember { mutableStateOf(false) }
+                        val autoMode = config.resolvedAutoMode()
+
+                        Text(
+                            text = "Auto Mode",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Auto runs plans whose every step you've allowed. YOLO runs everything without asking.",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AutoMode.entries.forEach { mode ->
+                                val selected = autoMode == mode
+                                val accent = if (mode == AutoMode.YOLO) AccentRed else AccentNeonGreen
+                                OutlinedButton(
+                                    onClick = {
+                                        if (mode == AutoMode.YOLO && !selected) showYoloWarning = true
+                                        else viewModel.setAutoMode(mode)
+                                    },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = if (selected) accent else TextSecondary
+                                    ),
+                                    border = BorderStroke(1.dp, if (selected) accent else BorderColor),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = when (mode) {
+                                            AutoMode.OFF -> "Off"
+                                            AutoMode.AUTO -> "Auto"
+                                            AutoMode.YOLO -> "YOLO"
+                                        },
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
                             }
-                            Switch(
-                                checked = config.autoConfirmPlans,
-                                onCheckedChange = { viewModel.updateAutoConfirmPlans(it) },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = AccentNeonGreen,
-                                    checkedTrackColor = AccentNeonGreen.copy(alpha = 0.5f)
-                                )
+                        }
+
+                        if (showYoloWarning) {
+                            AlertDialog(
+                                onDismissRequest = { showYoloWarning = false },
+                                containerColor = DarkSurface,
+                                title = { Text("Enable YOLO mode?", color = AccentRed, fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Text(
+                                        "YOLO runs EVERY plan without asking — including actions that " +
+                                        "spend money (UPI payments, food and cab orders) and irreversible " +
+                                        "ones (installing apps, deleting files, restarting the device). " +
+                                        "Only per-action safety confirmations remain.",
+                                        color = TextPrimary
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showYoloWarning = false
+                                        viewModel.setAutoMode(AutoMode.YOLO)
+                                    }) { Text("I understand, enable", color = AccentRed) }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showYoloWarning = false }) {
+                                        Text("Cancel", color = TextSecondary)
+                                    }
+                                }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "ALLOWED ACTIONS (${config.effectiveGrantedActions().size})",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val dateFormat = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()) }
+                        config.effectiveGrantedActions().entries
+                            .sortedBy { it.key }
+                            .forEach { (action, grantedAt) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = action, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                        Text(
+                                            text = if (grantedAt == 0L) "Default" else "Granted ${dateFormat.format(java.util.Date(grantedAt))}",
+                                            fontSize = 11.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                    TextButton(onClick = { viewModel.revokeGrant(action) }) {
+                                        Text("Revoke", color = AccentRed, fontSize = 12.sp)
+                                    }
+                                }
+                            }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Box(

@@ -46,8 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.core.agent.AutoApprovalPolicy
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.effectiveGrantedActions
+import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.ui.components.ContactPickerCard
 import com.opendroid.ai.ui.theme.*
@@ -76,6 +80,7 @@ fun ChatScreen(
     // chat is currently displayed - drives the chat-picker's "still running" indicator.
     val runningSessionId by viewModel.runningSessionId.collectAsState()
     val sessions by viewModel.sessions.collectAsState()
+    val llmConfig by viewModel.llmConfig.collectAsState()
     val currentSessionId = sessions.firstOrNull { it.isCurrent }?.id
     val runningElsewhere = runningSessionId != null && runningSessionId != currentSessionId
 
@@ -197,6 +202,30 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    val autoMode = llmConfig.resolvedAutoMode()
+                    val chipColor = when (autoMode) {
+                        AutoMode.OFF -> TextSecondary
+                        AutoMode.AUTO -> AccentNeonGreen
+                        AutoMode.YOLO -> AccentRed
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.cycleAutoMode() },
+                        border = BorderStroke(1.dp, chipColor.copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = chipColor),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text(
+                            text = when (autoMode) {
+                                AutoMode.OFF -> "MANUAL"
+                                AutoMode.AUTO -> "AUTO"
+                                AutoMode.YOLO -> "YOLO"
+                            },
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     IconButton(onClick = { viewModel.newChat() }) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -354,10 +383,17 @@ fun ChatScreen(
                 // user could approve/reject the wrong chat's plan without realizing it.
                 if (visibleAgentState is AgentState.PlanProposed) {
                     val proposedPlan = (visibleAgentState as AgentState.PlanProposed).plan
+                    val blocked = if (llmConfig.resolvedAutoMode() == AutoMode.AUTO) {
+                        AutoApprovalPolicy.blockedActions(
+                            llmConfig.effectiveGrantedActions().keys, proposedPlan.steps
+                        )
+                    } else emptyList()
                     ProposedPlanPrompt(
                         goal = proposedPlan.goal,
                         stepsCount = proposedPlan.estimatedSteps,
-                        onApprove = { viewModel.approvePlan(context) },
+                        blockedActions = blocked,
+                        grantableActions = blocked.filter { AutoApprovalPolicy.isGrantable(it) }.toSet(),
+                        onApprove = { grants -> viewModel.approvePlan(context, grants) },
                         onReject = { viewModel.rejectPlan() }
                     )
                 }
@@ -804,9 +840,12 @@ fun ThinkingBubble() {
 fun ProposedPlanPrompt(
     goal: String,
     stepsCount: Int,
-    onApprove: () -> Unit,
+    blockedActions: List<String> = emptyList(),
+    grantableActions: Set<String> = emptySet(),
+    onApprove: (Set<String>) -> Unit,
     onReject: () -> Unit
 ) {
+    var checkedGrants by remember { mutableStateOf(setOf<String>()) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -845,6 +884,41 @@ fun ProposedPlanPrompt(
                 fontSize = 12.sp,
                 color = TextSecondary
             )
+            if (blockedActions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "BLOCKED AUTO-RUN — these steps aren't in your allowlist:",
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = AccentRed
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                blockedActions.forEach { action ->
+                    if (action in grantableActions) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = action in checkedGrants,
+                                onCheckedChange = { checked ->
+                                    checkedGrants = if (checked) checkedGrants + action else checkedGrants - action
+                                },
+                                colors = CheckboxDefaults.colors(checkedColor = AccentNeonGreen)
+                            )
+                            Text(
+                                text = "Always allow $action",
+                                fontSize = 13.sp,
+                                color = TextPrimary
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "• $action (always asks)",
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(start = 12.dp, top = 4.dp)
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -860,7 +934,7 @@ fun ProposedPlanPrompt(
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
-                    onClick = onApprove,
+                    onClick = { onApprove(checkedGrants) },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
                     shape = RoundedCornerShape(8.dp)
                 ) {
