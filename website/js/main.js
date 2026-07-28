@@ -8,7 +8,7 @@
   const updateA11y = () => {
     const isLight = root.getAttribute('data-theme') === 'light';
     toggle.setAttribute('aria-pressed', String(isLight));
-    toggle.setAttribute('aria-label', isLight ? 'Activer le mode sombre' : 'Activer le mode clair');
+    toggle.setAttribute('aria-label', isLight ? 'Enable dark mode' : 'Enable light mode');
   };
   updateA11y();
 
@@ -68,10 +68,6 @@ document.querySelectorAll('.faq-question').forEach(btn => {
 const navbar = document.getElementById('navbar');
 if (navbar) {
   window.addEventListener('scroll', () => {
-    if (window.scrollY > 10) {
-      navbar.style.boxShadow = '0 1px 8px rgba(0,0,0,0.06)';
-    } else {
-      navbar.style.boxShadow = 'none';
-    }
+    navbar.classList.toggle('scrolled', window.scrollY > 10);
   });
 }
