@@ -51,7 +51,13 @@ data class OnDeviceModelSpec(
     /** Whether this model is the recommended default for its backend. */
     val isRecommended: Boolean = false,
     /** Minimum Android SDK level required by this model variant. */
-    val minSdk: Int = 26
+    val minSdk: Int = 26,
+    /**
+     * Total token capacity (input + output) of the model's KV cache, e.g. 1280
+     * for a `...ekv1280.task` file. The LiteRT engine's `maxNumTokens` must be
+     * sized from this — exceeding it crashes natively.
+     */
+    val contextWindow: Int = 1280
 )
 
 /**
@@ -98,7 +104,8 @@ object OnDeviceModelRegistry {
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
             authRequired = true,
             isRecommended = true,
-            minSdk = 31
+            minSdk = 31,
+            contextWindow = 4096
         ),
         OnDeviceModelSpec(
             id = "gemma-4-e4b-it-litert",
@@ -111,7 +118,8 @@ object OnDeviceModelRegistry {
             expectedSize = 3660000000L,
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm",
             authRequired = true,
-            minSdk = 31
+            minSdk = 31,
+            contextWindow = 4096
         ),
         OnDeviceModelSpec(
             id = "gemma-3n-e2b-it-litert",
@@ -124,7 +132,8 @@ object OnDeviceModelRegistry {
             expectedSize = 2000000000L,  // TODO: Replace with actual published artifact size
             licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
             authRequired = true,
-            minSdk = 31
+            minSdk = 31,
+            contextWindow = 4096
         ),
         OnDeviceModelSpec(
             id = "gemma-3n-e4b-it-litert",
@@ -137,7 +146,8 @@ object OnDeviceModelRegistry {
             expectedSize = 4000000000L,  // TODO: Replace with actual published artifact size
             licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
             authRequired = true,
-            minSdk = 31
+            minSdk = 31,
+            contextWindow = 4096
         ),
         OnDeviceModelSpec(
             id = "qwen-2.5-0.5b-it-litert",
@@ -151,7 +161,8 @@ object OnDeviceModelRegistry {
             sha256 = "e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2",
             licenseUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
             authRequired = false,
-            minSdk = 26
+            minSdk = 26,
+            contextWindow = 1280
         )
     )
 
