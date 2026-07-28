@@ -6,7 +6,10 @@ data class ActionDefinition(
     val params: List<ParamDefinition>,
     val examples: List<String>,
     val category: ActionCategory,
-    val isSimple: Boolean = true
+    val isSimple: Boolean = true,
+    // Moves money or has irreversible/destructive consequence: always show the
+    // approval modal in Auto mode, never offer an "Always allow" grant.
+    val neverAutoApprove: Boolean = false
 )
 
 data class ParamDefinition(
@@ -194,7 +197,8 @@ object ActionSchema {
             params = emptyList(),
             examples = listOf("restart phone", "reboot device"),
             category = ActionCategory.SYSTEM,
-            isSimple = false
+            isSimple = false,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "SET_WALLPAPER",
@@ -215,7 +219,8 @@ object ActionSchema {
             description = "Opens Play Store to install an app",
             params = listOf(ParamDefinition("appName", ParamType.STRING, true, "App name to install")),
             examples = listOf("install telegram", "download app"),
-            category = ActionCategory.SYSTEM
+            category = ActionCategory.SYSTEM,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "GET_SYSTEM_INFO",
@@ -301,7 +306,8 @@ object ActionSchema {
             description = "Opens browser settings to clear browsing data (history, cache, cookies)",
             params = emptyList(),
             examples = listOf("clear browser history", "clear cache", "clear browsing data", "delete browser data"),
-            category = ActionCategory.SYSTEM
+            category = ActionCategory.SYSTEM,
+            neverAutoApprove = true
         ),
 
         // ── COMMUNICATION ───────────────────────────────
@@ -606,7 +612,8 @@ object ActionSchema {
                 ParamDefinition("rideType", ParamType.STRING, false, "Ride type")
             ),
             examples = listOf("book uber to airport", "get cab to office"),
-            category = ActionCategory.TRANSPORT
+            category = ActionCategory.TRANSPORT,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "BOOK_OLA",
@@ -617,7 +624,8 @@ object ActionSchema {
                 ParamDefinition("rideType", ParamType.STRING, false, "Ride type")
             ),
             examples = listOf("book ola to station", "ola cab to mall"),
-            category = ActionCategory.TRANSPORT
+            category = ActionCategory.TRANSPORT,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "GET_DIRECTIONS",
@@ -739,7 +747,8 @@ object ActionSchema {
             ),
             examples = listOf("order pizza", "order food from zomato"),
             category = ActionCategory.SHOPPING,
-            isSimple = false
+            isSimple = false,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "ORDER_GROCERY",
@@ -750,7 +759,8 @@ object ActionSchema {
             ),
             examples = listOf("order milk from blinkit", "buy groceries"),
             category = ActionCategory.SHOPPING,
-            isSimple = false
+            isSimple = false,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "SEARCH_AMAZON",
@@ -814,7 +824,8 @@ object ActionSchema {
             description = "Locks a smart door lock",
             params = listOf(ParamDefinition("location", ParamType.STRING, false, "Door location", defaultValue = "front door")),
             examples = listOf("lock the front door", "lock door"),
-            category = ActionCategory.SMART_HOME
+            category = ActionCategory.SMART_HOME,
+            neverAutoApprove = true
         ),
 
         // ── FINANCE ─────────────────────────────────────
@@ -830,7 +841,8 @@ object ActionSchema {
             ),
             examples = listOf("pay 500 to John", "send 200 rupees to dad"),
             category = ActionCategory.FINANCE,
-            isSimple = false
+            isSimple = false,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "CHECK_BALANCE",
@@ -915,7 +927,8 @@ object ActionSchema {
             params = listOf(ParamDefinition("filePath", ParamType.STRING, true, "File path to delete")),
             examples = listOf("delete file"),
             category = ActionCategory.ADVANCED,
-            isSimple = false
+            isSimple = false,
+            neverAutoApprove = true
         ),
         ActionDefinition(
             name = "CREATE_DIRECTORY",
@@ -1118,6 +1131,10 @@ object ActionSchema {
     /** Get simple actions (never need a plan) */
     fun getSimpleActions(): List<String> =
         ALL_ACTIONS.filter { it.isSimple }.map { it.name }
+
+    /** Check if action should never be auto-approved (moves money or irreversible) */
+    fun isNeverAutoApprove(actionName: String): Boolean =
+        ALL_ACTIONS.firstOrNull { it.name == actionName }?.neverAutoApprove ?: false
 
     /**
      * Build strict schema text for LLM prompt.
