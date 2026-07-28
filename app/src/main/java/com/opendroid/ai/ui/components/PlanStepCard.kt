@@ -45,9 +45,17 @@ fun getDisplayState(step: PlanStep): StepDisplayState {
 @Composable
 fun PlanStepCard(
     step: PlanStep,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    editable: Boolean = false,
+    onSaveEdit: (description: String, params: Map<String, String>) -> Unit = { _, _ -> },
+    onDeleteStep: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var isEditing by remember(step.stepId) { mutableStateOf(false) }
+    var editDescription by remember(step.stepId, isEditing) { mutableStateOf(step.description) }
+    var editParams by remember(step.stepId, isEditing) {
+        mutableStateOf(step.params.map { (key, value) -> key to value })
+    }
     val displayState = getDisplayState(step)
 
     val statusColor = when (displayState) {
@@ -67,7 +75,7 @@ fun PlanStepCard(
         modifier = modifier
             .fillMaxWidth()
             .border(1.dp, statusBorderColor, RoundedCornerShape(12.dp))
-            .clickable { expanded = !expanded },
+            .clickable(enabled = !isEditing) { expanded = !expanded },
         colors = CardDefaults.cardColors(containerColor = CardBackground)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -106,25 +114,169 @@ fun PlanStepCard(
                     )
                 }
 
-                // Step status icon
-                Icon(
-                    imageVector = when (displayState) {
-                        StepDisplayState.COMPLETED -> Icons.Default.CheckCircle
-                        StepDisplayState.RUNNING -> Icons.Default.Refresh
-                        StepDisplayState.FAILED -> Icons.Default.Close
-                        StepDisplayState.AUTO_FIXING -> Icons.Default.Build
-                        StepDisplayState.REPAIRED -> Icons.Default.CheckCircle
-                        StepDisplayState.SKIPPED -> Icons.Default.ArrowForward
-                        StepDisplayState.BLOCKED -> Icons.Default.Warning
-                        StepDisplayState.PENDING -> Icons.Default.PlayArrow
-                    },
-                    contentDescription = displayState.name,
-                    tint = statusColor,
-                    modifier = Modifier.size(18.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (editable && !isEditing) {
+                        IconButton(
+                            onClick = { isEditing = true },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit step",
+                                tint = AccentCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onDeleteStep,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete step",
+                                tint = AccentRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // Step status icon
+                    Icon(
+                        imageVector = when (displayState) {
+                            StepDisplayState.COMPLETED -> Icons.Default.CheckCircle
+                            StepDisplayState.RUNNING -> Icons.Default.Refresh
+                            StepDisplayState.FAILED -> Icons.Default.Close
+                            StepDisplayState.AUTO_FIXING -> Icons.Default.Build
+                            StepDisplayState.REPAIRED -> Icons.Default.CheckCircle
+                            StepDisplayState.SKIPPED -> Icons.Default.ArrowForward
+                            StepDisplayState.BLOCKED -> Icons.Default.Warning
+                            StepDisplayState.PENDING -> Icons.Default.PlayArrow
+                        },
+                        contentDescription = displayState.name,
+                        tint = statusColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(visible = isEditing) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text("Action Module: ${step.action}", fontSize = 11.sp, color = AccentPurple, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = editDescription,
+                        onValueChange = { editDescription = it },
+                        label = { Text("Step Description", fontSize = 11.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentNeonGreen,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Parameters", fontSize = 11.sp, color = TextSecondary)
+
+                    editParams.forEachIndexed { index, (key, value) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = key,
+                                onValueChange = { newKey ->
+                                    editParams = editParams.toMutableList().also { it[index] = newKey to value }
+                                },
+                                label = { Text("Key", fontSize = 10.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AccentNeonGreen,
+                                    unfocusedBorderColor = BorderColor,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { newValue ->
+                                    editParams = editParams.toMutableList().also { it[index] = key to newValue }
+                                },
+                                label = { Text("Value", fontSize = 10.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AccentNeonGreen,
+                                    unfocusedBorderColor = BorderColor,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { editParams = editParams.toMutableList().also { it.removeAt(index) } },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove parameter",
+                                    tint = AccentRed,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { editParams = editParams + ("" to "") },
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = AccentCyan,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Parameter", fontSize = 11.sp, color = AccentCyan)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { isEditing = false }) {
+                            Text("Cancel", color = TextSecondary)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val cleanedParams = editParams
+                                    .map { (k, v) -> k.trim() to v }
+                                    .filter { it.first.isNotEmpty() }
+                                    .toMap()
+                                val cleanedDescription = editDescription.trim().ifEmpty { step.description }
+                                onSaveEdit(cleanedDescription, cleanedParams)
+                                isEditing = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = expanded && !isEditing) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
                     

@@ -8,6 +8,7 @@ import com.opendroid.ai.data.repository.MemoryRepository
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -28,12 +29,28 @@ class MemoryManager @Inject constructor(
 ) {
     private val json = Json { prettyPrint = true }
 
+    /** Stores [message] into whichever session is current at call time. */
     suspend fun storeMessage(message: ChatMessage) {
         workingMemory.addMessage(message)
         episodicMemory.storeMessage(message)
 
         // Automatically extract facts from the latest conversation turn
         val recent = conversationRepository.getLastMessages(5)
+        extractFacts(recent)
+    }
+
+    /**
+     * Stores [message] into [sessionId] specifically. Use this from a caller that has
+     * already pinned a session for a whole task (see AgentLoop) so the write - and the
+     * fact-extraction context it triggers - can't drift to whichever chat happens to be
+     * current by the time this call actually runs.
+     */
+    suspend fun storeMessage(message: ChatMessage, sessionId: String) {
+        workingMemory.addMessage(message)
+        episodicMemory.storeMessage(message, sessionId)
+
+        // Automatically extract facts from the latest conversation turn
+        val recent = conversationRepository.getLastMessages(sessionId, 5)
         extractFacts(recent)
     }
 
@@ -82,9 +99,13 @@ class MemoryManager @Inject constructor(
         // Notification intelligence context
         val notifSummary = try {
             notificationIntelligence.getRecentNotificationSummary(5)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { "" }
         val learnedPatterns = try {
             notificationIntelligence.getLearnedPatterns()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { "" }
         val notifSection = if (notifSummary.isNotBlank() || learnedPatterns.isNotBlank()) {
             // Notification text is written by third parties — mark it untrusted so
@@ -140,7 +161,11 @@ class MemoryManager @Inject constructor(
             workingMemory.clear()
         }
         if (type == MemoryType.EPISODIC) {
-            conversationRepository.clearAll()
+            // The Memory tab's episodic clear is labeled as wiping history outright, so it
+            // must hit every chat, not just whichever one happens to be current right now.
+            // Clearing only the current chat is ChatViewModel.clearChat()'s job, via
+            // ConversationRepository.clearCurrentSession().
+            conversationRepository.clearAllSessions()
         }
         if (type == MemoryType.PROCEDURAL) {
             memoryRepository.clearAllMacros()

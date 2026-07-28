@@ -44,7 +44,6 @@ class LiteRTLMProvider @Inject constructor(
 
     companion object {
         private const val TAG = "LiteRTLMProvider"
-        private const val MODELS_DIR = "litert_models"
     }
 
     override val name: String = "LiteRT-LM (On-device)"
@@ -63,27 +62,18 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     /**
-     * Returns the local file path where a model should be stored.
+     * Returns the local file path where a model should be stored / loaded from.
      */
     private fun getModelFilePath(spec: OnDeviceModelSpec): String {
-        val folderName = when (spec.id) {
-            "gemma-4-e2b-it-litert" -> "Gemma4-E2B"
-            "gemma-4-e4b-it-litert" -> "Gemma4-E4B"
-            "gemma-3n-e2b-it-litert" -> "Gemma3n-E2B"
-            "gemma-3n-e4b-it-litert" -> "Gemma3n-E4B"
-            else -> spec.id.replace("-", "").replace("litert", "").replace("it", "")
-        }
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-        val modelDir = File(File(baseDir, "models"), folderName)
-        val taskFile = File(modelDir, "model.task")
-        if (taskFile.exists() && taskFile.length() > 0) {
-            return taskFile.absolutePath
+        val modelDir = ModelStoragePaths.modelDir(File(baseDir, "models"), spec.id)
+        if (!modelDir.exists()) modelDir.mkdirs()
+
+        ModelStoragePaths.resolveExistingFile(modelDir, spec)?.let { existing ->
+            return existing.absolutePath
         }
 
-        // Legacy path fallback
-        val modelsDir = File(context.filesDir, MODELS_DIR)
-        if (!modelsDir.exists()) modelsDir.mkdirs()
-        return File(modelsDir, "${spec.id}.litertlm").absolutePath
+        return ModelStoragePaths.targetFile(modelDir, spec).absolutePath
     }
 
     /**
@@ -172,7 +162,7 @@ class LiteRTLMProvider @Inject constructor(
                         ?: emptyList()
                 )
 
-                val outputText = invokeLiteRTInference(modelPath, prompt, request.maxTokens, request.temperature)
+                val outputText = invokeLiteRTInference(modelPath, spec, prompt, request.maxTokens, request.temperature)
 
                 LLMResponse(
                     content = outputText,
@@ -202,8 +192,9 @@ class LiteRTLMProvider @Inject constructor(
                     ?: emptyList()
             )
 
-            val engine = getOrInitializeEngine(modelPath, request.maxTokens)
-            
+            checkPromptFits(prompt, spec, request.maxTokens)
+            val engine = getOrInitializeEngine(modelPath, spec)
+
             val samplerConfig = SamplerConfig(
                 topK = 40,
                 topP = 0.95,
@@ -242,7 +233,7 @@ class LiteRTLMProvider @Inject constructor(
             val systemPrompt = "You are an autonomous AI agent for Android."
             val prompt = buildPrompt(systemPrompt, messages, tools)
 
-            val result = invokeLiteRTInference(modelPath, prompt, 2000, 0.7f)
+            val result = invokeLiteRTInference(modelPath, spec, prompt, 2000, 0.7f)
             emit(StreamChunk.Content(result))
 
             // Attempt tool call extraction from JSON response
@@ -386,7 +377,7 @@ class LiteRTLMProvider @Inject constructor(
      * call through to the real engine.
      */
     @Synchronized
-    private fun getOrInitializeEngine(modelPath: String, maxTokens: Int): Engine {
+    private fun getOrInitializeEngine(modelPath: String, spec: OnDeviceModelSpec): Engine {
         if (cachedModelPath != modelPath) {
             Log.i(TAG, "[INIT FLOW] Active model path changed from '$cachedModelPath' to '$modelPath'. Resetting cached engine.")
             closeCachedEngine()
@@ -395,12 +386,17 @@ class LiteRTLMProvider @Inject constructor(
         var engine = cachedEngine
         if (engine == null) {
             verifyModelFileIntegrity(modelPath)
-            
-            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath")
+
+            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: ${spec.contextWindow}")
+            // maxNumTokens is the TOTAL token capacity (input + output) of the
+            // engine. It must match the model's KV-cache size (spec.contextWindow),
+            // NOT a request's output-token budget — undersizing it makes the native
+            // runtime abort (force close) as soon as a prompt exceeds it.
             val config = EngineConfig(
                 modelPath = modelPath,
                 backend = Backend.CPU(), // Run on CPU for compatibility
-                maxNumTokens = maxTokens
+                maxNumTokens = spec.contextWindow,
+                cacheDir = context.cacheDir.absolutePath
             )
             
             Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
@@ -418,14 +414,31 @@ class LiteRTLMProvider @Inject constructor(
         return engine
     }
 
+    /**
+     * Verifies the prompt fits the model's context window BEFORE handing it to
+     * the native runtime. LiteRT-LM aborts the whole process (native SIGABRT,
+     * not a catchable exception) when the prompt overflows the engine's token
+     * capacity — this guard turns that force close into a normal error message.
+     */
+    private fun checkPromptFits(prompt: String, spec: OnDeviceModelSpec, requestedMaxTokens: Int): Int {
+        return PromptBudget.outputBudget(prompt, spec.contextWindow, requestedMaxTokens)
+            ?: throw IllegalStateException(
+                "This conversation is too long for ${spec.displayName} " +
+                "(~${PromptBudget.estimateTokens(prompt)} tokens, limit ${spec.contextWindow}). " +
+                "Start a new chat, shorten the message, or switch to a larger model."
+            )
+    }
+
     @Synchronized
     private fun invokeLiteRTInference(
         modelPath: String,
+        spec: OnDeviceModelSpec,
         prompt: String,
         maxTokens: Int,
         temperature: Float
     ): String {
         try {
+            checkPromptFits(prompt, spec, maxTokens)
             // 1. Verify LiteRT library classes / static classpath integrity
             Log.i(TAG, "[INIT FLOW] [STEP 1/6] Verifying LiteRT SDK classes on classpath...")
             // Compiles statically with com.google.ai.edge.litertlm.*
@@ -451,7 +464,7 @@ class LiteRTLMProvider @Inject constructor(
             // 3 & 4. Verify options configuration & engine initialization
             Log.i(TAG, "[INIT FLOW] [STEP 3/6 & 4/6] Creating & Initializing Engine...")
             val engine = try {
-                getOrInitializeEngine(modelPath, maxTokens)
+                getOrInitializeEngine(modelPath, spec)
             } catch (e: LinkageError) {
                 Log.e(TAG, "[INIT FLOW] [FAILURE] JNI native library failed to load (liblitertlm_jni.so)", e)
                 throw UnsatisfiedLinkError("LiteRT JNI native library failed to load (liblitertlm_jni.so). Error: ${e.localizedMessage}")

@@ -3,6 +3,7 @@ package com.opendroid.ai.di
 import android.content.Context
 import androidx.room.Room
 import com.opendroid.ai.data.db.OpenDroidDatabase
+import com.opendroid.ai.data.db.dao.ChatSessionDao
 import com.opendroid.ai.data.db.dao.ConversationDao
 import com.opendroid.ai.data.db.dao.MacroDao
 import com.opendroid.ai.data.db.dao.MemoryDao
@@ -35,7 +36,8 @@ object DatabaseModule {
             OpenDroidDatabase.MIGRATION_1_2,
             OpenDroidDatabase.MIGRATION_2_3,
             OpenDroidDatabase.MIGRATION_3_4,
-            OpenDroidDatabase.MIGRATION_4_5
+            OpenDroidDatabase.MIGRATION_4_5,
+            OpenDroidDatabase.MIGRATION_5_6
         )
         .fallbackToDestructiveMigration()
         .build()
@@ -44,6 +46,10 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideConversationDao(db: OpenDroidDatabase): ConversationDao = db.conversationDao()
+
+    @Provides
+    @Singleton
+    fun provideChatSessionDao(db: OpenDroidDatabase): ChatSessionDao = db.chatSessionDao()
 
     @Provides
     @Singleton

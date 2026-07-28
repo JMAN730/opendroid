@@ -2,7 +2,9 @@ package com.opendroid.ai.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 
+import com.opendroid.ai.core.llm.ImportLocalModelResult
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
 import android.content.Context
@@ -154,8 +157,13 @@ class SettingsViewModel @Inject constructor(
     fun importLocalModel(modelId: String, uri: android.net.Uri) {
         _localImportStatus.value = "Importing..."
         viewModelScope.launch {
-            val success = modelRepository.importLocalModel(modelId, uri)
-            _localImportStatus.value = if (success) "Success" else "Failed"
+            // Repository already switches to Dispatchers.IO; yield so "Importing..." can paint first.
+            when (val result = modelRepository.importLocalModel(modelId, uri)) {
+                is ImportLocalModelResult.Success ->
+                    _localImportStatus.value = "Success"
+                is ImportLocalModelResult.Failure ->
+                    _localImportStatus.value = result.reason
+            }
         }
     }
 
@@ -406,11 +414,24 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateAutoConfirmPlans(enabled: Boolean) {
-        _llmConfig.value = _llmConfig.value.copy(autoConfirmPlans = enabled)
+    fun setAutoMode(mode: AutoMode) {
+        _llmConfig.value = _llmConfig.value.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
         viewModelScope.launch {
             settingsRepository.updateConfig { current ->
-                current.copy(autoConfirmPlans = enabled)
+                current.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
+            }
+        }
+    }
+
+    /** Removes one grant. Writes the RESOLVED map minus the action, so the
+     *  first revoke also materializes the seeded defaults (a revoked default
+     *  must never come back on the next read). */
+    fun revokeGrant(action: String) {
+        val updated = _llmConfig.value.effectiveGrantedActions() - action
+        _llmConfig.value = _llmConfig.value.copy(grantedActions = updated)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                current.copy(grantedActions = current.effectiveGrantedActions() - action)
             }
         }
     }

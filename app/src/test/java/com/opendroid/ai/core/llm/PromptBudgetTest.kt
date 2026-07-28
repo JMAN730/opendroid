@@ -1,0 +1,67 @@
+package com.opendroid.ai.core.llm
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class PromptBudgetTest {
+
+    @Test
+    fun `estimateTokens uses 4 chars per token rounded up`() {
+        assertEquals(0, PromptBudget.estimateTokens(""))
+        assertEquals(1, PromptBudget.estimateTokens("hi"))
+        assertEquals(1, PromptBudget.estimateTokens("abcd"))
+        assertEquals(2, PromptBudget.estimateTokens("abcde"))
+        assertEquals(25, PromptBudget.estimateTokens("x".repeat(100)))
+    }
+
+    @Test
+    fun `outputBudget returns requested tokens when prompt leaves room`() {
+        // 100 chars ~= 25 tokens; context 1280 leaves plenty for 500 output tokens
+        val budget = PromptBudget.outputBudget(
+            prompt = "x".repeat(100),
+            contextWindow = 1280,
+            requestedOutputTokens = 500
+        )
+        assertEquals(500, budget)
+    }
+
+    @Test
+    fun `outputBudget clamps requested tokens to remaining context`() {
+        // 4000 chars ~= 1000 tokens; context 1280 leaves 280 for output
+        val budget = PromptBudget.outputBudget(
+            prompt = "x".repeat(4000),
+            contextWindow = 1280,
+            requestedOutputTokens = 1500
+        )
+        assertEquals(280, budget)
+    }
+
+    @Test
+    fun `outputBudget returns null when prompt fills the context window`() {
+        // 6000 chars ~= 1500 tokens > 1280 context: nothing left for output
+        val budget = PromptBudget.outputBudget(
+            prompt = "x".repeat(6000),
+            contextWindow = 1280,
+            requestedOutputTokens = 500
+        )
+        assertNull(budget)
+    }
+
+    @Test
+    fun `outputBudget returns null when remaining space is below the minimum useful output`() {
+        // 5000 chars ~= 1250 tokens; only 30 tokens left, below MIN_OUTPUT_TOKENS
+        val budget = PromptBudget.outputBudget(
+            prompt = "x".repeat(5000),
+            contextWindow = 1280,
+            requestedOutputTokens = 500
+        )
+        assertNull(budget)
+    }
+
+    @Test
+    fun `registry qwen spec carries its ekv1280 context window`() {
+        val qwen = OnDeviceModelRegistry.findById("qwen-2.5-0.5b-it-litert")!!
+        assertEquals(1280, qwen.contextWindow)
+    }
+}

@@ -12,6 +12,8 @@ import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.core.voice.TextToSpeechEngine
+import com.opendroid.ai.core.voice.VoiceApprovalIntent
+import com.opendroid.ai.core.voice.VoiceApprovalParser
 import com.opendroid.ai.core.voice.WakeWordDetector
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -38,6 +40,7 @@ class OpenDroidService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var showFloatingButton = false
+    @Volatile private var pendingApprovalListen = false
 
     companion object {
         const val ACTION_TRIGGER_RECORD = "com.opendroid.ai.action.TRIGGER_RECORD"
@@ -70,12 +73,20 @@ class OpenDroidService : Service() {
 
         // Set TTS completion listener to transition back to Idle
         textToSpeechEngine.onCompletionListener = {
-            agentLoop.setAgentState(AgentState.Idle)
+            // Only Speaking resets to Idle - speech that happens to play while a
+            // plan sits in PlanProposed must not knock the approval gate over.
+            if (agentLoop.agentState.value is AgentState.Speaking) {
+                agentLoop.setAgentState(AgentState.Idle)
+            }
+            if (pendingApprovalListen) {
+                pendingApprovalListen = false
+                startListeningForApproval()
+            }
         }
 
         // Start Foreground Notification
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        startForegroundCompat()
 
         // Monitor floating button config to start/stop wake word detection dynamically
         serviceScope.launch {
@@ -87,6 +98,58 @@ class OpenDroidService : Service() {
                     startWakeWordDetection()
                 }
             }
+        }
+
+        // Hands-free plan approval (upstream issue 18 spec, voice section):
+        // speak the prompt once per proposed plan; auto-listen for the reply
+        // only in wake-word mode, where the user is known to be voice-driven.
+        serviceScope.launch {
+            var promptedPlanId: String? = null
+            agentLoop.agentState.collectLatest { state ->
+                if (state is AgentState.PlanProposed && state.plan.planId != promptedPlanId) {
+                    promptedPlanId = state.plan.planId
+                    if (!showFloatingButton) {
+                        pendingApprovalListen = true
+                    }
+                    textToSpeechEngine.speak(
+                        "I've planned: ${state.plan.goal}, ${state.plan.estimatedSteps} steps. " +
+                        "Say approve to run, or cancel."
+                    )
+                }
+            }
+        }
+    }
+
+    private fun startForegroundCompat() {
+        val notification = createNotification()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Starting a microphone-type FGS without RECORD_AUDIO granted throws a
+            // SecurityException on Android 14+, and starting one from BOOT_COMPLETED is
+            // prohibited on Android 15 even with the permission. Fall back to specialUse
+            // until the microphone is actually usable.
+            val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val type = if (micGranted) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            }
+            try {
+                androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+            } catch (e: SecurityException) {
+                androidx.core.app.ServiceCompat.startForeground(
+                    this, NOTIFICATION_ID, notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            }
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.core.app.ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
@@ -128,6 +191,29 @@ class OpenDroidService : Service() {
                         startListeningForQuery()
                     }
                 }
+            }
+        )
+    }
+
+    /**
+     * One-shot reply capture after the spoken approval prompt. Unrecognized
+     * speech (or an error) is a deliberate no-op: the plan stays in
+     * PlanProposed with the visual modal still on screen. Never a grant path -
+     * nothing spoken may widen the allowlist.
+     */
+    private fun startListeningForApproval() {
+        wakeWordDetector.stopListening()
+        speechRecognitionEngine.startListening(
+            onResult = { utterance ->
+                when (VoiceApprovalParser.parse(utterance)) {
+                    VoiceApprovalIntent.APPROVE -> agentLoop.approveProposedPlan(this)
+                    VoiceApprovalIntent.REJECT -> agentLoop.rejectProposedPlan()
+                    VoiceApprovalIntent.NONE -> Unit
+                }
+                if (!showFloatingButton) startWakeWordDetection()
+            },
+            onError = { _ ->
+                if (!showFloatingButton) startWakeWordDetection()
             }
         )
     }

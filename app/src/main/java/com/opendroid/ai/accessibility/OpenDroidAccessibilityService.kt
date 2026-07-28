@@ -57,6 +57,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     private var isButtonAdded = false
     private var isDeviceLocked = false
     private var showFloatingButtonSetting = false
+    private val imeSubmitLabels = listOf("search", "go", "send", "done", "submit", "ok", "enter")
 
     /**
      * BroadcastReceiver that tracks device lock/unlock state.
@@ -476,6 +477,56 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                 return true
             }
             node.recycle()
+        }
+        return false
+    }
+
+    /**
+     * Performs the IME 'enter/search/go' action on the currently focused editable
+     * field — used to submit a search box after TYPE_TEXT/TYPE_ID types into it.
+     * Uses AccessibilityNodeInfo.ACTION_IME_ENTER on API 30+ (the only reliable way
+     * to trigger the IME action programmatically). On older API levels — or if that
+     * fails — falls back to tapping a nearby clickable control whose label reads like
+     * a submit action ("search", "go", "send", "done", "submit", "ok", "enter").
+     */
+    fun performImeEnter(): Boolean {
+        val focusedNode = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        val success = if (focusedNode != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    focusedNode.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                } else {
+                    false
+                }
+            } finally {
+                focusedNode.recycle()
+            }
+        } else {
+            false
+        }
+        return success || performSubmitFallback()
+    }
+
+    private fun performSubmitFallback(): Boolean {
+        val rootNode = rootInActiveWindow ?: return false
+        val result = findSubmitNode(rootNode, imeSubmitLabels)
+        rootNode.recycle()
+        return result
+    }
+
+    private fun findSubmitNode(node: AccessibilityNodeInfo, labels: List<String>): Boolean {
+        val text = node.text?.toString()?.lowercase()
+        val contentDesc = node.contentDescription?.toString()?.lowercase()
+        if (node.isClickable && (labels.contains(text) || labels.contains(contentDesc))) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (findSubmitNode(child, labels)) {
+                child.recycle()
+                return true
+            }
+            child.recycle()
         }
         return false
     }

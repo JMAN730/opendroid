@@ -1,6 +1,7 @@
 package com.opendroid.ai.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,7 +33,10 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveGrantedActions
+import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.google.mlkit.genai.prompt.*
@@ -65,13 +70,14 @@ fun SettingsScreen(
     onNavigateToAbout: () -> Unit = {},
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
+    onNavigateToPermissions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
-    
+
     val providers = listOf(
         "Google Gemini",
         "OpenAI",
@@ -1381,33 +1387,108 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Auto-Execute Plans",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "Run planned actions automatically without requiring manual approval.",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
-                                )
+                        var showYoloWarning by remember { mutableStateOf(false) }
+                        val autoMode = config.resolvedAutoMode()
+
+                        Text(
+                            text = "Auto Mode",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Auto runs plans whose every step you've allowed. YOLO runs everything without asking.",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AutoMode.entries.forEach { mode ->
+                                val selected = autoMode == mode
+                                val accent = if (mode == AutoMode.YOLO) AccentRed else AccentNeonGreen
+                                OutlinedButton(
+                                    onClick = {
+                                        if (mode == AutoMode.YOLO && !selected) showYoloWarning = true
+                                        else viewModel.setAutoMode(mode)
+                                    },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = if (selected) accent else TextSecondary
+                                    ),
+                                    border = BorderStroke(1.dp, if (selected) accent else BorderColor),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = when (mode) {
+                                            AutoMode.OFF -> "Off"
+                                            AutoMode.AUTO -> "Auto"
+                                            AutoMode.YOLO -> "YOLO"
+                                        },
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
                             }
-                            Switch(
-                                checked = config.autoConfirmPlans,
-                                onCheckedChange = { viewModel.updateAutoConfirmPlans(it) },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = AccentNeonGreen,
-                                    checkedTrackColor = AccentNeonGreen.copy(alpha = 0.5f)
-                                )
+                        }
+
+                        if (showYoloWarning) {
+                            AlertDialog(
+                                onDismissRequest = { showYoloWarning = false },
+                                containerColor = DarkSurface,
+                                title = { Text("Enable YOLO mode?", color = AccentRed, fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Text(
+                                        "YOLO runs EVERY plan without asking — including actions that " +
+                                        "spend money (UPI payments, food and cab orders) and irreversible " +
+                                        "ones (installing apps, deleting files, restarting the device). " +
+                                        "Only per-action safety confirmations remain.",
+                                        color = TextPrimary
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showYoloWarning = false
+                                        viewModel.setAutoMode(AutoMode.YOLO)
+                                    }) { Text("I understand, enable", color = AccentRed) }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showYoloWarning = false }) {
+                                        Text("Cancel", color = TextSecondary)
+                                    }
+                                }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        val grantedActions = config.effectiveGrantedActions()
+                        Text(
+                            text = "ALLOWED ACTIONS (${grantedActions.size})",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val dateFormat = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()) }
+                        grantedActions.entries
+                            .sortedBy { it.key }
+                            .forEach { (action, grantedAt) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = action, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                        Text(
+                                            text = if (grantedAt == 0L) "Default" else "Granted ${dateFormat.format(java.util.Date(grantedAt))}",
+                                            fontSize = 11.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                    TextButton(onClick = { viewModel.revokeGrant(action) }) {
+                                        Text("Revoke", color = AccentRed, fontSize = 12.sp)
+                                    }
+                                }
+                            }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Box(
@@ -1592,6 +1673,52 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "View captured notifications and auto-reply log.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Permissions link card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentNeonGreen.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToPermissions() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = "Permissions",
+                            tint = AccentNeonGreen,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "PERMISSIONS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentNeonGreen
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Review and grant microphone, storage, accessibility & other permissions.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
@@ -1895,17 +2022,19 @@ fun SettingsScreen(
     }
 
     if (localImportStatus != null) {
+        val isImporting = localImportStatus == "Importing..."
+        val isSuccess = localImportStatus == "Success"
         AlertDialog(
             onDismissRequest = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     viewModel.clearImportStatus()
                 }
             },
             title = {
                 Text(
-                    text = when (localImportStatus) {
-                        "Importing..." -> "Importing Model"
-                        "Success" -> "Import Successful"
+                    text = when {
+                        isImporting -> "Importing Model"
+                        isSuccess -> "Import Successful"
                         else -> "Import Failed"
                     },
                     color = TextPrimary
@@ -1913,23 +2042,27 @@ fun SettingsScreen(
             },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    when (localImportStatus) {
-                        "Importing..." -> {
+                    when {
+                        isImporting -> {
                             CircularProgressIndicator(color = Color(0xFFFF9800))
                             Spacer(modifier = Modifier.height(12.dp))
                             Text("Copying and verifying the model file. This may take a minute...", color = TextSecondary)
                         }
-                        "Success" -> {
+                        isSuccess -> {
                             Text("The model was imported and verified successfully. You can now load it.", color = TextSecondary)
                         }
                         else -> {
-                            Text("Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.", color = Color.Red)
+                            Text(
+                                text = localImportStatus
+                                    ?: "Failed to import model. Please make sure it is a valid LiteRT model file (.task or .litertlm) and is not corrupted.",
+                                color = Color.Red
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                if (localImportStatus != "Importing...") {
+                if (!isImporting) {
                     Button(
                         onClick = { viewModel.clearImportStatus() },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))

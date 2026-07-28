@@ -28,11 +28,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.delay
 
 @Singleton
 class AdvancedControlActions @Inject constructor() {
 
     companion object {
+        /** Hard ceiling for the WAIT action so a plan can never stall execution indefinitely. */
+        private const val MAX_WAIT_MS = 10_000L
+
         private fun hasStoragePermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Environment.isExternalStorageManager()
@@ -118,7 +122,9 @@ class AdvancedControlActions @Inject constructor() {
         TypeIdAction(),
         ScrollAction(),
         GetScreenTextAction(),
-        ClickCoordinatesAction()
+        ClickCoordinatesAction(),
+        PressEnterAction(),
+        WaitAction()
     )
 
     private class GetSystemInfoAction : Action {
@@ -524,6 +530,24 @@ class AdvancedControlActions @Inject constructor() {
             val y = params["y"]?.toFloatOrNull() ?: return ActionResult(false, null, "y coordinate is missing or invalid")
             val success = GenericAppAutomator.clickCoordinates(x, y)
             return ActionResult(success, if (success) "Tapped there!" else "Couldn't tap at that spot.", null)
+        }
+    }
+
+    private class PressEnterAction : Action {
+        override val name: String = "PRESS_ENTER"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val success = GenericAppAutomator.pressEnter()
+            return ActionResult(success, if (success) "Submitted!" else "Couldn't find a focused field to submit.", null)
+        }
+    }
+
+    private class WaitAction : Action {
+        override val name: String = "WAIT"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val requestedMs = params["durationMs"]?.toLongOrNull() ?: 2000L
+            val clampedMs = requestedMs.coerceIn(0L, MAX_WAIT_MS)
+            delay(clampedMs)
+            return ActionResult(true, "Waited ${clampedMs}ms.", null)
         }
     }
 

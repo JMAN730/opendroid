@@ -4,6 +4,40 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
+## v1.0.2 — Developer Pre-release (July 26, 2026)
+
+Developer-facing pre-release for sideload testing. Not a Play Store production upload.
+
+### Highlights since v1.0.1
+*   **UI Redesign**: Premium developer-tool palette and iconography upgrade.
+*   **Security Hardening**: Strengthened storage, auto-reply handling, and release build signing posture.
+*   **Package ID**: `applicationId` updated to `com.opendroid.aiagent` (includes Play Store verification token).
+*   **QA Fixes**: Planner, timers, and settings fixes from review / QA reports.
+*   **Toolchain Alignment**: Android SDK 35, Java 21, Kotlin 2.4.0, Hilt 2.58, Room 2.8.4.
+
+### Release Assets
+*   **`app-release.apk`** — Signed release APK (sideload for testing).
+*   **`app-release.aab`** — Signed Android App Bundle.
+
+### Checksums (SHA-256)
+*   **`app-release.apk`**: `b55b49edecec8fa692ae9a4486462a7b9a7a2542cac78b426da56be67156d35a`
+*   **`app-release.aab`**: `3cd79bbc4cd9f8705bcf515b4991ea3a364f9367794e5a55a72ef0feaf6bfb67`
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 3
+*   **Version Name**: 1.0.2
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 35 (Android 15)
+
+### Install notes for testers
+1. Download `app-release.apk` from the GitHub pre-release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.2`.
+
+---
+
 ## v1.0.1 — On-Device Model Management & Theme Update (Re-release)
 
 ### 🔄 Qwen 2.5 & Gemma 4 RAM Stability Update (July 14, 2026)
