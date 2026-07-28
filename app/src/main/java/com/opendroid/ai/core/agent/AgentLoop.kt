@@ -548,8 +548,11 @@ class AgentLoop @Inject constructor(
             }
 
             planManager.startNewPlan(plan, context)
-            val autoMode = config.resolvedAutoMode()
-            if (AutoApprovalPolicy.shouldAutoApprove(autoMode, config.effectiveGrantedActions().keys, plan)) {
+            // Re-read after LLM work: user may have flipped mode or revoked grants
+            // while planning was in flight; stale pre-LLM config must not auto-run.
+            val liveConfig = settingsRepository.llmConfig.first()
+            val autoMode = liveConfig.resolvedAutoMode()
+            if (AutoApprovalPolicy.shouldAutoApprove(autoMode, liveConfig.effectiveGrantedActions().keys, plan)) {
                 recordAutoApprovedTrace(plan, autoMode, sessionId)
                 executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {

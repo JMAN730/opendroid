@@ -10,12 +10,13 @@ import org.junit.Test
 
 class AutoApprovalPolicyTest {
 
-    private fun step(id: String, action: String) = PlanStep(
+    private fun step(id: String, action: String, fallback: String = "") = PlanStep(
         stepId = id,
         order = id.substring(1).toInt(),
         description = "step $id",
         action = action,
-        params = emptyMap()
+        params = emptyMap(),
+        fallback = fallback
     )
 
     private fun plan(vararg actions: String) = Plan(
@@ -64,5 +65,37 @@ class AutoApprovalPolicyTest {
         assertTrue(AutoApprovalPolicy.isGrantable("SEND_SMS"))
         assertFalse(AutoApprovalPolicy.isGrantable("PAY_UPI"))
         assertFalse(AutoApprovalPolicy.isGrantable("NOT_A_REAL_ACTION"))
+    }
+
+    @Test
+    fun `AUTO blocks when primary is granted but fallback is not`() {
+        val steps = listOf(step("s0", "WEB_SEARCH", fallback = "SEND_SMS"))
+        val p = Plan("p1", "test", "1m", 1, steps)
+        assertFalse(AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted, p))
+        assertEquals(listOf("SEND_SMS"), AutoApprovalPolicy.blockedActions(granted, steps))
+    }
+
+    @Test
+    fun `AUTO blocks neverAutoApprove fallback even if somehow granted`() {
+        val steps = listOf(step("s0", "WEB_SEARCH", fallback = "PAY_UPI"))
+        assertFalse(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted + "PAY_UPI", Plan("p1", "test", "1m", 1, steps))
+        )
+    }
+
+    @Test
+    fun `AUTO approves when primary and fallback are both granted`() {
+        val steps = listOf(step("s0", "WEB_SEARCH", fallback = "GET_WEATHER"))
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted, Plan("p1", "test", "1m", 1, steps))
+        )
+    }
+
+    @Test
+    fun `blank fallback is ignored`() {
+        val steps = listOf(step("s0", "WEB_SEARCH", fallback = "   "))
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted, Plan("p1", "test", "1m", 1, steps))
+        )
     }
 }

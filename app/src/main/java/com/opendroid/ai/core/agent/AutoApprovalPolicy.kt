@@ -18,9 +18,15 @@ object AutoApprovalPolicy {
         AutoMode.AUTO -> blockedActions(granted, plan.steps).isEmpty()
     }
 
-    /** Distinct actions (in step order) that keep this plan from auto-running. */
+    /**
+     * Distinct actions (in step order) that keep this plan from auto-running.
+     * Includes each step's non-blank [PlanStep.fallback] — AgentLoop executes
+     * fallbacks on primary failure, so they must pass the same allowlist gate.
+     */
     fun blockedActions(granted: Set<String>, steps: List<PlanStep>): List<String> =
-        steps.map { it.action }
+        steps.flatMap { step ->
+            listOfNotNull(step.action, step.fallback.takeIf { it.isNotBlank() })
+        }
             .distinct()
             .filter { it !in granted || ActionSchema.isNeverAutoApprove(it) }
 
