@@ -845,7 +845,7 @@ fun ProposedPlanPrompt(
     onApprove: (Set<String>) -> Unit,
     onReject: () -> Unit
 ) {
-    var checkedGrants by remember { mutableStateOf(setOf<String>()) }
+    var checkedGrants by remember(blockedActions) { mutableStateOf(setOf<String>()) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
