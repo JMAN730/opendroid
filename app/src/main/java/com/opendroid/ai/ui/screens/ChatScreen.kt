@@ -389,6 +389,7 @@ fun ChatScreen(
                         )
                     } else emptyList()
                     ProposedPlanPrompt(
+                        planId = proposedPlan.planId,
                         goal = proposedPlan.goal,
                         stepsCount = proposedPlan.estimatedSteps,
                         blockedActions = blocked,
@@ -838,6 +839,7 @@ fun ThinkingBubble() {
 
 @Composable
 fun ProposedPlanPrompt(
+    planId: String,
     goal: String,
     stepsCount: Int,
     blockedActions: List<String> = emptyList(),
@@ -845,7 +847,7 @@ fun ProposedPlanPrompt(
     onApprove: (Set<String>) -> Unit,
     onReject: () -> Unit
 ) {
-    var checkedGrants by remember { mutableStateOf(setOf<String>()) }
+    var checkedGrants by remember(planId) { mutableStateOf(setOf<String>()) }
     Card(
         modifier = Modifier
             .fillMaxWidth()

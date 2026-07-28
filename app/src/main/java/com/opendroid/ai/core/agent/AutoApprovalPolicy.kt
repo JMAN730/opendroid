@@ -25,7 +25,7 @@ object AutoApprovalPolicy {
      */
     fun blockedActions(granted: Set<String>, steps: List<PlanStep>): List<String> =
         steps.flatMap { step ->
-            listOfNotNull(step.action, step.fallback.takeIf { it.isNotBlank() })
+            listOfNotNull(step.action.takeIf { it.isNotBlank() }, step.fallback.takeIf { it.isNotBlank() })
         }
             .distinct()
             .filter { it !in granted || ActionSchema.isNeverAutoApprove(it) }

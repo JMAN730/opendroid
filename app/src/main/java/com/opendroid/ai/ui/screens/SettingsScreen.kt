@@ -1459,15 +1459,16 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        val grantedActions = config.effectiveGrantedActions()
                         Text(
-                            text = "ALLOWED ACTIONS (${config.effectiveGrantedActions().size})",
+                            text = "ALLOWED ACTIONS (${grantedActions.size})",
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             color = AccentCyan
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         val dateFormat = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()) }
-                        config.effectiveGrantedActions().entries
+                        grantedActions.entries
                             .sortedBy { it.key }
                             .forEach { (action, grantedAt) ->
                                 Row(
