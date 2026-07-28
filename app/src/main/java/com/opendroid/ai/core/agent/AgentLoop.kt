@@ -393,6 +393,7 @@ class AgentLoop @Inject constructor(
         try {
             val provider = llmProviderFactory.getActiveProvider()
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
+            val autoModeLabel = settingsRepository.llmConfig.first().resolvedAutoMode().name
 
             val systemPrompt = """
                 You are OpenDroid, a friendly and helpful Android AI assistant.
@@ -402,6 +403,8 @@ class AgentLoop @Inject constructor(
                 You can control this Android device: open apps, set alarms, toggle WiFi/Bluetooth/flashlight, send messages, make calls, and more. If someone asks you to do something, just do it or let them know you can help.
                 
                 Never dump raw error messages or technical details. If something goes wrong, say it simply and suggest what to do next.
+
+                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = all plans run automatically). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
                 
                 Context about user and device state:
                 $relevantContext

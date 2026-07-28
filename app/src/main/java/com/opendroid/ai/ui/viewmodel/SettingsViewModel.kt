@@ -2,7 +2,9 @@ package com.opendroid.ai.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -412,11 +414,24 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateAutoConfirmPlans(enabled: Boolean) {
-        _llmConfig.value = _llmConfig.value.copy(autoConfirmPlans = enabled)
+    fun setAutoMode(mode: AutoMode) {
+        _llmConfig.value = _llmConfig.value.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
         viewModelScope.launch {
             settingsRepository.updateConfig { current ->
-                current.copy(autoConfirmPlans = enabled)
+                current.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
+            }
+        }
+    }
+
+    /** Removes one grant. Writes the RESOLVED map minus the action, so the
+     *  first revoke also materializes the seeded defaults (a revoked default
+     *  must never come back on the next read). */
+    fun revokeGrant(action: String) {
+        val updated = _llmConfig.value.effectiveGrantedActions() - action
+        _llmConfig.value = _llmConfig.value.copy(grantedActions = updated)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                current.copy(grantedActions = current.effectiveGrantedActions() - action)
             }
         }
     }
