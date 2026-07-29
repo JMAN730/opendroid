@@ -156,9 +156,6 @@ dependencies {
     // Lottie animations
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
 
-    // Accompanist Permissions
-    implementation 'com.google.accompanist:accompanist-permissions:0.34.0'
-
     // Google ML Kit GenAI Prompt API (Android AI Core)
     implementation 'com.google.mlkit:genai-prompt:1.0.0-beta2'
 
