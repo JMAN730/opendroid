@@ -1,5 +1,6 @@
 package com.opendroid.ai.data.db
 
+import android.app.Application
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
@@ -31,8 +32,11 @@ import org.robolectric.annotation.Config
  * 8 onwards) should use `MigrationTestHelper` against the committed schema
  * JSONs instead.
  */
+// A plain Application, not OpenDroidApp: the real app's startup touches the
+// Android Keystore (SecurePrefs/EncryptedSharedPreferences), which does not
+// exist on the Robolectric JVM - and none of it is needed to open a database.
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class OpenDroidDatabaseMigrationTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()

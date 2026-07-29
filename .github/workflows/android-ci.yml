@@ -94,19 +94,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # TEMPORARY BOOTSTRAP - remove once app/lint-baseline.xml and
-      # app/schemas/ are committed. Prints the files lint/kapt just generated
-      # so they can be recovered from the job log and checked in.
-      - name: Print generated baseline and Room schema (bootstrap)
-        if: always()
-        run: |
-          echo "===BEGIN lint-baseline.xml==="
-          cat app/lint-baseline.xml 2>/dev/null || echo "(missing)"
-          echo "===END lint-baseline.xml==="
-          echo "===BEGIN 7.json==="
-          cat "app/schemas/com.opendroid.ai.data.db.OpenDroidDatabase/7.json" 2>/dev/null || echo "(missing)"
-          echo "===END 7.json==="
-
   release-build:
     name: Unsigned release build (R8/ProGuard)
     runs-on: ubuntu-latest
