@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.opendroid.ai.data.db.entities.CrashLogEntity
+import com.opendroid.ai.core.crash.CrashLogRecord
 import com.opendroid.ai.ui.theme.AppTheme
 import com.opendroid.ai.ui.theme.OpenDroidColors
 import com.opendroid.ai.ui.viewmodel.CrashLogViewModel
@@ -172,13 +172,13 @@ fun CrashLogScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(crashes, key = { it.id }) { crash ->
+                items(crashes, key = { it.id }) { item ->
                     CrashCard(
-                        crash = crash,
-                        expanded = expandedId == crash.id,
-                        onToggle = { expandedId = if (expandedId == crash.id) null else crash.id },
-                        onShare = { share(viewModel.exportOne(crash)) },
-                        onCopy = { copy(viewModel.exportOne(crash)) },
+                        crash = item.record,
+                        expanded = expandedId == item.id,
+                        onToggle = { expandedId = if (expandedId == item.id) null else item.id },
+                        onShare = { share(viewModel.exportOne(item.record)) },
+                        onCopy = { copy(viewModel.exportOne(item.record)) },
                         themeColors = themeColors
                     )
                 }
@@ -189,7 +189,7 @@ fun CrashLogScreen(
 
 @Composable
 private fun CrashCard(
-    crash: CrashLogEntity,
+    crash: CrashLogRecord,
     expanded: Boolean,
     onToggle: () -> Unit,
     onShare: () -> Unit,

@@ -121,7 +121,6 @@ class CrashLogRecorderTest {
 
     @Test
     fun `prunes after inserting so the newest crash is never the one dropped`() {
-        val sink = FakeSink()
         val order = mutableListOf<String>()
         val orderedSink = object : CrashLogSink {
             override fun record(record: CrashLogRecord) { order += "record" }
@@ -131,7 +130,6 @@ class CrashLogRecorderTest {
         recorder(orderedSink).record(Thread.currentThread(), RuntimeException("boom"))
 
         assertEquals(listOf("record", "prune"), order)
-        assertTrue(sink.recorded.isEmpty())
     }
 
     @Test
