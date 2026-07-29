@@ -78,6 +78,15 @@ object ClaudeModelCatalog {
         "claude-haiku-4" to "claude-haiku-4-5",
         // The date-suffixed Haiku ID the provider used to rewrite requests to.
         "claude-haiku-4-5-20251001" to "claude-haiku-4-5",
+        // Retired Anthropic 4.0/4.1 models. These match the well-formed-ID shape
+        // below, so without an explicit entry they would be forwarded verbatim and
+        // fail with an HTTP 404 at request time instead of migrating.
+        "claude-opus-4-0" to "claude-opus-4-8",
+        "claude-opus-4-20250514" to "claude-opus-4-8",
+        "claude-opus-4-1" to "claude-opus-5",
+        "claude-opus-4-1-20250805" to "claude-opus-5",
+        "claude-sonnet-4-0" to "claude-sonnet-5",
+        "claude-sonnet-4-20250514" to "claude-sonnet-5",
         // Retired Anthropic 3.x models.
         "claude-3-opus-20240229" to "claude-opus-4-8",
         "claude-3-7-sonnet-20250219" to "claude-sonnet-5",
@@ -85,7 +94,10 @@ object ClaudeModelCatalog {
         "claude-3-5-sonnet-20240620" to "claude-sonnet-5",
         "claude-3-sonnet-20240229" to "claude-sonnet-5",
         "claude-3-5-haiku-20241022" to "claude-haiku-4-5",
-        "claude-3-haiku-20240307" to "claude-haiku-4-5"
+        "claude-3-haiku-20240307" to "claude-haiku-4-5",
+        // Retired Claude 2 models. Anthropic documents Sonnet as their replacement.
+        "claude-2.1" to "claude-sonnet-5",
+        "claude-2.0" to "claude-sonnet-5"
     )
 
     /**
@@ -93,10 +105,9 @@ object ClaudeModelCatalog {
      * an error the user has to resolve, not something to migrate silently.
      */
     private val retiredWithoutReplacement: Set<String> = setOf(
-        "claude-2.1",
-        "claude-2.0",
         "claude-instant-1.2",
-        "claude-instant-1"
+        "claude-instant-1",
+        "claude-instant-v1"
     )
 
     /**

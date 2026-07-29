@@ -67,6 +67,24 @@ class ClaudeModelCatalogTest {
     }
 
     @Test
+    fun `retired 4x model ids resolve to their replacements`() {
+        // These match the well-formed-ID shape, so without an explicit alias they
+        // would be forwarded verbatim and fail at request time.
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-0"))
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-20250514"))
+        assertEquals("claude-opus-5", ClaudeModelCatalog.resolve("claude-opus-4-1"))
+        assertEquals("claude-opus-5", ClaudeModelCatalog.resolve("claude-opus-4-1-20250805"))
+        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-4-0"))
+        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-4-20250514"))
+    }
+
+    @Test
+    fun `retired claude 2 ids resolve to their documented replacement`() {
+        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-2.1"))
+        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-2.0"))
+    }
+
+    @Test
     fun `every alias replacement is itself a supported model`() {
         val supported = ClaudeModelCatalog.models.map { it.id }.toSet()
         val aliases = listOf(
@@ -80,7 +98,15 @@ class ClaudeModelCatalogTest {
             "claude-3-5-sonnet-20240620",
             "claude-3-sonnet-20240229",
             "claude-3-5-haiku-20241022",
-            "claude-3-haiku-20240307"
+            "claude-3-haiku-20240307",
+            "claude-opus-4-0",
+            "claude-opus-4-20250514",
+            "claude-opus-4-1",
+            "claude-opus-4-1-20250805",
+            "claude-sonnet-4-0",
+            "claude-sonnet-4-20250514",
+            "claude-2.1",
+            "claude-2.0"
         )
         aliases.forEach { alias ->
             val resolved = ClaudeModelCatalog.resolve(alias)
@@ -111,9 +137,9 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `retired models with no replacement resolve to null`() {
-        assertNull(ClaudeModelCatalog.resolve("claude-2.1"))
-        assertNull(ClaudeModelCatalog.resolve("claude-2.0"))
         assertNull(ClaudeModelCatalog.resolve("claude-instant-1.2"))
+        assertNull(ClaudeModelCatalog.resolve("claude-instant-1"))
+        assertNull(ClaudeModelCatalog.resolve("claude-instant-v1"))
     }
 
     @Test
@@ -179,6 +205,7 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `specFor returns null for an unknown id`() {
+        assertNull(ClaudeModelCatalog.specFor("claude-instant-1.2"))
         assertNull(ClaudeModelCatalog.specFor("claude-2.1"))
     }
 
