@@ -45,8 +45,11 @@ object CrashLogRedactor {
 
         // Authorization / API-key request headers, however they got quoted.
         Regex("""(Bearer\s+)[A-Za-z0-9._\-*+/=]+""", RegexOption.IGNORE_CASE) to "$1$REDACTED",
+        // The value alternatives are skipped because the Bearer rule above has
+        // already handled that header, and re-matching would collapse the
+        // `Bearer ` prefix into the replacement.
         Regex(
-            """((?:authorization|x-api-key|x-goog-api-key|api-key)\s*[:=]\s*)["']?[A-Za-z0-9._\-*+/=]+["']?""",
+            """((?:authorization|x-api-key|x-goog-api-key|api-key)\s*[:=]\s*)(?!Bearer\b|\Q$REDACTED\E)["']?[A-Za-z0-9._\-*+/=]+["']?""",
             RegexOption.IGNORE_CASE
         ) to "$1$REDACTED",
 
