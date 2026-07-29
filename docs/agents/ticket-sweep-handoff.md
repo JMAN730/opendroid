@@ -8,8 +8,9 @@ exactly where the work stands so it can be resumed on the workstation without re
 anything.
 
 **Tracker note.** `AGENTS.md` makes the fork the only issue tracker; `yashab-cyber/opendroid`
-is off limits. `gh` defaults to upstream when both remotes are present, so every command
-below passes `--repo JMAN730/opendroid` explicitly. The two upstream bug reports (#13 "API
+is off limits. `gh` defaults to upstream when both remotes are present, so every `gh issue`
+and `gh pr` command below passes `--repo JMAN730/opendroid` explicitly, and `gh api` calls
+carry the repository in the endpoint path instead. The two upstream bug reports (#13 "API
 Failer", #9 "LOCAL IMPORT NOT WORKING") are the *origin* of this work but are not the
 tracker — upstream #13 is what map #25 exists to fix.
 
@@ -59,7 +60,7 @@ into the next `LLMRequest` (`:435`) — potentially to a different vendor than t
 to.
 
 Minimal fix: drop `$responseBody` from the throw in all 11 cloud providers. Not yet done —
-it was queued behind PR #38 to avoid colliding in `ClaudeProvider.kt`.
+it was queued behind PR #38 to avoid colliding in `ClaudeProvider.kt`. Tracked as **#46**.
 
 ### 2. Cross-vendor data exfiltration (from #39)
 
@@ -95,7 +96,8 @@ points, and it triggers on a *missing key* rather than on failure. Map body now 
 
 ## Remaining work, in dependency order
 
-13 issues still open. `blocked_by` below is GitHub's native issue-dependency state.
+14 issues still open, counting #46 filed for the security fix. `blocked_by` below is
+GitHub's native issue-dependency state.
 
 ### Ready now, no blockers
 
@@ -116,9 +118,13 @@ points, and it triggers on a *missing key* rather than on failure. Map body now 
 - **#42** CI coverage gaps — stacks on PR #36's branch. Suggested order in the ticket:
   Robolectric migration test, lint + baseline, unsigned `assembleRelease`. The manual device
   smoke test and the `androidTest` source set cannot be done headless.
-- **Security fix** (no ticket yet): strip raw response bodies from exceptions in all 11 cloud
-  providers. Was queued behind PR #38 for `ClaudeProvider.kt`; that PR's commits have landed,
-  so it can start.
+- **#46** Strip raw response bodies from exceptions in all 11 cloud providers. This is
+  finding 1 below, filed as its own ticket so it can be claimed and closed like the rest.
+  It touches `ClaudeProvider.kt`, which PR #38 also touches. **PR #38 has not merged** — its
+  commits exist only on `JMAN730/to-spec-branch-name`. Either wait for #38 to merge and
+  branch from `main`, or branch from `JMAN730/to-spec-branch-name` now. Branching from
+  `main` today conflicts at merge time, or silently drops #38's model-ID migration in a
+  rebase.
 
 ### Blocked
 
@@ -143,7 +149,9 @@ Run one agent per ticket, but **serially or two at a time**, not ten — the par
 what killed this session three times. Each agent should:
 
 1. Read `AGENTS.md` and `docs/agents/issue-tracker.md`.
-2. Pass `--repo JMAN730/opendroid` on every `gh` call.
+2. Pass `--repo JMAN730/opendroid` on every `gh issue` and `gh pr` call. Not on `gh api`,
+   which has no such flag and exits with an unknown-flag error — put the repository in the
+   endpoint path there instead (`repos/JMAN730/opendroid/...`).
 3. Post its findings comment and close its issue **before** polishing, so an interruption
    cannot lose the result. Commit and push incrementally for code tickets.
 4. Not edit map bodies — do those centrally, to avoid concurrent-edit races.
