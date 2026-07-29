@@ -50,19 +50,28 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
-                        val dataArray = json.getJSONArray("data")
+                        // Parse failures must not carry the raw Anthropic body into the
+                        // exception message, which is logged by the handler below.
+                        val dataArray = try {
+                            JSONObject(response.body?.string() ?: "").getJSONArray("data")
+                        } catch (e: org.json.JSONException) {
+                            throw java.io.IOException("Unexpected response shape from the Anthropic models endpoint.")
+                        }
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
                             val obj = dataArray.getJSONObject(i)
                             val id = obj.getString("id")
+                            // Known models get the catalog's curated name and badges;
+                            // models OpenDroid doesn't know yet stay listed and selectable.
+                            val spec = ClaudeModelCatalog.specFor(id)
                             list.add(
                                 AIModel(
                                     id = id,
-                                    displayName = formatModelName(id),
+                                    displayName = spec?.displayName ?: formatModelName(id),
                                     provider = provider,
-                                    isRecommended = id.contains("sonnet"),
-                                    isPremium = id.contains("opus")
+                                    isRecommended = spec?.isRecommended ?: false,
+                                    isPremium = spec?.isPremium ?: false,
+                                    isFree = spec?.isFree ?: false
                                 )
                             )
                         }
@@ -427,11 +436,17 @@ class ModelFetcher @Inject constructor(
             }
     }
 
-    private fun getAnthropicFallback() = listOf(
-        AIModel("claude-sonnet-4-6", "Claude Sonnet 4.6", "Anthropic Claude", isRecommended = true),
-        AIModel("claude-haiku-4-5", "Claude Haiku 4.5", "Anthropic Claude", isFree = true),
-        AIModel("claude-opus-4-8", "Claude Opus 4.8", "Anthropic Claude", isPremium = true)
-    )
+    /** Derived from [ClaudeModelCatalog] so it cannot drift from what the provider accepts. */
+    private fun getAnthropicFallback() = ClaudeModelCatalog.models.map { spec ->
+        AIModel(
+            id = spec.id,
+            displayName = spec.displayName,
+            provider = "Anthropic Claude",
+            isRecommended = spec.isRecommended,
+            isPremium = spec.isPremium,
+            isFree = spec.isFree
+        )
+    }
 
     private fun getOpenAIFallback() = listOf(
         AIModel("gpt-4o", "GPT-4o", "OpenAI", isRecommended = true),
