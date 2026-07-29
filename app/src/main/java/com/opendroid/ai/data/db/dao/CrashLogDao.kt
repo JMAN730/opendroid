@@ -19,16 +19,21 @@ interface CrashLogDao {
     suspend fun getAll(): List<CrashLogEntity>
 
     /**
-     * Keeps the [keep] newest crashes and deletes the rest.
+     * Keeps the [keep] most recently *inserted* crashes and deletes the rest.
      *
-     * Ordered by `id` as well as `timestamp` so that crashes landing inside the
-     * same millisecond still have a deterministic winner.
+     * Retention deliberately orders by `id`, not by `timestamp`. `timestamp`
+     * comes from the wall clock, which can move backwards - a device correcting
+     * a clock that was set into the future gives the newest row the largest
+     * `id` but an older `timestamp`. Ordering retention by `timestamp` would
+     * then rank that row outside the keep set and delete the crash that just
+     * happened. Insertion order cannot go backwards, so it is the safe key
+     * here; the read queries still order by `timestamp` for presentation.
      */
     @Query(
         """
         DELETE FROM crash_logs
         WHERE id NOT IN (
-            SELECT id FROM crash_logs ORDER BY timestamp DESC, id DESC LIMIT :keep
+            SELECT id FROM crash_logs ORDER BY id DESC LIMIT :keep
         )
         """
     )

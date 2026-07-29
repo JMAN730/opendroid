@@ -107,4 +107,60 @@ class CrashReportExporterTest {
 
         assertTrue(text, text.contains("java.lang.IllegalStateException"))
     }
+
+    // --- Aggregate share budget ----------------------------------------------
+
+    private fun bulky(index: Int) = record.copy(
+        message = "crash $index",
+        stackTrace = "frame-$index " + "x".repeat(CrashReportFormatter.MAX_STACK_TRACE_CHARS)
+    )
+
+    @Test
+    fun `a full log stays well under the binder transaction limit`() {
+        val records = (1..CrashLogRecorder.DEFAULT_MAX_STORED_CRASHES).map { bulky(it) }
+
+        val text = CrashReportExporter.export(records, fixedTime)
+
+        assertTrue(
+            "export was ${text.length} chars",
+            text.length < CrashReportExporter.MAX_EXPORT_CHARS * 2
+        )
+    }
+
+    @Test
+    fun `the newest records are the ones kept when the budget runs out`() {
+        val records = (1..CrashLogRecorder.DEFAULT_MAX_STORED_CRASHES).map { bulky(it) }
+
+        val text = CrashReportExporter.export(records, fixedTime)
+
+        assertTrue(text, text.contains("frame-1 "))
+        assertTrue(text, !text.contains("frame-${CrashLogRecorder.DEFAULT_MAX_STORED_CRASHES} "))
+    }
+
+    @Test
+    fun `an over-budget export says how many records it dropped`() {
+        val records = (1..CrashLogRecorder.DEFAULT_MAX_STORED_CRASHES).map { bulky(it) }
+
+        val text = CrashReportExporter.export(records, fixedTime)
+
+        assertTrue(text, text.contains("omitted to keep"))
+        assertTrue(text, text.contains("older crash reports"))
+    }
+
+    @Test
+    fun `a log that fits is exported whole with no omission notice`() {
+        val text = export(record, record.copy(message = "second"))
+
+        assertTrue(text, text.contains("boom"))
+        assertTrue(text, text.contains("second"))
+        assertTrue(text, !text.contains("omitted to keep"))
+    }
+
+    @Test
+    fun `a single record larger than the whole budget is truncated rather than dropped`() {
+        val text = CrashReportExporter.export(listOf(bulky(1)), fixedTime, maxChars = 500)
+
+        assertTrue(text, text.contains("frame-1 "))
+        assertTrue("export was ${text.length} chars", text.length < 800)
+    }
 }
