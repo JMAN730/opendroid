@@ -72,12 +72,7 @@ fun CrashLogEntity.toRecord(): CrashLogRecord = CrashLogRecord(
     message = message,
     threadName = threadName,
     stackTrace = stackTrace,
-    appVersionName = appVersionName,
-    appVersionCode = appVersionCode,
-    androidRelease = androidRelease,
-    androidSdkInt = androidSdkInt,
-    deviceManufacturer = deviceManufacturer,
-    deviceModel = deviceModel
+    device = device
 )
 
 fun CrashLogRecord.toEntity(): CrashLogEntity = CrashLogEntity(
@@ -86,10 +81,5 @@ fun CrashLogRecord.toEntity(): CrashLogEntity = CrashLogEntity(
     message = message,
     threadName = threadName,
     stackTrace = stackTrace,
-    appVersionName = appVersionName,
-    appVersionCode = appVersionCode,
-    androidRelease = androidRelease,
-    androidSdkInt = androidSdkInt,
-    deviceManufacturer = deviceManufacturer,
-    deviceModel = deviceModel
+    device = device
 )

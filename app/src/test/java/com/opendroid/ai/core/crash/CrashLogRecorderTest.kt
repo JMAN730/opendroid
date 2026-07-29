@@ -102,12 +102,7 @@ class CrashLogRecorderTest {
         recorder(sink).record(Thread.currentThread(), RuntimeException("boom"))
 
         val record = sink.recorded[0]
-        assertEquals("1.2.3", record.appVersionName)
-        assertEquals(42L, record.appVersionCode)
-        assertEquals("14", record.androidRelease)
-        assertEquals(34, record.androidSdkInt)
-        assertEquals("Google", record.deviceManufacturer)
-        assertEquals("Pixel 8", record.deviceModel)
+        assertEquals(metadata, record.device)
     }
 
     @Test

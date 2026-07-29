@@ -47,12 +47,7 @@ class CrashLogRecorder(
         message = CrashReportFormatter.messageOf(throwable),
         threadName = thread.name,
         stackTrace = CrashReportFormatter.stackTraceOf(throwable),
-        appVersionName = metadata.appVersionName,
-        appVersionCode = metadata.appVersionCode,
-        androidRelease = metadata.androidRelease,
-        androidSdkInt = metadata.androidSdkInt,
-        deviceManufacturer = metadata.deviceManufacturer,
-        deviceModel = metadata.deviceModel
+        device = metadata
     )
 
     companion object {
