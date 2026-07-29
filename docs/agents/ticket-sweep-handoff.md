@@ -154,4 +154,14 @@ what killed this session three times. Each agent should:
    endpoint path there instead (`repos/JMAN730/opendroid/...`).
 3. Post its findings comment and close its issue **before** polishing, so an interruption
    cannot lose the result. Commit and push incrementally for code tickets.
-4. Not edit map bodies — do those centrally, to avoid concurrent-edit races.
+4. **Not edit map bodies.** This overrides the **Resolve** step in
+   `docs/agents/issue-tracker.md`, which tells a `/wayfinder` session to append its own
+   context pointer to the map's Decisions-so-far. Concurrent ticket agents editing one
+   issue body race and lose each other's edits, so during a sweep the append is deferred
+   instead. Post the context pointer as a comment on the ticket you just closed, where the
+   central pass can find it.
+5. The **driving session** — whoever is running the sweep, not the per-ticket agents — owns
+   the map edits. Do them after each batch of tickets closes, reading the pointers off the
+   closed tickets' comments. Do not leave them all to the end of the sweep: an interrupted
+   session then loses the entire Decisions-so-far update, which is the failure this handoff
+   exists to recover from.

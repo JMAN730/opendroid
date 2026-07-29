@@ -54,3 +54,5 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Frontier query**: list the map's open children (`gh issue list --repo JMAN730/opendroid --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --repo JMAN730/opendroid --add-assignee @me` — the session's first write.
 - **Resolve**: `gh issue comment <n> --repo JMAN730/opendroid --body "<answer>"`, then `gh issue close <n> --repo JMAN730/opendroid`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+  **Exception — during a multi-agent sweep.** When several ticket agents run at once, they must not each edit the map body: concurrent edits to one issue body overwrite each other. In that mode the agent leaves its context pointer as a comment on its own closed ticket, and the driving session appends to the map centrally after each batch. See `docs/agents/ticket-sweep-handoff.md`, "How to resume", steps 4 and 5.
