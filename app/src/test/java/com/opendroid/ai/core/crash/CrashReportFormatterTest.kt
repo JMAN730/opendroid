@@ -39,14 +39,16 @@ class CrashReportFormatterTest {
     fun `short stack traces are not truncated`() {
         val trace = CrashReportFormatter.stackTraceOf(RuntimeException("small"))
 
-        assertTrue(trace, !trace.contains("truncated"))
+        // Assert on the marker, not on the word "truncated": this method's own
+        // name is a frame in the trace it just captured.
+        assertTrue(trace, !trace.contains(CrashReportFormatter.TRUNCATION_MARKER))
     }
 
     @Test
     fun `oversized stack traces are truncated and marked`() {
         val trace = CrashReportFormatter.stackTraceOf(RuntimeException("x"), maxChars = 40)
 
-        assertTrue(trace, trace.contains("truncated"))
+        assertTrue(trace, trace.endsWith(CrashReportFormatter.TRUNCATION_MARKER))
         // The head is kept - the top frames are where the crash happened.
         assertTrue(trace, trace.startsWith("java.lang.RuntimeException: x"))
     }
@@ -56,7 +58,7 @@ class CrashReportFormatterTest {
         val truncated = CrashReportFormatter.truncate("abcdefghij", maxChars = 4)
 
         assertTrue(truncated, truncated.startsWith("abcd"))
-        assertTrue(truncated, truncated.contains("truncated"))
+        assertTrue(truncated, truncated.endsWith(CrashReportFormatter.TRUNCATION_MARKER))
     }
 
     @Test

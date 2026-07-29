@@ -18,7 +18,13 @@ object CrashReportFormatter {
      */
     const val MAX_STACK_TRACE_CHARS = 16_000
 
-    private const val TRUNCATION_MARKER = "\n... [stack trace truncated]"
+    /**
+     * Internal rather than private so tests can assert on the marker itself.
+     * Matching a bare word like "truncated" gives false positives: a stack
+     * trace captured inside a backtick-named test contains that test's own
+     * name as a frame.
+     */
+    internal const val TRUNCATION_MARKER = "\n... [stack trace truncated]"
 
     fun stackTraceOf(throwable: Throwable, maxChars: Int = MAX_STACK_TRACE_CHARS): String {
         val writer = StringWriter()
