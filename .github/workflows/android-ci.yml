@@ -57,3 +57,77 @@ jobs:
           path: app/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 14
+
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # Pre-existing findings live in app/lint-baseline.xml; only new
+      # findings fail this step.
+      - name: Run Android Lint
+        run: ./gradlew :app:lintDebug --stacktrace
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # TEMPORARY BOOTSTRAP - remove once app/lint-baseline.xml and
+      # app/schemas/ are committed. Prints the files lint/kapt just generated
+      # so they can be recovered from the job log and checked in.
+      - name: Print generated baseline and Room schema (bootstrap)
+        if: always()
+        run: |
+          echo "===BEGIN lint-baseline.xml==="
+          cat app/lint-baseline.xml 2>/dev/null || echo "(missing)"
+          echo "===END lint-baseline.xml==="
+          echo "===BEGIN 7.json==="
+          cat "app/schemas/com.opendroid.ai.data.db.OpenDroidDatabase/7.json" 2>/dev/null || echo "(missing)"
+          echo "===END 7.json==="
+
+  release-build:
+    name: Unsigned release build (R8/ProGuard)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # No signing secrets in CI. -PallowUnsignedRelease builds an unsigned,
+      # uninstallable APK purely to exercise R8/ProGuard, which debug builds
+      # never touch; a plain assembleRelease still refuses to run unsigned.
+      - name: Build unsigned release APK
+        run: ./gradlew :app:assembleRelease -PallowUnsignedRelease --stacktrace
