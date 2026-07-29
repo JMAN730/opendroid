@@ -1,3 +1,25 @@
+// ── Theme Toggle ──
+(function () {
+  const toggle = document.getElementById('theme-toggle');
+  if (!toggle) return;
+  const root = document.documentElement;
+  const STORAGE_KEY = 'opendroid-theme';
+
+  const updateA11y = () => {
+    const isLight = root.getAttribute('data-theme') === 'light';
+    toggle.setAttribute('aria-pressed', String(isLight));
+    toggle.setAttribute('aria-label', isLight ? 'Enable dark mode' : 'Enable light mode');
+  };
+  updateA11y();
+
+  toggle.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* storage unavailable, ignore */ }
+    updateA11y();
+  });
+})();
+
 // ── Hamburger Menu ──
 const hamburger = document.getElementById('nav-hamburger');
 const navLinks = document.getElementById('nav-links');
@@ -46,10 +68,6 @@ document.querySelectorAll('.faq-question').forEach(btn => {
 const navbar = document.getElementById('navbar');
 if (navbar) {
   window.addEventListener('scroll', () => {
-    if (window.scrollY > 10) {
-      navbar.style.boxShadow = '0 1px 8px rgba(0,0,0,0.06)';
-    } else {
-      navbar.style.boxShadow = 'none';
-    }
+    navbar.classList.toggle('scrolled', window.scrollY > 10);
   });
 }
