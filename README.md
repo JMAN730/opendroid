@@ -261,15 +261,15 @@ See [SECURITY.md](SECURITY.md) for details.
 
 ## ⭐ Star History
 
-<p align="center">
-  <a href="https://www.star-history.com/?repos=yashab-cyber%2Fopendroid&type=date&legend=top-left">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&theme=dark&legend=top-left&sealed_token=lT-8DdrmaAz018K0bkNsMr3zh5IdyjdddA2YGbgnXTsNyg8-3g8E_BHs6_v6r7ZK8TyOeBT7PNm0WErRpW0KNZYhq5WMvsa5xiEn1FfIKWjAbpQmhXlZgKWmLs-VEN-KTPIpGIUAdovoauzPQgrQhwqnWjYoJd5NVJg2ns6FrhdeG6YvtS36yy1Rthr2">
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&legend=top-left&sealed_token=lT-8DdrmaAz018K0bkNsMr3zh5IdyjdddA2YGbgnXTsNyg8-3g8E_BHs6_v6r7ZK8TyOeBT7PNm0WErRpW0KNZYhq5WMvsa5xiEn1FfIKWjAbpQmhXlZgKWmLs-VEN-KTPIpGIUAdovoauzPQgrQhwqnWjYoJd5NVJg2ns6FrhdeG6YvtS36yy1Rthr2">
-      <img alt="Star History Chart for yashab-cyber/opendroid" src="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&legend=top-left&sealed_token=lT-8DdrmaAz018K0bkNsMr3zh5IdyjdddA2YGbgnXTsNyg8-3g8E_BHs6_v6r7ZK8TyOeBT7PNm0WErRpW0KNZYhq5WMvsa5xiEn1FfIKWjAbpQmhXlZgKWmLs-VEN-KTPIpGIUAdovoauzPQgrQhwqnWjYoJd5NVJg2ns6FrhdeG6YvtS36yy1Rthr2" width="600">
-    </picture>
-  </a>
-</p>
+
+<a href="https://www.star-history.com/?repos=yashab-cyber%2Fopendroid&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&theme=dark&legend=top-left&sealed_token=_Y78t8Ar-D4NNqkSXt6ARVN22DZYznwQAD5wzR40TUgqtwjvMk5dU9wruh4XFvB5MkstKgAkNa1imj3B_TFGFcZkSEuKdTVmDTeay8Tnp2cYn3H4gDp_3A" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&legend=top-left&sealed_token=_Y78t8Ar-D4NNqkSXt6ARVN22DZYznwQAD5wzR40TUgqtwjvMk5dU9wruh4XFvB5MkstKgAkNa1imj3B_TFGFcZkSEuKdTVmDTeay8Tnp2cYn3H4gDp_3A" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yashab-cyber/opendroid&type=date&legend=top-left&sealed_token=_Y78t8Ar-D4NNqkSXt6ARVN22DZYznwQAD5wzR40TUgqtwjvMk5dU9wruh4XFvB5MkstKgAkNa1imj3B_TFGFcZkSEuKdTVmDTeay8Tnp2cYn3H4gDp_3A" />
+ </picture>
+</a>
+ 
 
 ---
 

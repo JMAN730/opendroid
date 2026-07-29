@@ -38,4 +38,3 @@ object UrlUtils {
         return withScheme.trimEnd('/')
     }
 }
-

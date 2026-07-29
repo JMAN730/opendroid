@@ -71,13 +71,13 @@ fun SettingsScreen(
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
+    onNavigateToCrashLog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
 
     val providers = listOf(
         "Google Gemini",
@@ -102,6 +102,7 @@ fun SettingsScreen(
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -1719,6 +1720,47 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Review and grant microphone, storage, accessibility & other permissions.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Crash Log link card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentRed.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToCrashLog() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💥", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "CRASH LOG",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentRed
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "View and share crashes recorded on this device.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
