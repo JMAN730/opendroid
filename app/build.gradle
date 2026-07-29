@@ -24,7 +24,9 @@ android {
         }
     }
 
-    // Release signing — credentials must be in gradle.properties (see gradle.properties.example)
+    // Release signing — credentials come from ~/.gradle/gradle.properties or
+    // ORG_GRADLE_PROJECT_* environment variables, never from the project's own
+    // gradle.properties, which is tracked (see gradle.properties.example).
     // The keystore file itself must also be placed at the project root (NOT committed to Git).
     def hasSigningConfig = project.hasProperty('RELEASE_STORE_PASSWORD') &&
             project.hasProperty('RELEASE_KEY_ALIAS') &&
@@ -32,7 +34,7 @@ android {
             file("${rootProject.projectDir}/opendroid-release.keystore").exists()
 
     if (!hasSigningConfig) {
-        logger.warn("WARNING: Release signing not configured. Set credentials in gradle.properties (see gradle.properties.example).")
+        logger.warn("WARNING: Release signing not configured. Set credentials in ~/.gradle/gradle.properties (see gradle.properties.example).")
     }
 
     signingConfigs {
@@ -69,9 +71,9 @@ android {
         if (releaseBuildRequested && !hasSigningConfig) {
             throw new GradleException(
                 "Release signing is not configured. Set RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS " +
-                "and RELEASE_KEY_PASSWORD in gradle.properties and place opendroid-release.keystore " +
-                "at the project root (see gradle.properties.example). Refusing to sign a release " +
-                "build with the debug key."
+                "and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties (or as ORG_GRADLE_PROJECT_* " +
+                "environment variables) and place opendroid-release.keystore at the project root " +
+                "(see gradle.properties.example). Refusing to sign a release build with the debug key."
             )
         }
     }
