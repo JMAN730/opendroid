@@ -180,22 +180,27 @@ class SettingsViewModel @Inject constructor(
 
                 // Migrate a legacy Claude selection regardless of cache state, so a
                 // migratable ID is never left persisted or treated as absent below.
-                val activeModel = if (provider == "Anthropic Claude") {
-                    val resolved = ClaudeModelCatalog.resolve(config.activeModel)
-                    if (resolved != null && resolved != config.activeModel) {
-                        updateActiveModel(resolved)
+                val isClaude = provider == "Anthropic Claude"
+                val claudeResolved = if (isClaude) ClaudeModelCatalog.resolve(config.activeModel) else null
+                val activeModel = if (isClaude) {
+                    if (claudeResolved != null && claudeResolved != config.activeModel) {
+                        updateActiveModel(claudeResolved)
                     }
-                    resolved ?: config.activeModel
+                    claudeResolved ?: config.activeModel
                 } else {
                     config.activeModel
                 }
+                // An unresolvable Claude selection (retired with no replacement, or a
+                // hand-edited setting) must never stay persisted: re-run the fetch so
+                // auto-selection below moves the user onto the catalog default.
+                val unsupportedClaudeModel = isClaude && config.activeModel.isNotBlank() && claudeResolved == null
 
                 // Check cache time limit (1 hour) unless forced
                 val lastFetch = config.lastModelFetch[provider] ?: 0L
                 val cacheExists = config.modelCache[provider]?.isNotEmpty() == true
                 val cacheExpired = System.currentTimeMillis() - lastFetch > 60 * 60 * 1000
-                
-                if (force || !cacheExists || cacheExpired) {
+
+                if (force || !cacheExists || cacheExpired || unsupportedClaudeModel) {
                     _modelsLoading.value = true
                     val result = modelFetcher.get().fetchModels(provider)
                     result.onSuccess { models ->
@@ -207,7 +212,7 @@ class SettingsViewModel @Inject constructor(
                         
                         // Auto-select recommended model if current model is blank or not in fetched list
                         val modelExists = models.any { it.id == activeModel }
-                        if (!modelExists || activeModel.isBlank()) {
+                        if (!modelExists || activeModel.isBlank() || unsupportedClaudeModel) {
                             val providerDefault = if (provider == "Anthropic Claude") {
                                 models.find { it.id == ClaudeModelCatalog.defaultModelId }
                             } else {
