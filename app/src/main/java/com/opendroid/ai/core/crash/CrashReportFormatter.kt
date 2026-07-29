@@ -26,10 +26,15 @@ object CrashReportFormatter {
      */
     internal const val TRUNCATION_MARKER = "\n... [stack trace truncated]"
 
+    /**
+     * Redaction happens before truncation, not after: truncating first could cut
+     * a secret in half and leave the prefix - which is still key material - on
+     * the wrong side of a pattern that no longer matches.
+     */
     fun stackTraceOf(throwable: Throwable, maxChars: Int = MAX_STACK_TRACE_CHARS): String {
         val writer = StringWriter()
         PrintWriter(writer).use { throwable.printStackTrace(it) }
-        return truncate(writer.toString(), maxChars)
+        return truncate(CrashLogRedactor.redact(writer.toString()), maxChars)
     }
 
     /**
@@ -44,11 +49,17 @@ object CrashReportFormatter {
 
     fun exceptionClassOf(throwable: Throwable): String = throwable.javaClass.name
 
-    /** Single-line message, or null if the throwable carries nothing useful. */
+    /**
+     * Single-line message, or null if the throwable carries nothing useful.
+     *
+     * Redacted, because several LLM providers build their failure messages
+     * straight out of the response body - see [CrashLogRedactor].
+     */
     fun messageOf(throwable: Throwable): String? =
         throwable.message
             ?.replace('\n', ' ')
             ?.replace('\r', ' ')
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+            ?.let { CrashLogRedactor.redact(it) }
 }
