@@ -50,8 +50,13 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
-                        val dataArray = json.getJSONArray("data")
+                        // Parse failures must not carry the raw Anthropic body into the
+                        // exception message, which is logged by the handler below.
+                        val dataArray = try {
+                            JSONObject(response.body?.string() ?: "").getJSONArray("data")
+                        } catch (e: org.json.JSONException) {
+                            throw java.io.IOException("Unexpected response shape from the Anthropic models endpoint.")
+                        }
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
                             val obj = dataArray.getJSONObject(i)

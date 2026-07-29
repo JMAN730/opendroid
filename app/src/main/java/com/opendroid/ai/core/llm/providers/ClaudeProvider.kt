@@ -127,6 +127,10 @@ class ClaudeProvider @Inject constructor(
                 emit("$word ")
                 kotlinx.coroutines.delay(50)
             }
+        } catch (e: IllegalStateException) {
+            // Configuration problems the user can fix (unsupported model, missing key)
+            // are surfaced as-is: a clear instruction, not an exception dump.
+            emit(e.message ?: "Claude is not configured correctly. Check Settings.")
         } catch (e: Exception) {
             emit("Error streaming Claude: ${e.localizedMessage}")
         }
