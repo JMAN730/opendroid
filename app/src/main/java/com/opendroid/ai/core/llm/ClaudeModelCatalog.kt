@@ -38,9 +38,13 @@ object ClaudeModelCatalog {
     /** The Claude models Anthropic currently serves and OpenDroid supports. */
     val models: List<ClaudeModelSpec> = listOf(
         ClaudeModelSpec(
-            id = "claude-opus-5",
-            displayName = "Claude Opus 5",
+            id = "claude-fable-5",
+            displayName = "Claude Fable 5",
             isPremium = true
+        ),
+        ClaudeModelSpec(
+            id = "claude-opus-5",
+            displayName = "Claude Opus 5"
         ),
         ClaudeModelSpec(
             id = "claude-sonnet-5",
@@ -48,18 +52,36 @@ object ClaudeModelCatalog {
             isRecommended = true
         ),
         ClaudeModelSpec(
-            id = "claude-haiku-4-5",
-            displayName = "Claude Haiku 4.5",
-            isFree = true,
-            acceptsSamplingParameters = true
-        ),
-        ClaudeModelSpec(
             id = "claude-opus-4-8",
             displayName = "Claude Opus 4.8"
         ),
         ClaudeModelSpec(
+            id = "claude-opus-4-7",
+            displayName = "Claude Opus 4.7"
+        ),
+        ClaudeModelSpec(
+            id = "claude-opus-4-6",
+            displayName = "Claude Opus 4.6",
+            acceptsSamplingParameters = true
+        ),
+        ClaudeModelSpec(
+            id = "claude-opus-4-5-20251101",
+            displayName = "Claude Opus 4.5",
+            acceptsSamplingParameters = true
+        ),
+        ClaudeModelSpec(
             id = "claude-sonnet-4-6",
             displayName = "Claude Sonnet 4.6",
+            acceptsSamplingParameters = true
+        ),
+        ClaudeModelSpec(
+            id = "claude-sonnet-4-5-20250929",
+            displayName = "Claude Sonnet 4.5",
+            acceptsSamplingParameters = true
+        ),
+        ClaudeModelSpec(
+            id = "claude-haiku-4-5-20251001",
+            displayName = "Claude Haiku 4.5",
             acceptsSamplingParameters = true
         )
     )
@@ -75,47 +97,36 @@ object ClaudeModelCatalog {
         // Unversioned family IDs previously accepted by the provider.
         "claude-opus-4" to "claude-opus-4-8",
         "claude-sonnet-4" to "claude-sonnet-4-6",
-        "claude-haiku-4" to "claude-haiku-4-5",
-        // The date-suffixed Haiku ID the provider used to rewrite requests to.
-        "claude-haiku-4-5-20251001" to "claude-haiku-4-5",
-        // Retired Anthropic 4.0/4.1 models. These match the well-formed-ID shape
-        // below, so without an explicit entry they would be forwarded verbatim and
-        // fail with an HTTP 404 at request time instead of migrating.
+        "claude-haiku-4" to "claude-haiku-4-5-20251001",
+        "claude-haiku-4-5" to "claude-haiku-4-5-20251001",
+        // Retired Anthropic 4.0/4.1 models. Keep explicit entries so persisted
+        // selections migrate instead of being rejected as unknown.
         "claude-opus-4-0" to "claude-opus-4-8",
         "claude-opus-4-20250514" to "claude-opus-4-8",
-        "claude-opus-4-1" to "claude-opus-5",
-        "claude-opus-4-1-20250805" to "claude-opus-5",
-        "claude-sonnet-4-0" to "claude-sonnet-5",
-        "claude-sonnet-4-20250514" to "claude-sonnet-5",
+        "claude-opus-4-1" to "claude-opus-4-8",
+        "claude-opus-4-1-20250805" to "claude-opus-4-8",
+        "claude-sonnet-4-0" to "claude-sonnet-4-6",
+        "claude-sonnet-4-20250514" to "claude-sonnet-4-6",
         // Retired Anthropic 3.x models.
         "claude-3-opus-20240229" to "claude-opus-4-8",
-        "claude-3-7-sonnet-20250219" to "claude-sonnet-5",
-        "claude-3-5-sonnet-20241022" to "claude-sonnet-5",
-        "claude-3-5-sonnet-20240620" to "claude-sonnet-5",
-        "claude-3-sonnet-20240229" to "claude-sonnet-5",
-        "claude-3-5-haiku-20241022" to "claude-haiku-4-5",
-        "claude-3-haiku-20240307" to "claude-haiku-4-5",
-        // Retired Claude 2 models. Anthropic documents Sonnet as their replacement.
-        "claude-2.1" to "claude-sonnet-5",
-        "claude-2.0" to "claude-sonnet-5"
+        "claude-3-7-sonnet-20250219" to "claude-sonnet-4-6",
+        "claude-3-5-sonnet-20241022" to "claude-sonnet-4-6",
+        "claude-3-5-sonnet-20240620" to "claude-sonnet-4-6",
+        "claude-3-sonnet-20240229" to "claude-sonnet-4-6",
+        "claude-3-5-haiku-20241022" to "claude-haiku-4-5-20251001",
+        "claude-3-haiku-20240307" to "claude-haiku-4-5-20251001",
+        // Retired Claude 2 models.
+        "claude-2.1" to "claude-opus-4-8",
+        "claude-2.0" to "claude-opus-4-8",
+        // Retired Claude 1 and Instant models.
+        "claude-1.0" to "claude-haiku-4-5-20251001",
+        "claude-1.1" to "claude-haiku-4-5-20251001",
+        "claude-1.2" to "claude-haiku-4-5-20251001",
+        "claude-1.3" to "claude-haiku-4-5-20251001",
+        "claude-instant-1.0" to "claude-haiku-4-5-20251001",
+        "claude-instant-1.1" to "claude-haiku-4-5-20251001",
+        "claude-instant-1.2" to "claude-haiku-4-5-20251001"
     )
-
-    /**
-     * Retired Anthropic models with no documented replacement. Selecting one is
-     * an error the user has to resolve, not something to migrate silently.
-     */
-    private val retiredWithoutReplacement: Set<String> = setOf(
-        "claude-instant-1.2",
-        "claude-instant-1",
-        "claude-instant-v1"
-    )
-
-    /**
-     * Shape of an Anthropic model ID. Anything matching this is forwarded to the
-     * API as-is so a model released before OpenDroid ships a catalog update stays
-     * usable; anything else is rejected before it reaches the request body.
-     */
-    private val anthropicModelIdPattern = Regex("^claude-[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 
     private val byId: Map<String, ClaudeModelSpec> = models.associateBy { it.id }
 
@@ -124,17 +135,15 @@ object ClaudeModelCatalog {
      * model ID that may be sent to Anthropic.
      *
      * @return the catalog ID (unchanged for a current model, the replacement for
-     *   a legacy alias), the ID itself for an unknown-but-well-formed Anthropic
-     *   model, or `null` when the ID is retired without a replacement, belongs to
-     *   another provider, or is malformed.
+     *   a legacy alias), or `null` when the ID is unknown, retired without a
+     *   replacement, belongs to another provider, or is malformed.
      */
     fun resolve(id: String): String? {
         val trimmed = id.trim()
         if (trimmed.isEmpty()) return null
         if (byId.containsKey(trimmed)) return trimmed
         legacyAliases[trimmed]?.let { return it }
-        if (trimmed in retiredWithoutReplacement) return null
-        return trimmed.takeIf { anthropicModelIdPattern.matches(it) }
+        return null
     }
 
     /** The catalog entry for [id], or `null` if OpenDroid does not know the model. */
