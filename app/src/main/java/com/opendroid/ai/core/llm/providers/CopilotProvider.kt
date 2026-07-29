@@ -3,7 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
-import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -73,10 +74,14 @@ class CopilotProvider @Inject constructor(
 
         return withContext(Dispatchers.IO) {
         client.newCall(requestBuilder.build()).execute().use { response ->
-            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Copilot API request failed: Code ${response.code} - $responseBody")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.COPILOT,
+                    request = request,
+                    knownSecrets = listOfNotNull(apiKey)
+                )
             }
+            val responseBody = response.body?.string()
             if (responseBody == null) {
                 throw IOException("Empty response body from Copilot API")
             }
@@ -100,15 +105,11 @@ class CopilotProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Copilot API: ${NetworkErrorFormatter.toUserMessage(e)}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

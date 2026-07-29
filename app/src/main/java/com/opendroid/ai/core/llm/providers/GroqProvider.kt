@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -59,7 +61,11 @@ class GroqProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Groq request failed: Code ${response.code} - ${response.body?.string()}")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.GROQ,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
             val responseBody = response.body?.string() ?: throw IOException("Empty response body from Groq")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
@@ -82,15 +88,11 @@ class GroqProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Groq: ${e.localizedMessage}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

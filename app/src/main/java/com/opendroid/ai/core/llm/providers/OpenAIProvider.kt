@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -60,10 +62,14 @@ class OpenAIProvider @Inject constructor(
 
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
-            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("OpenAI request failed: Code ${response.code} - $responseBody")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.OPENAI,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
+            val responseBody = response.body?.string()
             if (responseBody == null) {
                 throw IOException("Empty response body from OpenAI")
             }
@@ -90,16 +96,12 @@ class OpenAIProvider @Inject constructor(
         // Fallback simple streaming mock or raw API line-by-line stream.
         // For simplicity and completeness, we will fetch complete first and emit,
         // or parse SSE streams if needed. Let's execute complete and stream it.
-        try {
-            val response = complete(request)
-            // Stream chunks
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming OpenAI: ${e.localizedMessage}")
+        val response = complete(request)
+        // Stream chunks
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

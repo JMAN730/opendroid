@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -82,18 +84,23 @@ class GeminiProvider @Inject constructor(
         requestBodyMap["generationConfig"] = generationConfig
 
         val bodyJson = gson.toJson(requestBodyMap)
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$activeModel:generateContent?key=$apiKey"
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$activeModel:generateContent"
         val httpRequest = Request.Builder()
             .url(url)
+            .header("x-goog-api-key", apiKey)
             .post(bodyJson.toRequestBody(mediaType))
             .build()
 
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
-            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Gemini request failed: Code ${response.code} - $responseBody")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.GEMINI,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
+            val responseBody = response.body?.string()
             if (responseBody == null) {
                 throw IOException("Empty response body from Gemini")
             }
@@ -149,15 +156,11 @@ class GeminiProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Gemini: ${e.localizedMessage}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 
