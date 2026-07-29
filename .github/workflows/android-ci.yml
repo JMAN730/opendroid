@@ -118,3 +118,13 @@ jobs:
       # never touch; a plain assembleRelease still refuses to run unsigned.
       - name: Build unsigned release APK
         run: ./gradlew :app:assembleRelease -PallowUnsignedRelease --stacktrace
+
+      # If R8 ever does strip something reflection needs, the minified APK is
+      # what gets inspected (apkanalyzer/aapt) to see which class went missing.
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14

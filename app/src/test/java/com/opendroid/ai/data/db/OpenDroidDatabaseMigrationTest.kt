@@ -99,11 +99,12 @@ class OpenDroidDatabaseMigrationTest {
 
     @Test
     fun migration6To7_isSafeToRunAgainstAnExistingCrashLogTable() {
-        // A partially-applied upgrade (process death mid-migration) can replay
-        // a migration; every statement in MIGRATION_6_7 claims to be re-run
-        // safe via IF NOT EXISTS. Hold it to that: run it against a database
-        // where crash_logs already exists and holds data - it must neither
-        // throw nor clobber the table.
+        // Room wraps each migration in a transaction, so a crash mid-migration
+        // rolls back cleanly and the whole migration re-runs against the
+        // original schema - crash recovery does NOT need these guards. The
+        // IF NOT EXISTS statements instead promise something narrower: running
+        // the migration against a database where crash_logs already exists and
+        // holds data must neither throw nor clobber the table. Hold it to that.
         val db = Room.databaseBuilder(context, OpenDroidDatabase::class.java, IDEMPOTENCY_DB).build()
         try {
             val support = db.openHelper.writableDatabase
@@ -128,21 +129,39 @@ class OpenDroidDatabaseMigrationTest {
      */
     private fun createVersion6Database() {
         val version6Ddl = mutableListOf<String>()
+        val derivedTables = mutableSetOf<String>()
         val reference = Room.databaseBuilder(context, OpenDroidDatabase::class.java, REFERENCE_DB).build()
         try {
+            assertEquals(
+                "Derived v6 schema is stale - the schema has moved past v7. " +
+                    "Test migrations 7 -> 8 onward with MigrationTestHelper against app/schemas/.",
+                7,
+                reference.openHelper.writableDatabase.version
+            )
             reference.openHelper.writableDatabase.query(
-                "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL " +
+                "SELECT sql, type, name FROM sqlite_master WHERE sql IS NOT NULL " +
                     "AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata' " +
                     "AND name != 'room_master_table' AND tbl_name != 'crash_logs'"
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     version6Ddl += cursor.getString(0)
+                    if (cursor.getString(1) == "table") {
+                        derivedTables += cursor.getString(2)
+                    }
                 }
             }
         } finally {
             reference.close()
         }
-        assertTrue("failed to derive any v6 DDL from the reference database", version6Ddl.isNotEmpty())
+        // Companion to the version guard above: the filtered sqlite_master
+        // dump must contain exactly the v6 tables. Anything extra or missing
+        // means the derivation is wrong, and letting it through would surface
+        // later as a cryptic Room identity-hash mismatch instead of this.
+        assertEquals(
+            "Derived v6 table set does not match a version-6 database.",
+            VERSION_6_TABLES,
+            derivedTables
+        )
 
         context.deleteDatabase(TEST_DB)
         val file = context.getDatabasePath(TEST_DB)
@@ -179,5 +198,18 @@ class OpenDroidDatabaseMigrationTest {
         const val TEST_DB = "migration-test.db"
         const val REFERENCE_DB = "migration-reference.db"
         const val IDEMPOTENCY_DB = "migration-idempotency.db"
+
+        // Every table a version-6 database contained, i.e. v7 minus crash_logs.
+        val VERSION_6_TABLES = setOf(
+            "conversations",
+            "chat_sessions",
+            "plans",
+            "memories",
+            "task_history",
+            "macros",
+            "unknown_actions",
+            "notifications",
+            "models"
+        )
     }
 }
