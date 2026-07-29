@@ -7,7 +7,9 @@ import com.opendroid.ai.data.crash.toRecord
 import com.opendroid.ai.data.db.dao.CrashLogDao
 import com.opendroid.ai.data.db.entities.CrashLogEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -16,7 +18,12 @@ class CrashLogViewModel @Inject constructor(
     private val crashLogDao: CrashLogDao
 ) : ViewModel() {
 
-    val crashes: Flow<List<CrashLogEntity>> = crashLogDao.getAllFlow()
+    val crashes: StateFlow<List<CrashLogEntity>> = crashLogDao.getAllFlow()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     fun clearAll() {
         viewModelScope.launch { crashLogDao.clearAll() }

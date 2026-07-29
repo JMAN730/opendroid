@@ -15,15 +15,23 @@ class OpenDroidCrashHandler(
 ) : Thread.UncaughtExceptionHandler {
 
     /**
-     * Guards against re-entry. If anything downstream of the first crash throws
-     * again, recording a second time risks blocking on a database that is
-     * already known to be unhappy; the delegate still runs either way.
+     * One-shot latch: only the *first* uncaught throwable in the process is
+     * ever recorded, and it is never reset.
+     *
+     * That is deliberate rather than a re-entry guard proper. The delegate is
+     * the system handler, which kills the process, so a second uncaught
+     * throwable only arrives when something is already badly wrong - either a
+     * re-entrant crash on this thread or a simultaneous one on another. In both
+     * cases the first crash is the diagnosable one, and a second write would be
+     * blocking on a database that has just been shown to be unreliable.
+     *
+     * The delegate still runs for every throwable, recorded or not.
      */
-    private val handling = AtomicBoolean(false)
+    private val recordedFirstCrash = AtomicBoolean(false)
 
     override fun uncaughtException(thread: Thread, throwable: Throwable) {
         try {
-            if (handling.compareAndSet(false, true)) {
+            if (recordedFirstCrash.compareAndSet(false, true)) {
                 recorder.record(thread, throwable)
             }
         } catch (t: Throwable) {

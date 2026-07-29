@@ -45,10 +45,4 @@ object CrashReportFormatter {
             ?.replace('\r', ' ')
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-
-    fun summarize(throwable: Throwable): String {
-        val message = messageOf(throwable)
-        val className = exceptionClassOf(throwable)
-        return if (message == null) className else "$className: $message"
-    }
 }

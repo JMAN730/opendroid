@@ -89,19 +89,4 @@ class CrashReportFormatterTest {
         assertEquals("line one line two", message)
     }
 
-    @Test
-    fun `summary combines class and message`() {
-        assertEquals(
-            "java.lang.IllegalStateException: boom",
-            CrashReportFormatter.summarize(IllegalStateException("boom"))
-        )
-    }
-
-    @Test
-    fun `summary is just the class when there is no message`() {
-        assertEquals(
-            "java.lang.RuntimeException",
-            CrashReportFormatter.summarize(RuntimeException())
-        )
-    }
 }

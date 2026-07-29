@@ -1,6 +1,11 @@
 package com.opendroid.ai.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -40,7 +46,7 @@ fun CrashLogScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val crashes by viewModel.crashes.collectAsState(initial = emptyList())
+    val crashes by viewModel.crashes.collectAsState()
     var expandedId by remember { mutableStateOf<Long?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
 
@@ -53,6 +59,15 @@ fun CrashLogScreen(
             putExtra(Intent.EXTRA_TEXT, text)
         }
         context.startActivity(Intent.createChooser(intent, "Share crash report"))
+    }
+
+    fun copy(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("OpenDroid crash report", text))
+        // Android 13+ shows its own copy confirmation; a Toast there would double up.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            Toast.makeText(context, "Crash report copied", Toast.LENGTH_SHORT).show()
+        }
     }
 
     if (showClearConfirmation) {
@@ -163,6 +178,7 @@ fun CrashLogScreen(
                         expanded = expandedId == crash.id,
                         onToggle = { expandedId = if (expandedId == crash.id) null else crash.id },
                         onShare = { share(viewModel.exportOne(crash)) },
+                        onCopy = { copy(viewModel.exportOne(crash)) },
                         themeColors = themeColors
                     )
                 }
@@ -177,6 +193,7 @@ private fun CrashCard(
     expanded: Boolean,
     onToggle: () -> Unit,
     onShare: () -> Unit,
+    onCopy: () -> Unit,
     themeColors: OpenDroidColors
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm:ss", Locale.getDefault()) }
@@ -253,15 +270,27 @@ private fun CrashCard(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = onShare) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = themeColors.accentCyan
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share this report", fontSize = 13.sp, color = themeColors.accentCyan)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onShare) {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = themeColors.accentCyan
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Share", fontSize = 13.sp, color = themeColors.accentCyan)
+                        }
+                        TextButton(onClick = onCopy) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = themeColors.accentCyan
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Copy", fontSize = 13.sp, color = themeColors.accentCyan)
+                        }
                     }
                 }
             }

@@ -34,9 +34,6 @@ interface CrashLogDao {
     )
     suspend fun pruneToMostRecent(keep: Int)
 
-    @Query("SELECT COUNT(*) FROM crash_logs")
-    suspend fun count(): Int
-
     @Query("DELETE FROM crash_logs")
     suspend fun clearAll()
 }

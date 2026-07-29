@@ -24,20 +24,41 @@ class RoomCrashLogSink(
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
 ) : CrashLogSink {
 
+    /**
+     * Monotonic deadline shared by every write for a single crash, set on the
+     * first one. Budgeting per call instead would let a wedged database stall
+     * the crashing thread for `timeoutMillis` once per write.
+     *
+     * Never reset: one sink records one crash, because the process dies right
+     * after. A sink reused across two crashes would find the budget spent.
+     */
+    private var deadlineMillis: Long? = null
+
     override fun record(record: CrashLogRecord) {
-        awaitWithTimeout { dao.insert(record.toEntity()) }
+        awaitWithinBudget { dao.insert(record.toEntity()) }
     }
 
     override fun prune(keepMostRecent: Int) {
-        awaitWithTimeout { dao.pruneToMostRecent(keepMostRecent) }
+        awaitWithinBudget { dao.pruneToMostRecent(keepMostRecent) }
     }
 
     /**
      * A wedged database must not hang the crash path - that turns a crash into
-     * an ANR, and the user loses the report either way.
+     * an ANR, and the user loses the report either way. Storing the crash takes
+     * priority over pruning: whatever budget the insert leaves is what pruning
+     * gets, and pruning is skipped outright once the budget is gone.
      */
-    private fun awaitWithTimeout(block: suspend () -> Unit) {
-        runBlocking { withTimeoutOrNull(timeoutMillis) { block() } }
+    private fun awaitWithinBudget(block: suspend () -> Unit) {
+        val remaining = remainingBudgetMillis()
+        if (remaining <= 0L) return
+        runBlocking { withTimeoutOrNull(remaining) { block() } }
+    }
+
+    private fun remainingBudgetMillis(): Long {
+        // Monotonic: the crash path must not be at the mercy of a wall-clock jump.
+        val now = System.nanoTime() / 1_000_000
+        val deadline = deadlineMillis ?: (now + timeoutMillis).also { deadlineMillis = it }
+        return (deadline - now).coerceAtLeast(0L)
     }
 
     companion object {
