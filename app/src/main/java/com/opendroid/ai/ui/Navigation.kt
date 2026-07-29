@@ -93,6 +93,9 @@ fun OpenDroidNavigation(
                 },
                 onNavigateToPermissions = {
                     navController.navigate("permissions")
+                },
+                onNavigateToCrashLog = {
+                    navController.navigate("crash_log")
                 }
             )
         }
@@ -174,6 +177,15 @@ fun OpenDroidNavigation(
                 }
             )
         }
+
+        composable("crash_log") {
+            CrashLogScreen(
+                viewModel = hiltViewModel(),
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
@@ -196,7 +208,8 @@ fun MainDashboard(
     onNavigateToAbout: () -> Unit,
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
-    onNavigateToPermissions: () -> Unit = {}
+    onNavigateToPermissions: () -> Unit = {},
+    onNavigateToCrashLog: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -300,7 +313,8 @@ fun MainDashboard(
                     onNavigateToAbout = onNavigateToAbout,
                     onNavigateToAutoReply = onNavigateToAutoReply,
                     onNavigateToNotificationHistory = onNavigateToNotificationHistory,
-                    onNavigateToPermissions = onNavigateToPermissions
+                    onNavigateToPermissions = onNavigateToPermissions,
+                    onNavigateToCrashLog = onNavigateToCrashLog
                 )
             }
         }
