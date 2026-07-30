@@ -425,6 +425,7 @@ fun ChatScreen(
                         )
                     } else emptyList()
                     ProposedPlanPrompt(
+                        planId = proposedPlan.planId,
                         goal = proposedPlan.goal,
                         stepsCount = proposedPlan.estimatedSteps,
                         blockedActions = blocked,
@@ -874,6 +875,7 @@ fun ThinkingBubble() {
 
 @Composable
 fun ProposedPlanPrompt(
+    planId: String,
     goal: String,
     stepsCount: Int,
     blockedActions: List<String> = emptyList(),
@@ -881,7 +883,11 @@ fun ProposedPlanPrompt(
     onApprove: (Set<String>) -> Unit,
     onReject: () -> Unit
 ) {
-    var checkedGrants by remember(blockedActions) { mutableStateOf(setOf<String>()) }
+    // Keyed on both: `planId` because a new plan must not inherit the previous
+    // plan's ticked grants even when the two happen to block the same actions,
+    // and `blockedActions` because the checkboxes are drawn from that list, so a
+    // change to it would otherwise leave ticks referring to rows that are gone.
+    var checkedGrants by remember(planId, blockedActions) { mutableStateOf(setOf<String>()) }
     Card(
         modifier = Modifier
             .fillMaxWidth()

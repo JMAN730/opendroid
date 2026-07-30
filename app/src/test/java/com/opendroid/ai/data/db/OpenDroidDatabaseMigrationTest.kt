@@ -68,6 +68,31 @@ class OpenDroidDatabaseMigrationTest {
     }
 
     @Test
+    fun `migration 6 to 7 is safe to run against an existing crash_logs table`() {
+        // Room wraps each migration in a transaction, so crash recovery does
+        // not need the IF NOT EXISTS guards. They promise something narrower:
+        // running the migration when crash_logs already exists and holds data
+        // must neither throw nor clobber the table.
+        val db = helper.createDatabase(databasePath, 7)
+        db.execSQL(
+            """
+            INSERT INTO crash_logs (`timestamp`, `exceptionClass`, `message`, `threadName`, `stackTrace`,
+                `appVersionName`, `appVersionCode`, `androidRelease`, `androidSdkInt`,
+                `deviceManufacturer`, `deviceModel`)
+            VALUES (1, 'java.lang.RuntimeException', 'boom', 'main', 'trace', '1.0.2', 3, '15', 35, 'Robolectric', 'JVM')
+            """.trimIndent()
+        )
+
+        OpenDroidDatabase.MIGRATION_6_7.migrate(db)
+
+        db.query("SELECT `message` FROM crash_logs").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("boom", cursor.getString(0))
+        }
+    }
+
+    @Test
     fun `full migration chain from 1 to 7 produces the current schema and keeps data`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase(TEST_DATABASE)
