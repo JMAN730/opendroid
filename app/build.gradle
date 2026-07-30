@@ -24,15 +24,23 @@ android {
         }
     }
 
-    // Release signing — credentials must be in gradle.properties (see gradle.properties.example)
+    // Release signing — credentials come from ~/.gradle/gradle.properties or
+    // ORG_GRADLE_PROJECT_* environment variables, never from the project's own
+    // gradle.properties, which is tracked (see gradle.properties.example).
     // The keystore file itself must also be placed at the project root (NOT committed to Git).
     def hasSigningConfig = project.hasProperty('RELEASE_STORE_PASSWORD') &&
             project.hasProperty('RELEASE_KEY_ALIAS') &&
             project.hasProperty('RELEASE_KEY_PASSWORD') &&
             file("${rootProject.projectDir}/opendroid-release.keystore").exists()
 
+    // Explicit opt-in for building release WITHOUT signing, so CI can exercise
+    // R8/ProGuard (where reflection-dependent code breaks) without holding any
+    // signing secrets. The resulting APK is unsigned and not installable - the
+    // guard below still fails a plain `assembleRelease` when signing is missing.
+    def allowUnsignedRelease = project.hasProperty('allowUnsignedRelease')
+
     if (!hasSigningConfig) {
-        logger.warn("WARNING: Release signing not configured. Set credentials in gradle.properties (see gradle.properties.example).")
+        logger.warn("WARNING: Release signing not configured. Set credentials in ~/.gradle/gradle.properties (see gradle.properties.example).")
     }
 
     signingConfigs {
@@ -66,12 +74,12 @@ android {
         def releaseBuildRequested = graph.allTasks.any { t ->
             t.project == project && t.name ==~ /(assemble|bundle|package)Release.*/
         }
-        if (releaseBuildRequested && !hasSigningConfig) {
+        if (releaseBuildRequested && !hasSigningConfig && !allowUnsignedRelease) {
             throw new GradleException(
                 "Release signing is not configured. Set RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS " +
-                "and RELEASE_KEY_PASSWORD in gradle.properties and place opendroid-release.keystore " +
-                "at the project root (see gradle.properties.example). Refusing to sign a release " +
-                "build with the debug key."
+                "and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties (or as ORG_GRADLE_PROJECT_* " +
+                "environment variables) and place opendroid-release.keystore at the project root " +
+                "(see gradle.properties.example). Refusing to sign a release build with the debug key."
             )
         }
     }
@@ -98,7 +106,12 @@ android {
         }
     }
     lint {
-        abortOnError false
+        // Pre-existing findings are frozen in the baseline so they do not
+        // block merges; anything NEW fails the build. Shrink the baseline
+        // over time (delete entries, fix, repeat) - never regenerate it to
+        // absorb new findings.
+        baseline file('lint-baseline.xml')
+        abortOnError true
         checkReleaseBuilds true
     }
 }

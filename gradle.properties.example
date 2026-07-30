@@ -1,12 +1,25 @@
-# Project-wide Gradle settings.
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.enableJetifier=true
-kotlin.code.style=official
-
-# Release signing credentials
-# Copy this file to gradle.properties and fill in your values.
-# NEVER commit gradle.properties to version control.
-RELEASE_STORE_PASSWORD=your_store_password_here
-RELEASE_KEY_ALIAS=your_key_alias_here
-RELEASE_KEY_PASSWORD=your_key_password_here
+# Release signing credentials — EXAMPLE ONLY.
+#
+# Do NOT copy this file over the project's gradle.properties. That file is
+# tracked in Git now, so anything written there gets published.
+#
+# Signing credentials are read with project.findProperty, which resolves from
+# your Gradle home as well as from the project. Use either of these instead:
+#
+# 1. Your personal, untracked Gradle home file — ~/.gradle/gradle.properties:
+#
+#        RELEASE_STORE_PASSWORD=your_store_password_here
+#        RELEASE_KEY_ALIAS=your_key_alias_here
+#        RELEASE_KEY_PASSWORD=your_key_password_here
+#
+# 2. Environment variables, which suit CI and never touch disk:
+#
+#        export ORG_GRADLE_PROJECT_RELEASE_STORE_PASSWORD=...
+#        export ORG_GRADLE_PROJECT_RELEASE_KEY_ALIAS=...
+#        export ORG_GRADLE_PROJECT_RELEASE_KEY_PASSWORD=...
+#
+# The keystore itself goes at the project root as opendroid-release.keystore.
+# It is gitignored by the *.keystore rule and must stay that way.
+#
+# Without all three properties and the keystore file, release builds fail
+# loudly rather than falling back to the publicly known debug key.
