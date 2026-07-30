@@ -33,14 +33,16 @@ class GeminiProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val activeModel = config.activeModel
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
 
         // On-device Nano Mock fallback (to prevent crashes and support offline testing)
-        if (activeModel == "gemini-nano") {
+        if (selectedModel == "gemini-nano") {
             return executeNanoMock(request)
         }
 
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
         val startTime = System.currentTimeMillis()
 
         // Map roles to user and model
@@ -84,7 +86,7 @@ class GeminiProvider @Inject constructor(
         requestBodyMap["generationConfig"] = generationConfig
 
         val bodyJson = gson.toJson(requestBodyMap)
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$activeModel:generateContent"
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$selectedModel:generateContent"
         val httpRequest = Request.Builder()
             .url(url)
             .header("x-goog-api-key", apiKey)
@@ -117,7 +119,7 @@ class GeminiProvider @Inject constructor(
             LLMResponse(
                 content = text,
                 tokensUsed = totalTokens,
-                model = activeModel,
+                model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
             )

@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.models.effectiveGrantedActions
+import com.opendroid.ai.data.models.withActiveProvider
+import com.opendroid.ai.data.models.withSelectedModel
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -18,15 +20,24 @@ import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
+import com.opendroid.ai.core.llm.ConnectionTestPlanner
+import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.ImportLocalModelResult
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
+import com.opendroid.ai.core.llm.RetryPolicy
+import com.opendroid.ai.core.llm.error.SecretRegistry
+import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import dagger.Lazy
 import com.opendroid.ai.data.models.ChatMessage
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.coroutineContext
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -57,6 +68,15 @@ class SettingsViewModel @Inject constructor(
     private val _modelsLoading = MutableStateFlow(false)
     val modelsLoading: StateFlow<Boolean> = _modelsLoading
 
+    private val _connectionResults =
+        MutableStateFlow<Map<String, ConnectionTestState>>(emptyMap())
+    val connectionResults: StateFlow<Map<String, ConnectionTestState>> = _connectionResults.asStateFlow()
+
+    private val _connectionBatchProgress = MutableStateFlow<ConnectionTestState.Testing?>(null)
+    val connectionBatchProgress: StateFlow<ConnectionTestState.Testing?> =
+        _connectionBatchProgress.asStateFlow()
+
+    private var connectionTestJob: Job? = null
     private val apiKeyUpdateJobs = mutableMapOf<String, Job>()
     private var activeModelJob: Job? = null
     private var elevenLabsApiKeyJob: Job? = null
@@ -239,30 +259,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateActiveProvider(provider: String) {
-        val defaultModel = when (provider) {
-            "Google Gemini" -> "gemini-2.0-flash"
-            "OpenAI" -> "gpt-4o"
-            "Anthropic Claude" -> ClaudeModelCatalog.defaultModelId
-            "OpenRouter" -> "google/gemini-2.0-flash-exp:free"
-            "Groq" -> "llama-3.3-70b-specdec"
-            "Together AI" -> "meta-llama/Llama-3-70b-chat-hf"
-            "DeepSeek" -> "deepseek-chat"
-            "Cohere" -> "command-r-plus"
-            "Ollama" -> "llama3"
-            "Copilot API" -> "gpt-4o"
-            "Custom OpenAI Compatible" -> "gpt-4o"
-            "On-Device AI",
-            "Gemma 4 (On-device)" -> "gemma-4-on-device"
-            "Mistral AI" -> "mistral-large-latest"
-            else -> "gemini-2.0-flash"
-        }
-        // Normalize legacy name to the new unified name
-        val normalizedProvider = if (provider == "Gemma 4 (On-device)") "On-Device AI" else provider
-        _llmConfig.value = _llmConfig.value.copy(activeProvider = normalizedProvider, activeModel = defaultModel)
+        val updated = _llmConfig.value.withActiveProvider(provider)
+        _llmConfig.value = updated
         viewModelScope.launch {
             try {
                 settingsRepository.updateConfig { current ->
-                    current.copy(activeProvider = normalizedProvider, activeModel = defaultModel)
+                    current.withActiveProvider(provider)
                 }
                 refreshModels(force = false)
             } catch (e: Exception) {
@@ -272,13 +274,15 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateActiveModel(model: String) {
-        _llmConfig.value = _llmConfig.value.copy(activeModel = model)
+        val provider = _llmConfig.value.activeProvider
+        val updated = _llmConfig.value.withSelectedModel(provider, model)
+        _llmConfig.value = updated
         activeModelJob?.cancel()
         activeModelJob = viewModelScope.launch {
             try {
                 delay(500)
                 settingsRepository.updateConfig { current ->
-                    current.copy(activeModel = model)
+                    current.withSelectedModel(current.activeProvider, model)
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
@@ -403,39 +407,111 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun testProviderLatency(providerName: String) {
-        viewModelScope.launch {
-            try {
-                val factory = llmProviderFactory.get()
-                val provider = factory.getProviderByName(providerName)
-                if (provider.isAvailable()) {
-                    val request = LLMRequest(
-                        systemPrompt = "You are a speed test server. Respond with 'pong'.",
-                        messages = listOf(ChatMessage(id = "1", text = "ping", sender = ChatMessage.Sender.USER)),
-                        responseFormat = ResponseFormat.TEXT
-                    )
-                    val response = provider.complete(request)
-                    val updatedBenchmarks = _llmConfig.value.latencyBenchmarks.toMutableMap()
-                    updatedBenchmarks[providerName] = response.latencyMs
-                    _llmConfig.value = _llmConfig.value.copy(latencyBenchmarks = updatedBenchmarks)
-                    settingsRepository.updateConfig { current ->
-                        val currentBenchmarks = current.latencyBenchmarks.toMutableMap()
-                        currentBenchmarks[providerName] = response.latencyMs
-                        current.copy(latencyBenchmarks = currentBenchmarks)
-                    }
-                }
-            } catch (e: Exception) {
-                // Keep the record but fail with high number
-                val updatedBenchmarks = _llmConfig.value.latencyBenchmarks.toMutableMap()
-                updatedBenchmarks[providerName] = 9999L
-                _llmConfig.value = _llmConfig.value.copy(latencyBenchmarks = updatedBenchmarks)
-                settingsRepository.updateConfig { current ->
-                    val currentBenchmarks = current.latencyBenchmarks.toMutableMap()
-                    currentBenchmarks[providerName] = 9999L
-                    current.copy(latencyBenchmarks = currentBenchmarks)
-                }
-            }
+    fun testConnection(providerName: String) {
+        connectionTestJob?.cancel()
+        connectionTestJob = viewModelScope.launch {
+            runConnectionTest(providerName, index = 1, total = 1)
         }
+    }
+
+    fun testAllConfigured() {
+        connectionTestJob?.cancel()
+        connectionTestJob = viewModelScope.launch {
+            val snapshot = _llmConfig.value
+            val providers = ConnectionTestPlanner.configuredProviders(snapshot)
+            providers.forEachIndexed { index, providerName ->
+                if (!coroutineContext.isActive) return@launch
+                _connectionBatchProgress.value = ConnectionTestState.Testing(
+                    provider = providerName,
+                    index = index + 1,
+                    total = providers.size
+                )
+                runConnectionTest(providerName, index = index + 1, total = providers.size)
+            }
+            _connectionBatchProgress.value = null
+        }
+    }
+
+    fun cancelConnectionTests() {
+        connectionTestJob?.cancel()
+        connectionTestJob = null
+        _connectionBatchProgress.value = null
+    }
+
+    private suspend fun runConnectionTest(providerName: String, index: Int, total: Int) {
+        val provider = ProviderCatalog.canonicalName(providerName)
+        val snapshot = _llmConfig.value
+        val model = snapshot.selectedModelFor(provider)
+        val now = System.currentTimeMillis()
+        val gap = ConnectionTestPlanner.configurationGap(snapshot, provider)
+        if (gap != null) {
+            publishConnectionResult(ConnectionTestPlanner.stamp(gap, now))
+            return
+        }
+
+        publishConnectionResult(ConnectionTestState.Testing(provider, index, total))
+        val candidateKey = snapshot.apiKeys[provider].orEmpty()
+        val candidateEndpoint = when (provider) {
+            "Ollama" -> snapshot.ollamaUrl
+            "Copilot API" -> snapshot.copilotUrl
+            else -> snapshot.customEndpoints[provider].orEmpty()
+        }
+        val registrations = buildList {
+            if (candidateKey.isNotBlank()) add(SecretRegistry.register(candidateKey))
+            if (candidateEndpoint.isNotBlank()) add(SecretRegistry.register(candidateEndpoint))
+        }
+        try {
+            val factory = llmProviderFactory.get()
+            val llmProvider = factory.getProviderByName(provider)
+            val request = LLMRequest(
+                systemPrompt = "You are a speed test server. Respond with 'pong'.",
+                messages = listOf(
+                    ChatMessage(id = "1", text = "ping", sender = ChatMessage.Sender.USER)
+                ),
+                responseFormat = ResponseFormat.TEXT,
+                retryPolicy = RetryPolicy.NONE
+            )
+            val response = llmProvider.complete(request)
+            val connected = ConnectionTestPlanner.success(
+                provider = provider,
+                model = response.model.ifBlank { model },
+                latencyMs = response.latencyMs,
+                testedAtMillis = System.currentTimeMillis()
+            )
+            publishConnectionResult(connected)
+            val updatedBenchmarks = _llmConfig.value.latencyBenchmarks.toMutableMap()
+            updatedBenchmarks[provider] = connected.latencyMs
+            _llmConfig.value = _llmConfig.value.copy(latencyBenchmarks = updatedBenchmarks)
+            settingsRepository.updateConfig { current ->
+                current.copy(
+                    latencyBenchmarks = current.latencyBenchmarks + (provider to connected.latencyMs)
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            publishConnectionResult(
+                ConnectionTestPlanner.fromException(
+                    provider = provider,
+                    model = model,
+                    throwable = e,
+                    testedAtMillis = System.currentTimeMillis()
+                )
+            )
+        } finally {
+            registrations.asReversed().forEach(AutoCloseable::close)
+        }
+    }
+
+    private fun publishConnectionResult(state: ConnectionTestState) {
+        val provider = when (state) {
+            is ConnectionTestState.Idle -> return
+            is ConnectionTestState.Testing -> state.provider
+            is ConnectionTestState.Connected -> state.provider
+            is ConnectionTestState.Failed -> state.provider
+            is ConnectionTestState.ConfigMissing -> state.provider
+        }
+        _connectionResults.value = _connectionResults.value + (provider to state)
     }
 
     fun setAutoMode(mode: AutoMode) {

@@ -34,7 +34,10 @@ class CopilotProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
+        val baseUrl = UrlUtils.formatBaseUrl(
+            request.providerConfig?.endpoint?.takeIf { it.isNotBlank() } ?: config.copilotUrl,
+            ""
+        )
         if (baseUrl.isEmpty()) {
             throw IllegalStateException("Copilot server URL is not configured. Set it in Settings.")
         }
@@ -46,7 +49,7 @@ class CopilotProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "gpt-4o"
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
@@ -67,7 +70,7 @@ class CopilotProvider @Inject constructor(
             .url(endpoint)
             .post(bodyJson.toRequestBody(mediaType))
 
-        val apiKey = config.apiKeys[name]
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() } ?: config.apiKeys[name]
         if (!apiKey.isNullOrBlank()) {
             requestBuilder.header("Authorization", "Bearer $apiKey")
         }

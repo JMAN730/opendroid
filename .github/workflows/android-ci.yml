@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Unit tests and debug build
+    name: Unit tests, lint, and builds
     runs-on: ubuntu-latest
 
     steps:
@@ -46,8 +46,8 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Run unit tests and build debug APK
-        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+      - name: Run unit tests, lint, and build debug + unsigned release
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
 
       - name: Upload test reports
         if: always()
@@ -55,5 +55,14 @@ jobs:
         with:
           name: test-reports
           path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: app/build/reports/lint-results*
           if-no-files-found: ignore
           retention-days: 14

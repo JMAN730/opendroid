@@ -33,18 +33,21 @@ class ClaudeProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
         // The persisted model ID is untrusted input: resolve it against the catalog
         // (migrating legacy IDs) rather than sending it to Anthropic verbatim.
-        val selectedModel = if (config.activeModel.isBlank()) {
+        val requestedModel = request.model?.takeIf { it.isNotBlank() }
+        val selectedModel = if (requestedModel == null) {
             ClaudeModelCatalog.defaultModelId
         } else {
-            ClaudeModelCatalog.resolve(config.activeModel)
+            ClaudeModelCatalog.resolve(requestedModel)
                 ?: throw IllegalStateException(
-                    "The selected Claude model \"${config.activeModel}\" is no longer supported. " +
+                    "The selected Claude model \"$requestedModel\" is no longer supported. " +
                         "Please pick another model in Settings."
                 )
         }

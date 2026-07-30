@@ -4,12 +4,15 @@ import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
+import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.prompts.ReEvalPrompts
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -69,14 +72,17 @@ class ReEvaluationEngine @Inject constructor(
             )
 
             val cleaned = cleanJsonString(response.content)
-            json.decodeFromString<ReEvalResult>(cleaned)
+            try {
+                json.decodeFromString<ReEvalResult>(cleaned)
+            } catch (decode: Exception) {
+                throw LLMErrorMapper.malformed(provider.name, response.model)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LLMException) {
+            throw e
         } catch (e: Exception) {
-            // Safe fallback if network / parsing fails
-            ReEvalResult(
-                speech = "Re-evaluation offline. Continuing with existing plan.",
-                decision = "CONTINUE",
-                updatedPlan = null
-            )
+            throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
     }
 
@@ -140,7 +146,11 @@ class ReEvaluationEngine @Inject constructor(
             )
 
             val cleaned = cleanJsonString(response.content)
-            val result = json.decodeFromString<ReEvalResult>(cleaned)
+            val result = try {
+                json.decodeFromString<ReEvalResult>(cleaned)
+            } catch (decode: Exception) {
+                throw LLMErrorMapper.malformed(provider.name, response.model)
+            }
             
             // Log to unknown actions DB only — never to semantic memory
             try {
@@ -154,8 +164,9 @@ class ReEvaluationEngine @Inject constructor(
             } catch (e: Exception) {}
             
             result
-        } catch (e: Exception) {
-            // Log failed status to DB only — never to semantic memory
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LLMException) {
             try {
                 unknownActionDao.get().insertUnknownAction(
                     UnknownActionEntity(
@@ -164,13 +175,19 @@ class ReEvaluationEngine @Inject constructor(
                         fixStatus = "FAILED"
                     )
                 )
-            } catch (ex: Exception) {}
-
-            ReEvalResult(
-                speech = "Failed to replan failed step: ${e.localizedMessage}",
-                decision = "ABANDON",
-                updatedPlan = null
-            )
+            } catch (_: Exception) {}
+            throw e
+        } catch (e: Exception) {
+            try {
+                unknownActionDao.get().insertUnknownAction(
+                    UnknownActionEntity(
+                        attemptedAction = failedStep.action,
+                        goal = originalGoal,
+                        fixStatus = "FAILED"
+                    )
+                )
+            } catch (_: Exception) {}
+            throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
     }
 

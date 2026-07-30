@@ -33,13 +33,15 @@ class DeepSeekProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "deepseek-chat"
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "deepseek-chat"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,

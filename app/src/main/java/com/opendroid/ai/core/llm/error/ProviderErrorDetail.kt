@@ -6,6 +6,8 @@ import com.opendroid.ai.core.llm.LLMRequest
 import okhttp3.Response
 import java.io.IOException
 
+private const val MAX_PROVIDER_ERROR_BODY_CHARS = 32_768
+
 /**
  * A structurally safe summary of a cloud provider HTTP failure.
  *
@@ -55,7 +57,6 @@ class ProviderErrorDetail private constructor(
     }
 
     companion object {
-        private const val MAX_ERROR_BODY_CHARS = 32_768
         private val SAFE_VENDOR_TOKEN = Regex("""[A-Za-z][A-Za-z0-9._-]{0,63}""")
         private val CREDENTIAL_PREFIXES = listOf(
             "sk-",
@@ -106,7 +107,7 @@ class ProviderErrorDetail private constructor(
         }
 
         private fun parseBody(rawBody: String?): JsonObject? {
-            if (rawBody.isNullOrBlank() || rawBody.length > MAX_ERROR_BODY_CHARS) return null
+            if (rawBody.isNullOrBlank() || rawBody.length > MAX_PROVIDER_ERROR_BODY_CHARS) return null
 
             return try {
                 JsonParser.parseString(rawBody).takeIf { it.isJsonObject }?.asJsonObject
@@ -155,7 +156,7 @@ internal fun Response.toSafeProviderException(
     provider: ProviderErrorDetail.Provider,
     request: LLMRequest,
     knownSecrets: Iterable<String>
-): IOException {
+): LLMException {
     val forbiddenText = buildList {
         add(this@toSafeProviderException.request.url.toString())
         add(request.systemPrompt)
@@ -164,16 +165,41 @@ internal fun Response.toSafeProviderException(
             message.imageBase64?.let(::add)
         }
     }
-    val detail = ProviderErrorDetail.fromHttpFailure(
+    val rawBody = try {
+        consumeBoundedErrorBody()
+    } catch (_: IOException) {
+        null
+    }
+    return LLMErrorMapper.fromHttpFailure(
         provider = provider,
+        model = request.model.orEmpty(),
         httpStatus = code,
-        rawBody = try {
-            body?.string()
-        } catch (_: IOException) {
-            null
-        },
+        headers = headers.toMultimap().mapValues { (_, values) -> values.firstOrNull().orEmpty() },
+        rawBody = rawBody,
         knownSecrets = knownSecrets,
         forbiddenText = forbiddenText
     )
-    return IOException(detail.message)
+}
+
+/**
+ * Reads at most the structural classification budget. The provider controls
+ * this response, so calling ResponseBody.string() here would allocate an
+ * attacker-sized body before any post-read length check could run.
+ */
+internal fun Response.consumeBoundedErrorBody(): String? {
+    val responseBody = body ?: return null
+    val declaredLength = responseBody.contentLength()
+    if (declaredLength > MAX_PROVIDER_ERROR_BODY_CHARS) return null
+
+    return responseBody.charStream().use { reader ->
+        val buffer = CharArray(4_096)
+        val collected = StringBuilder()
+        while (collected.length <= MAX_PROVIDER_ERROR_BODY_CHARS) {
+            val remaining = MAX_PROVIDER_ERROR_BODY_CHARS + 1 - collected.length
+            val count = reader.read(buffer, 0, minOf(buffer.size, remaining))
+            if (count == -1) return@use collected.toString()
+            collected.append(buffer, 0, count)
+        }
+        null
+    }
 }

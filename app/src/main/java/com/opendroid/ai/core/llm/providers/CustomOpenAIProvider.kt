@@ -34,11 +34,13 @@ class CustomOpenAIProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: ""
-        val baseUrl = UrlUtils.formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() } ?: config.apiKeys[name] ?: ""
+        val baseUrl = request.providerConfig?.endpoint?.takeIf { it.isNotBlank() }
+            ?.let { UrlUtils.formatBaseUrl(it, "https://api.openai.com/v1") }
+            ?: UrlUtils.formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
 
         val startTime = System.currentTimeMillis()
-        val selectedModel = config.activeModel.ifBlank { "gpt-4o" }
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)

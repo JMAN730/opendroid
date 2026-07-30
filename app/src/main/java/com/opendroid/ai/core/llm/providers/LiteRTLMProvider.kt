@@ -146,8 +146,8 @@ class LiteRTLMProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val startTime = System.currentTimeMillis()
-        val config = settingsRepository.llmConfig.first()
-        val spec = resolveModelSpec(config.activeModel)
+        val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
+        val spec = resolveModelSpec(modelId)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -178,9 +178,9 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
+        val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
         try {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -213,8 +213,7 @@ class LiteRTLMProvider @Inject constructor(
                 conversation.close()
             }
         } catch (e: Throwable) {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
         }
     }
@@ -223,9 +222,9 @@ class LiteRTLMProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
+        val modelId = ProviderCatalog.defaultModel(name)
         try {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -252,8 +251,7 @@ class LiteRTLMProvider @Inject constructor(
                 // Not JSON — treat as plain text
             }
         } catch (e: Throwable) {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             emit(StreamChunk.Content("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}"))
         }
     }

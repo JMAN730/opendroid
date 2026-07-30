@@ -65,8 +65,8 @@ class HybridOnDeviceProvider @Inject constructor(
     }
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 
@@ -102,8 +102,8 @@ class HybridOnDeviceProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 
@@ -144,8 +144,8 @@ class HybridOnDeviceProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 

@@ -33,11 +33,13 @@ class OpenAIProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
-        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "gpt-4o"
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)

@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
+import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.agent.primaryAction
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.LLMConfig
@@ -58,6 +61,26 @@ class ChatViewModel @Inject constructor(
         )
 
     val agentState: StateFlow<AgentState> = agentLoop.agentState
+    val chatError: StateFlow<ChatErrorUiState?> = agentLoop.chatError
+
+    fun dismissChatError() {
+        agentLoop.dismissChatError()
+    }
+
+    fun retryAfterChatError(context: Context) {
+        val error = agentLoop.chatError.value ?: return
+        when (error.primaryAction()) {
+            ChatErrorPrimaryAction.RETRY -> {
+                agentLoop.dismissChatError()
+                val lastUser = conversationHistory.value.lastOrNull {
+                    it.sender == ChatMessage.Sender.USER
+                } ?: return
+                _taskSessionId.value = currentSessionId.value
+                agentLoop.processQuery(lastUser.text, context)
+            }
+            else -> agentLoop.dismissChatError()
+        }
+    }
 
     // Session the most recently started task was pinned to. Set once, right when a task
     // is kicked off (sendMessage for a genuinely new query, approvePlan, or

@@ -33,13 +33,15 @@ class GroqProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
-        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "llama-3.3-70b-specdec"
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "llama-3.3-70b-specdec"
 
         val requestBodyMap = mutableMapOf<String, Any>(
             "model" to selectedModel,
