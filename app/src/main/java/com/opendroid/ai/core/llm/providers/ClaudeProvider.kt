@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -24,26 +26,30 @@ class ClaudeProvider @Inject constructor(
 ) : LLMProvider {
 
     override val name: String = "Anthropic Claude"
-    override val availableModels: List<String> = listOf("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5")
+    override val availableModels: List<String> = ClaudeModelCatalog.models.map { it.id }
 
     private val gson = Gson()
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
-        val selectedModel = if (config.activeModel.isNotBlank()) {
-            when (config.activeModel) {
-                "claude-opus-4-8", "claude-opus-4" -> "claude-opus-4-8"
-                "claude-sonnet-4-6", "claude-sonnet-4" -> "claude-sonnet-4-6"
-                "claude-haiku-4-5", "claude-haiku-4" -> "claude-haiku-4-5-20251001"
-                else -> config.activeModel
-            }
+        // The persisted model ID is untrusted input: resolve it against the catalog
+        // (migrating legacy IDs) rather than sending it to Anthropic verbatim.
+        val requestedModel = request.model?.takeIf { it.isNotBlank() }
+        val selectedModel = if (requestedModel == null) {
+            ClaudeModelCatalog.defaultModelId
         } else {
-            "claude-sonnet-4-6"
+            ClaudeModelCatalog.resolve(requestedModel)
+                ?: throw IllegalStateException(
+                    "The selected Claude model \"$requestedModel\" is no longer supported. " +
+                        "Please pick another model in Settings."
+                )
         }
 
         val messagesList = mutableListOf<Map<String, Any>>()
@@ -75,9 +81,12 @@ class ClaudeProvider @Inject constructor(
             "model" to selectedModel,
             "system" to request.systemPrompt,
             "messages" to messagesList,
-            "max_tokens" to request.maxTokens,
-            "temperature" to request.temperature
+            "max_tokens" to request.maxTokens
         )
+        // Current Opus-tier models reject sampling parameters with HTTP 400.
+        if (ClaudeModelCatalog.acceptsSamplingParameters(selectedModel)) {
+            requestBodyMap["temperature"] = request.temperature
+        }
 
         val bodyJson = gson.toJson(requestBodyMap)
         val httpRequest = Request.Builder()
@@ -91,7 +100,11 @@ class ClaudeProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Claude request failed: Code ${response.code} - ${response.body?.string()}")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.CLAUDE,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
             val responseBody = response.body?.string() ?: throw IOException("Empty response body from Claude")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
@@ -114,15 +127,11 @@ class ClaudeProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Claude: ${e.localizedMessage}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

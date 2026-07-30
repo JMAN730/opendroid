@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
+import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.agent.primaryAction
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.LLMConfig
@@ -58,6 +61,42 @@ class ChatViewModel @Inject constructor(
         )
 
     val agentState: StateFlow<AgentState> = agentLoop.agentState
+
+    /**
+     * [AgentLoop.chatError], but scoped to whichever chat is on screen - the same rule
+     * [visibleAgentState] applies to the shared agent state. An error raised by a task
+     * in chat A must never render its recovery card inside chat B; the underlying error
+     * stays published so switching back to its own chat shows it again.
+     */
+    val chatError: StateFlow<ChatErrorUiState?> = combine(
+        agentLoop.chatError, sessions
+    ) { error, sessionList ->
+        val current = sessionList.firstOrNull { it.isCurrent }?.id
+        error?.takeIf { it.sessionId == current }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun dismissChatError() {
+        agentLoop.dismissChatError()
+    }
+
+    fun retryAfterChatError(context: Context) {
+        val error = agentLoop.chatError.value ?: return
+        when (error.primaryAction()) {
+            ChatErrorPrimaryAction.RETRY -> {
+                agentLoop.dismissChatError()
+                // Re-execute the request the error actually describes, in ITS session -
+                // never re-send the visible chat's last message, and never insert a
+                // duplicate user bubble: the original message is already persisted.
+                _taskSessionId.value = error.sessionId
+                agentLoop.retryRequest(error.requestId, error.sessionId, context)
+            }
+            else -> agentLoop.dismissChatError()
+        }
+    }
 
     // Session the most recently started task was pinned to. Set once, right when a task
     // is kicked off (sendMessage for a genuinely new query, approvePlan, or

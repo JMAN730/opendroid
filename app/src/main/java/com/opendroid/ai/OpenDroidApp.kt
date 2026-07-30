@@ -1,8 +1,14 @@
 package com.opendroid.ai
 
 import android.app.Application
+import android.util.Log
+import com.opendroid.ai.core.crash.CrashLogRecorder
+import com.opendroid.ai.core.crash.DeviceMetadata
+import com.opendroid.ai.core.crash.OpenDroidCrashHandler
 import com.opendroid.ai.core.memory.MemoryManager
 import com.opendroid.ai.core.security.SecurePrefs
+import com.opendroid.ai.data.crash.RoomCrashLogSink
+import com.opendroid.ai.data.db.dao.CrashLogDao
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,10 +22,16 @@ class OpenDroidApp : Application() {
     @Inject
     lateinit var memoryManager: MemoryManager
 
+    @Inject
+    lateinit var crashLogDao: CrashLogDao
+
     private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
+
+        // Installed first so that a crash in any later startup step is captured.
+        installCrashHandler()
 
         // Migrate plaintext prefs to encrypted storage (runs once)
         SecurePrefs.migrateFromPlaintext(this)
@@ -33,5 +45,26 @@ class OpenDroidApp : Application() {
                 // Silently ignore cleanup errors to not block app startup
             }
         }
+    }
+
+    private fun installCrashHandler() {
+        try {
+            val recorder = CrashLogRecorder(
+                sink = RoomCrashLogSink(crashLogDao),
+                // Read here, at startup, rather than at crash time - a dying
+                // process is the wrong place to be querying PackageManager.
+                metadata = DeviceMetadata.fromContext(this),
+                onRecordingFailed = { Log.e(TAG, "Failed to record crash", it) }
+            )
+            OpenDroidCrashHandler.install(recorder)
+        } catch (t: Throwable) {
+            // Crash logging is best-effort. Failing to install it must never be
+            // the reason the app does not start.
+            Log.e(TAG, "Failed to install crash handler", t)
+        }
+    }
+
+    companion object {
+        private const val TAG = "OpenDroidApp"
     }
 }

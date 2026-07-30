@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -32,11 +34,13 @@ class CustomOpenAIProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: ""
-        val baseUrl = UrlUtils.formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() } ?: config.apiKeys[name] ?: ""
+        val baseUrl = request.providerConfig?.endpoint?.takeIf { it.isNotBlank() }
+            ?.let { UrlUtils.formatBaseUrl(it, "https://api.openai.com/v1") }
+            ?: UrlUtils.formatBaseUrl(config.customEndpoints[name] ?: "", "https://api.openai.com/v1")
 
         val startTime = System.currentTimeMillis()
-        val selectedModel = config.activeModel.ifBlank { "gpt-4o" }
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
@@ -61,10 +65,14 @@ class CustomOpenAIProvider @Inject constructor(
 
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
-            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Custom OpenAI request failed: Code ${response.code} - $responseBody")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.CUSTOM_OPENAI,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
+            val responseBody = response.body?.string()
             if (responseBody == null) {
                 throw IOException("Empty response body from Custom OpenAI provider")
             }
@@ -88,15 +96,11 @@ class CustomOpenAIProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Custom OpenAI Compatible: ${e.localizedMessage}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

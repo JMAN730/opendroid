@@ -39,6 +39,8 @@ import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
+import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.error.LLMError
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
@@ -71,13 +73,14 @@ fun SettingsScreen(
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
+    onNavigateToCrashLog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
+    val connectionResults by viewModel.connectionResults.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
 
     val providers = listOf(
         "Google Gemini",
@@ -102,6 +105,7 @@ fun SettingsScreen(
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -1293,10 +1297,34 @@ fun SettingsScreen(
                                 val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
+                                    val connectionState = connectionResults[providerName]
                                     SecureApiKeyField(
                                         value = keyVal,
                                         onValueChange = { viewModel.updateApiKey(providerName, it) },
                                         label = "$providerName API Key"
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = connectionStatusLabel(connectionState),
+                                            fontSize = 10.sp,
+                                            color = TextSecondary,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { viewModel.testConnection(providerName) }
+                                        ) {
+                                            Text("Test connection", fontSize = 11.sp)
+                                        }
+                                    }
+                                    Text(
+                                        text = "Sends one minimal request to $providerName; provider charges may apply.",
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
                                     )
                                 }
                             }
@@ -1459,15 +1487,16 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        val grantedActions = config.effectiveGrantedActions()
                         Text(
-                            text = "ALLOWED ACTIONS (${config.effectiveGrantedActions().size})",
+                            text = "ALLOWED ACTIONS (${grantedActions.size})",
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             color = AccentCyan
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         val dateFormat = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()) }
-                        config.effectiveGrantedActions().entries
+                        grantedActions.entries
                             .sortedBy { it.key }
                             .forEach { (action, grantedAt) ->
                                 Row(
@@ -1718,6 +1747,47 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Review and grant microphone, storage, accessibility & other permissions.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Crash Log link card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentRed.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToCrashLog() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💥", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "CRASH LOG",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentRed
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "View and share crashes recorded on this device.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
@@ -2075,6 +2145,25 @@ fun SettingsScreen(
             textContentColor = TextSecondary
         )
     }
+}
+
+private fun connectionStatusLabel(state: ConnectionTestState?): String = when (state) {
+    is ConnectionTestState.Testing -> "Testing…"
+    is ConnectionTestState.Connected ->
+        "Connected with ${state.model} · ${state.latencyMs} ms"
+    is ConnectionTestState.Failed -> when (state.error) {
+        LLMError.AuthInvalid -> "Key rejected"
+        LLMError.AuthMissing -> "Key required"
+        LLMError.QuotaExhausted -> "Quota exhausted"
+        LLMError.RateLimited -> "Rate limited"
+        LLMError.Network -> "Network error"
+        else -> "Connection failed"
+    }
+    is ConnectionTestState.ConfigMissing -> when (state.reason) {
+        LLMError.AuthMissing -> "Key required"
+        else -> "Configuration required"
+    }
+    else -> "Not tested"
 }
 
 private fun formatBytes(bytes: Long): String {

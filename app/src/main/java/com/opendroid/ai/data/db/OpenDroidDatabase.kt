@@ -20,9 +20,11 @@ import com.opendroid.ai.data.db.entities.TaskHistoryEntity
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.dao.ModelDao
+import com.opendroid.ai.data.db.dao.CrashLogDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.db.entities.ModelEntity
+import com.opendroid.ai.data.db.entities.CrashLogEntity
 import androidx.room.TypeConverters
 
 @Database(
@@ -35,10 +37,11 @@ import androidx.room.TypeConverters
         MacroEntity::class,
         UnknownActionEntity::class,
         NotificationEntity::class,
-        ModelEntity::class
+        ModelEntity::class,
+        CrashLogEntity::class
     ],
-    version = 6,
-    exportSchema = false
+    version = 7,
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class OpenDroidDatabase : RoomDatabase() {
@@ -51,6 +54,7 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun unknownActionDao(): UnknownActionDao
     abstract fun notificationDao(): NotificationDao
     abstract fun modelDao(): ModelDao
+    abstract fun crashLogDao(): CrashLogDao
 
     companion object {
         // Id of the single session that pre-existing conversation rows are
@@ -146,6 +150,35 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                 // 4. Matches the @Index Room expects on ConversationEntity.sessionId.
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_conversations_sessionId ON conversations(sessionId)"
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Crash log. Purely additive - nothing existing is touched, so an
+                // upgrade can never lose user data here.
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS crash_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        exceptionClass TEXT NOT NULL,
+                        message TEXT,
+                        threadName TEXT NOT NULL,
+                        stackTrace TEXT NOT NULL,
+                        appVersionName TEXT NOT NULL,
+                        appVersionCode INTEGER NOT NULL,
+                        androidRelease TEXT NOT NULL,
+                        androidSdkInt INTEGER NOT NULL,
+                        deviceManufacturer TEXT NOT NULL,
+                        deviceModel TEXT NOT NULL
+                    )
+                """)
+
+                // Matches the @Index on CrashLogEntity.timestamp - every read path
+                // orders by it.
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_crash_logs_timestamp ON crash_logs(timestamp)"
                 )
             }
         }
