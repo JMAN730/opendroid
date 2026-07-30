@@ -9,7 +9,9 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import java.net.ConnectException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 class LLMErrorMapperTest {
 
@@ -20,6 +22,7 @@ class LLMErrorMapperTest {
             Case(402, """{"error":{"code":"billing_required"}}""", LLMError.QuotaExhausted),
             Case(429, """{"error":{"code":"insufficient_quota"}}""", LLMError.QuotaExhausted),
             Case(429, """{"error":{"type":"rate_limit_error"}}""", LLMError.RateLimited),
+            Case(429, """{"error":{"message":"quota of credit-based requests exceeded"}}""", LLMError.RateLimited),
             Case(404, """{"error":{"code":"model_not_found"}}""", LLMError.ModelUnavailable),
             Case(400, """{"error":{"type":"invalid_request_error"}}""", LLMError.RequestInvalid),
             Case(529, """{"error":{"type":"overloaded_error"}}""", LLMError.ServerError),
@@ -102,16 +105,31 @@ class LLMErrorMapperTest {
     }
 
     @Test
-    fun `transport errors map to retryable network without retaining hostile cause`() {
+    fun `transport errors map to network without retaining hostile cause`() {
         val cause = SocketTimeoutException("Bearer sk-do-not-retain at secret.example")
 
         val exception = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", cause)
 
         assertEquals(LLMError.Network, exception.error)
-        assertTrue(exception.retryable)
         assertNull(exception.cause)
         assertFalse(exception.toString().contains("sk-do-not-retain"))
         assertFalse(exception.toString().contains("secret.example"))
+    }
+
+    @Test
+    fun `only connect-phase network failures are retryable`() {
+        val refused = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", ConnectException("refused"))
+        val unknownHost = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", UnknownHostException("api.test"))
+        val timeout = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", SocketTimeoutException("read timed out"))
+        val io = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", java.io.IOException("stream reset"))
+
+        assertEquals(LLMError.Network, refused.error)
+        assertTrue(refused.retryable)
+        assertTrue(unknownHost.retryable)
+        assertEquals(LLMError.Network, timeout.error)
+        assertFalse(timeout.retryable)
+        assertEquals(LLMError.Network, io.error)
+        assertFalse(io.retryable)
     }
 
     @Test

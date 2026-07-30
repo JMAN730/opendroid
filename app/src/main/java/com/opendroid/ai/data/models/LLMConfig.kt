@@ -1,9 +1,18 @@
 package com.opendroid.ai.data.models
 
+import android.util.Log
 import kotlinx.serialization.Serializable
 import com.opendroid.ai.core.llm.AIModel
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
 import com.opendroid.ai.core.llm.ProviderCatalog
+
+private const val TAG = "LLMConfig"
+
+// android.util.Log is unavailable in plain-JVM unit tests; the warning is
+// best-effort signal, never worth failing model resolution over.
+private fun warnCoercion() = runCatching {
+    Log.w(TAG, "Unresolvable Claude model selection; coercing to ${ClaudeModelCatalog.defaultModelId}.")
+}
 
 @Serializable
 data class LLMConfig(
@@ -58,7 +67,10 @@ fun LLMConfig.selectedModelFor(providerName: String): String {
         ?: ProviderCatalog.defaultModel(provider)
 
     return if (provider == "Anthropic Claude") {
-        ClaudeModelCatalog.resolve(selected) ?: ClaudeModelCatalog.defaultModelId
+        ClaudeModelCatalog.resolve(selected) ?: run {
+            warnCoercion()
+            ClaudeModelCatalog.defaultModelId
+        }
     } else {
         selected.trim()
     }
@@ -68,7 +80,10 @@ fun LLMConfig.withSelectedModel(providerName: String, model: String): LLMConfig 
     val provider = ProviderCatalog.canonicalName(providerName)
     require(ProviderCatalog.isKnown(provider)) { "Unknown LLM provider." }
     val safeModel = if (provider == "Anthropic Claude") {
-        ClaudeModelCatalog.resolve(model) ?: ClaudeModelCatalog.defaultModelId
+        ClaudeModelCatalog.resolve(model) ?: run {
+            warnCoercion()
+            ClaudeModelCatalog.defaultModelId
+        }
     } else {
         model.trim().ifBlank { ProviderCatalog.defaultModel(provider) }
     }

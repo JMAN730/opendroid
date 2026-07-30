@@ -13,6 +13,7 @@ object NetworkErrorFormatter {
     fun toUserMessage(error: Throwable?): String {
         if (error is LLMException) {
             val state = ChatErrorUiState.fromException(
+                sessionId = "network",
                 requestId = "network",
                 runId = "network",
                 failure = error

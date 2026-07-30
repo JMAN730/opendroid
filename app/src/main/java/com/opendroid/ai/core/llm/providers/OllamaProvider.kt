@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.util.NetworkErrorFormatter
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -71,7 +73,11 @@ class OllamaProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(requestBuilder.build()).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Ollama request failed: Code ${response.code}")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.OLLAMA,
+                    request = request,
+                    knownSecrets = listOfNotNull(apiKey)
+                )
             }
             val responseBody = response.body?.string() ?: throw IOException("Empty response body from Ollama")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)

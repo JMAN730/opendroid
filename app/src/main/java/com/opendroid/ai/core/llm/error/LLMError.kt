@@ -33,21 +33,18 @@ sealed class LLMError(val code: String) {
  */
 class RedactedDetail private constructor(
     val vendorType: String?,
-    val vendorCode: String?,
-    val vendorStatus: String?
+    val vendorCode: String?
 ) {
     override fun toString(): String = buildList {
         vendorType?.let { add("type=$it") }
         vendorCode?.let { add("code=$it") }
-        vendorStatus?.let { add("status=$it") }
     }.joinToString()
 
     companion object {
         internal fun fromProviderDetail(detail: ProviderErrorDetail): RedactedDetail =
             RedactedDetail(
                 vendorType = detail.vendorType,
-                vendorCode = detail.vendorCode,
-                vendorStatus = null
+                vendorCode = detail.vendorCode
             )
     }
 }
@@ -187,6 +184,10 @@ object LLMErrorMapper {
             throwable is ConnectException ||
             throwable is UnknownHostException ||
             throwable is IOException
+        // Only connect-phase failures are safe to retry: once the request may
+        // have reached the server, re-POSTing risks duplicate processing.
+        val isConnectFailure = throwable is ConnectException ||
+            throwable is UnknownHostException
 
         val error = when {
             isMalformed -> LLMError.MalformedResponse
@@ -198,7 +199,7 @@ object LLMErrorMapper {
             error = error,
             provider = provider,
             model = model,
-            retryable = error == LLMError.Network
+            retryable = error == LLMError.Network && isConnectFailure
         )
     }
 
@@ -257,8 +258,12 @@ object LLMErrorMapper {
         return when {
             invalidKey && (status == 400 || status == 401 || status == 403) -> LLMError.AuthInvalid
             status == 401 || status == 403 -> LLMError.AuthInvalid
+            // A 429 is retryable rate limiting unless the body specifically
+            // reports exhausted credit; generic "quota" wording stays retryable.
+            status == 429 ->
+                if (evidence.containsAny("insufficient_quota", "billing")) LLMError.QuotaExhausted
+                else LLMError.RateLimited
             status == 402 || quota -> LLMError.QuotaExhausted
-            status == 429 -> LLMError.RateLimited
             modelUnavailable || status == 404 -> LLMError.ModelUnavailable
             provider == ProviderErrorDetail.Provider.GEMINI &&
                 status in setOf(500, 504) && contextTooLong -> LLMError.RequestInvalid

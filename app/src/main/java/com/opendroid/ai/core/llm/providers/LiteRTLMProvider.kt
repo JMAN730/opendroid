@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -222,7 +223,7 @@ class LiteRTLMProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
-        val modelId = ProviderCatalog.defaultModel(name)
+        val modelId = settingsRepository.llmConfig.first().selectedModelFor(name)
         try {
             val spec = resolveModelSpec(modelId)
             checkSdkCompatibility(spec)

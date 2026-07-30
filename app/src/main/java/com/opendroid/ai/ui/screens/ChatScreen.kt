@@ -61,6 +61,7 @@ import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.ui.components.ContactPickerCard
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.ChatViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
@@ -392,8 +393,16 @@ fun ChatScreen(
                                         ChatErrorPrimaryAction.RETRY ->
                                             viewModel.retryAfterChatError(context)
                                         ChatErrorPrimaryAction.EDIT_MESSAGE -> {
-                                            history.lastOrNull { it.sender == ChatMessage.Sender.USER }
-                                                ?.let { startEditingMessage(it) }
+                                            // Edit the exact message the error is about;
+                                            // fall back to the last user message only if
+                                            // the requestId no longer resolves to one.
+                                            val target = history.firstOrNull {
+                                                it.id == error.requestId &&
+                                                    it.sender == ChatMessage.Sender.USER
+                                            } ?: history.lastOrNull {
+                                                it.sender == ChatMessage.Sender.USER
+                                            }
+                                            target?.let { startEditingMessage(it) }
                                             viewModel.dismissChatError()
                                         }
                                         else -> viewModel.dismissChatError()
@@ -665,7 +674,7 @@ fun AgentStatusSubtitle(state: AgentState, runningElsewhere: Boolean = false) {
     // so explicitly instead of showing a plain "Online & Ready" that would hide the
     // fact that a task is still going in the background.
     val text = if (runningElsewhere) {
-        "Online & Ready · Task running in another chat"
+        "Online & Ready Â· Task running in another chat"
     } else {
         when (state) {
             is AgentState.Idle -> "Online & Ready"
@@ -914,7 +923,7 @@ fun ProposedPlanPrompt(
             if (blockedActions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "BLOCKED AUTO-RUN ? these steps aren't in your allowlist:",
+                    text = "BLOCKED AUTO-RUN â€” these steps aren't in your allowlist:",
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = AccentRed
@@ -938,7 +947,7 @@ fun ProposedPlanPrompt(
                         }
                     } else {
                         Text(
-                            text = "? $action (always asks)",
+                            text = "â€¢ $action (always asks)",
                             fontSize = 13.sp,
                             color = TextSecondary,
                             modifier = Modifier.padding(start = 12.dp, top = 4.dp)
@@ -1107,6 +1116,30 @@ private fun ChatErrorRecoveryCard(
     onDismiss: () -> Unit
 ) {
     var detailsExpanded by remember { mutableStateOf(false) }
+    // Countdown for rate-limited errors: while the provider's retry-after window is
+    // open, the Retry button is disabled and the remaining seconds tick down here.
+    val phase = error.phase
+    var waitSecondsLeft by remember(phase) {
+        mutableStateOf(
+            if (phase is ChatErrorUiState.Phase.WaitingUntil) {
+                ((phase.epochMillis - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+        )
+    }
+    if (phase is ChatErrorUiState.Phase.WaitingUntil) {
+        LaunchedEffect(phase) {
+            while (true) {
+                val remainingMillis = phase.epochMillis - System.currentTimeMillis()
+                waitSecondsLeft = (remainingMillis / 1000L).coerceAtLeast(0L)
+                if (remainingMillis <= 0L) break
+                delay(1000L)
+            }
+        }
+    }
+    val retryHeld = phase is ChatErrorUiState.Phase.Retrying ||
+        (phase is ChatErrorUiState.Phase.WaitingUntil && waitSecondsLeft > 0L)
     val actionLabel = when (error.primaryAction()) {
         ChatErrorPrimaryAction.OPEN_SETTINGS -> "Open Settings"
         ChatErrorPrimaryAction.CHOOSE_PROVIDER -> "Choose provider"
@@ -1145,10 +1178,19 @@ private fun ChatErrorRecoveryCard(
                 )
             }
             Text(text = error.guidance(), color = TextSecondary, fontSize = 13.sp)
+            if (phase is ChatErrorUiState.Phase.WaitingUntil && waitSecondsLeft > 0L) {
+                Text(
+                    text = "Retry available in ${waitSecondsLeft}s",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (actionLabel != null) {
                     Button(
                         onClick = onPrimary,
+                        enabled = !(retryHeld && error.primaryAction() == ChatErrorPrimaryAction.RETRY),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentNeonGreen,
                             contentColor = DarkBackground
@@ -1166,12 +1208,12 @@ private fun ChatErrorRecoveryCard(
             if (detailsExpanded) {
                 val detail = buildString {
                     append(error.category.code)
-                    append(" · ")
+                    append(" Â· ")
                     append(error.provider)
-                    error.httpStatus?.let { append(" · HTTP "); append(it) }
-                    error.model.takeIf { it.isNotBlank() }?.let { append(" · "); append(it) }
+                    error.httpStatus?.let { append(" Â· HTTP "); append(it) }
+                    error.model.takeIf { it.isNotBlank() }?.let { append(" Â· "); append(it) }
                     error.redactedDetail?.toString()?.takeIf { it.isNotBlank() }?.let {
-                        append(" · ")
+                        append(" Â· ")
                         append(it)
                     }
                 }

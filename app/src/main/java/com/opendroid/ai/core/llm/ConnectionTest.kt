@@ -35,20 +35,14 @@ sealed class ConnectionTestState {
 }
 
 object ConnectionTestPlanner {
-    fun cloudProviders(): List<String> = listOf(
-        "Google Gemini",
-        "OpenAI",
-        "Anthropic Claude",
-        "Groq",
-        "Mistral AI",
-        "OpenRouter",
-        "Together AI",
-        "Cohere",
-        "DeepSeek",
-        "Copilot API",
-        "Custom OpenAI Compatible",
-        "Ollama"
+    private val onDeviceCanonicalNames = setOf(
+        ProviderCatalog.ON_DEVICE,
+        "LiteRT-LM (On-device)"
     )
+
+    fun cloudProviders(): List<String> = ProviderCatalog.providers
+        .filter { spec -> spec.canonicalName !in onDeviceCanonicalNames }
+        .map { spec -> spec.displayName }
 
     fun configuredProviders(config: LLMConfig): List<String> =
         cloudProviders().filter { provider -> configurationGap(config, provider) == null }

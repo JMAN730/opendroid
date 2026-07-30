@@ -9,6 +9,7 @@ import com.opendroid.ai.core.llm.error.RedactedDetail
  * memory item / TTS or prompt input.
  */
 data class ChatErrorUiState(
+    val sessionId: String,
     val requestId: String,
     val runId: String,
     val category: LLMError,
@@ -29,6 +30,7 @@ data class ChatErrorUiState(
 
     companion object {
         fun fromException(
+            sessionId: String,
             requestId: String,
             runId: String,
             failure: LLMException,
@@ -37,6 +39,7 @@ data class ChatErrorUiState(
         ): ChatErrorUiState {
             val waiting = failure.retryAfterMillis?.takeIf { it > 0 }?.let { nowMillis + it }
             return ChatErrorUiState(
+                sessionId = sessionId,
                 requestId = requestId,
                 runId = runId,
                 category = failure.error,

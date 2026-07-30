@@ -22,8 +22,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +47,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val MAX_NEEDS_INPUT_PROMPTS = 5
+private const val MAX_INCOMPLETE_MESSAGE_IDS = 100
 private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP")
 
 internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionName: String): String {
@@ -129,7 +132,19 @@ class AgentLoop @Inject constructor(
     private val _chatError = MutableStateFlow<ChatErrorUiState?>(null)
     val chatError: StateFlow<ChatErrorUiState?> = _chatError.asStateFlow()
 
-    private val incompleteMessageIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    // Ids of partially streamed agent replies, so re-sent context can label them as
+    // incomplete. Bounded: an insertion-ordered set capped at
+    // MAX_INCOMPLETE_MESSAGE_IDS, dropping the oldest entry once full - only the ids
+    // still inside the last-10-messages context window matter, so evicted entries can
+    // never affect a prompt again.
+    private val incompleteMessageIds: MutableSet<String> = java.util.Collections.synchronizedSet(
+        java.util.Collections.newSetFromMap(
+            object : LinkedHashMap<String, Boolean>() {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>): Boolean =
+                    size > MAX_INCOMPLETE_MESSAGE_IDS
+            }
+        )
+    )
 
     // A single pending awaitUserResponse() prompt, identified by [requestId] - not just a
     // session id, so that even a second prompt opened for the SAME session can never be
@@ -300,7 +315,48 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    /**
+     * Re-executes a previously failed request after the user taps Retry on its error
+     * card. Mirrors processQuery's new-task path, but reuses the user message already
+     * persisted for [requestId] in [sessionId] instead of inserting a duplicate bubble -
+     * and always runs in the error's own session, never wherever the user is looking.
+     * Falls back to the session's last user message if [requestId] doesn't resolve to
+     * one (e.g. a plan re-evaluation failure, whose requestId is a plan id).
+     */
+    fun retryRequest(requestId: String, sessionId: String, context: Context) {
+        val waitingSession = waitingSessionId
+        if (waitingSession != null && waitingSession != sessionId) {
+            abandonWaitingTask(waitingSession)
+        } else {
+            currentJob?.cancel()
+        }
+
+        val job = scope.launch {
+            try {
+                activeTaskSessionId = sessionId
+                resolveStaleProposedPlan(sessionId)
+
+                val messages = conversationRepository.getMessages(sessionId).first()
+                val userMsg = messages.lastOrNull {
+                    it.id == requestId && it.sender == ChatMessage.Sender.USER
+                } ?: messages.lastOrNull { it.sender == ChatMessage.Sender.USER } ?: return@launch
+
+                queryMutex.withLock {
+                    processQueryLocked(userMsg, userMsg.text, context, sessionId)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
+            }
+        }
+        currentJob = job
+    }
+
     private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context, sessionId: String) {
+                // Each new task starts with a clean slate: a stale error card from an
+                // earlier request must not outlive the request it described.
+                _chatError.value = null
                 _agentState.value = AgentState.Thinking
 
                 // 0. Check if this is a complex, multi-step query
@@ -469,10 +525,15 @@ class AgentLoop @Inject constructor(
                 }
             } catch (streamError: CancellationException) {
                 if (inserted && currentReplyText.isNotBlank()) {
-                    conversationRepository.insertMessage(
-                        sessionId,
-                        replyMsg.copy(text = currentReplyText, modelBadge = "Stopped")
-                    )
+                    // This coroutine is already cancelled; without NonCancellable the
+                    // suspend insert would abort immediately and the "Stopped" partial
+                    // would never persist.
+                    withContext(NonCancellable) {
+                        conversationRepository.insertMessage(
+                            sessionId,
+                            replyMsg.copy(text = currentReplyText, modelBadge = "Stopped")
+                        )
+                    }
                 }
                 throw streamError
             } catch (streamError: LLMException) {
@@ -485,6 +546,7 @@ class AgentLoop @Inject constructor(
                 }
                 publishChatError(
                     ChatErrorUiState.fromException(
+                        sessionId = sessionId,
                         requestId = requestId,
                         runId = runId,
                         failure = streamError,
@@ -497,6 +559,7 @@ class AgentLoop @Inject constructor(
             if (!inserted || currentReplyText.isBlank()) {
                 publishChatError(
                     ChatErrorUiState.fromException(
+                        sessionId = sessionId,
                         requestId = requestId,
                         runId = runId,
                         failure = com.opendroid.ai.core.llm.error.LLMErrorMapper.malformed(
@@ -519,6 +582,7 @@ class AgentLoop @Inject constructor(
         } catch (e: LLMException) {
             publishChatError(
                 ChatErrorUiState.fromException(
+                    sessionId = sessionId,
                     requestId = requestId,
                     runId = runId,
                     failure = e
@@ -622,6 +686,7 @@ class AgentLoop @Inject constructor(
         } catch (e: LLMException) {
             publishChatError(
                 ChatErrorUiState.fromException(
+                    sessionId = sessionId,
                     requestId = userMsg.id,
                     runId = UUID.randomUUID().toString(),
                     failure = e
@@ -849,6 +914,8 @@ class AgentLoop @Inject constructor(
                     speakAndSaveSummary(currentPlanState, false, sessionId)
                 } else {
                     planManager.updatePlanStatus(PlanStatus.COMPLETED)
+                    // Successful completion supersedes any error card still showing.
+                    _chatError.value = null
                     speakAndSaveSummary(currentPlanState, true, sessionId)
                 }
                 break
@@ -945,9 +1012,13 @@ class AgentLoop @Inject constructor(
                         planId = currentPlanState.planId
                     )
                 } catch (e: LLMException) {
-                    planManager.updatePlanStatus(PlanStatus.PAUSED)
+                    // Nothing ever resumes a PAUSED plan - mark it FAILED so the Plan
+                    // tab shows a truthful terminal state; the error card still offers
+                    // the retry path.
+                    planManager.updatePlanStatus(PlanStatus.FAILED)
                     publishChatError(
                         ChatErrorUiState.fromException(
+                            sessionId = sessionId,
                             requestId = currentPlanState.planId,
                             runId = UUID.randomUUID().toString(),
                             failure = e
@@ -1059,9 +1130,12 @@ class AgentLoop @Inject constructor(
                     planId = currentPlanState.planId
                 )
             } catch (e: LLMException) {
-                planManager.updatePlanStatus(PlanStatus.PAUSED)
+                // Same rationale as the replan failure above: PAUSED is a dead end, so
+                // fail the plan and let the error card drive recovery.
+                planManager.updatePlanStatus(PlanStatus.FAILED)
                 publishChatError(
                     ChatErrorUiState.fromException(
+                        sessionId = sessionId,
                         requestId = currentPlanState.planId,
                         runId = UUID.randomUUID().toString(),
                         failure = e

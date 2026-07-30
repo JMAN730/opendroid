@@ -47,7 +47,9 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Run unit tests, lint, and build debug + unsigned release
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
+        # -PallowUnsignedRelease=true: CI has no signing secrets; opt out of the
+        # unsigned-release guard in app/build.gradle for this compile-check build.
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease -PallowUnsignedRelease=true --stacktrace
 
       - name: Upload test reports
         if: always()

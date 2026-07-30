@@ -43,6 +43,21 @@ class ConnectionTestPlannerTest {
     }
 
     @Test
+    fun `cloud providers derive from the catalog and exclude on-device entries`() {
+        val cloud = ConnectionTestPlanner.cloudProviders()
+        val expected = ProviderCatalog.providers
+            .filter { spec -> spec.canonicalName != ProviderCatalog.ON_DEVICE }
+            .filter { spec -> spec.canonicalName != "LiteRT-LM (On-device)" }
+            .map { spec -> spec.displayName }
+
+        assertEquals(expected, cloud)
+        assertTrue(cloud.contains("Ollama"))
+        assertTrue(!cloud.contains(ProviderCatalog.ON_DEVICE))
+        assertTrue(!cloud.contains(ProviderCatalog.LEGACY_ON_DEVICE))
+        assertTrue(!cloud.contains("LiteRT-LM (On-device)"))
+    }
+
+    @Test
     fun `success never encodes failure as latency`() {
         val connected = ConnectionTestPlanner.success(
             provider = "OpenAI",

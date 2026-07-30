@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -46,6 +48,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -138,24 +142,37 @@ fun PermissionsPanel(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val sdkInt = remember { Build.VERSION.SDK_INT }
+    // Saveable so an activity recreation while the Android permission dialog is up
+    // (rotation, process death behind the dialog) doesn't forget which batch is
+    // outstanding or that a grant-all round-trip is in flight.
+    var pendingRequest by rememberSaveable(stateSaver = pendingPermissionRequestSaver) {
+        mutableStateOf<PendingPermissionRequest?>(null)
+    }
+    var showGrantAllConfirm by rememberSaveable { mutableStateOf(false) }
     var snapshot by remember(context, sdkInt) {
         mutableStateOf(
             readPermissionsSnapshot(
                 context = context,
                 sdkInt = sdkInt,
-                grantAll = GrantAllState.Idle,
+                grantAll = if (pendingRequest?.isGrantAll == true) {
+                    GrantAllState.InFlight
+                } else {
+                    GrantAllState.Idle
+                },
                 appInfoOffered = emptySet(),
-                includeRationale = false,
             ),
         )
     }
-    var pendingRequest by remember { mutableStateOf<PendingPermissionRequest?>(null) }
 
     val runtimeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) {
         val pending = pendingRequest
         val current = snapshot
+        // Persist "asked" only once Android has actually shown (and resolved) the
+        // dialog - persisting before launch let a request that never came back count
+        // as asked, which flips still-unseen permissions straight to "blocked".
+        PermissionAskedStore.markAsked(context, pending?.permissions.orEmpty())
         val grantAllState = if (pending?.isGrantAll == true) {
             GrantAllState.Returned(pending.permissions)
         } else {
@@ -181,7 +198,6 @@ fun PermissionsPanel(
     ) {
         if (plan.isEmpty()) return
 
-        PermissionAskedStore.markAsked(context, plan)
         pendingRequest = PendingPermissionRequest(
             permissions = plan.toSet(),
             isGrantAll = isGrantAll,
@@ -221,15 +237,42 @@ fun PermissionsPanel(
         }
     }
 
+    if (showGrantAllConfirm) {
+        // Mirrors the Benchmark "Test all configured?" confirmation: one explicit
+        // Cancel/Continue gate before the single batched Android dialog fires.
+        val pendingGroups = visibleCards(sdkInt)
+            .filter { card -> requestPlan(snapshot.granted, sdkInt, card).isNotEmpty() }
+            .map { card -> cardTitle(card) }
+        AlertDialog(
+            onDismissRequest = { showGrantAllConfirm = false },
+            title = { Text("Grant all permissions?") },
+            text = {
+                Text(
+                    "Android will ask for the remaining runtime permissions in one batch:\n\n" +
+                        pendingGroups.joinToString("\n") { group -> "• $group" },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showGrantAllConfirm = false
+                        launchRuntimePlan(
+                            plan = requestPlan(snapshot.granted, sdkInt),
+                            isGrantAll = true,
+                        )
+                    },
+                ) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGrantAllConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     PermissionsPanelContent(
         padding = padding,
         snapshot = snapshot,
-        onGrantAll = {
-            launchRuntimePlan(
-                plan = requestPlan(snapshot.granted, sdkInt),
-                isGrantAll = true,
-            )
-        },
+        onGrantAll = { showGrantAllConfirm = true },
         onRuntimeCard = { card ->
             launchRuntimePlan(
                 plan = requestPlan(snapshot.granted, sdkInt, card),
@@ -477,30 +520,50 @@ private data class PendingPermissionRequest(
     val isGrantAll: Boolean,
 )
 
+/**
+ * Saver for [PendingPermissionRequest] so the outstanding batch survives activity
+ * recreation while the Android permission dialog is showing. Encoded as
+ * [isGrantAll, permission...]; an empty list encodes null.
+ */
+private val pendingPermissionRequestSaver = listSaver<PendingPermissionRequest?, Any>(
+    save = { value ->
+        if (value == null) {
+            emptyList()
+        } else {
+            listOf<Any>(value.isGrantAll) + value.permissions.toList()
+        }
+    },
+    restore = { saved ->
+        if (saved.isEmpty()) {
+            null
+        } else {
+            PendingPermissionRequest(
+                permissions = saved.drop(1).filterIsInstance<String>().toSet(),
+                isGrantAll = saved.first() == true,
+            )
+        }
+    },
+)
+
 private fun readPermissionsSnapshot(
     context: Context,
     sdkInt: Int,
     grantAll: GrantAllState,
     appInfoOffered: Set<PermissionCardId>,
-    includeRationale: Boolean = true,
 ): PermissionsSnapshot {
     val runtimePermissions = allRuntimePermissions(sdkInt)
     val granted = runtimePermissions.filterTo(mutableSetOf()) { permission ->
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
     val asked = PermissionAskedStore.asked(context)
-    val activity = if (includeRationale) context.findActivity() else null
+    val activity = context.findActivity()
     val rationale = runtimePermissions.associateWith { permission ->
-        if (includeRationale) {
-            activity?.let {
-                ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
-            }
-        } else {
-            null
+        activity?.let {
+            ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
         }
     }
     val manualHeld = buildSet {
-        if (sdkInt >= 30 && Environment.isExternalStorageManager()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
             add(PermissionCardId.STORAGE)
         }
         if (Settings.System.canWrite(context)) {

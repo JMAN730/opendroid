@@ -1,5 +1,6 @@
 package com.opendroid.ai.core.llm
 
+import android.util.Log
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.DeviceStateProvider
@@ -67,7 +68,10 @@ class LLMProviderFactory @Inject constructor(
             "Gemma 4 (On-device)" -> hybridOnDeviceProvider.get()
             // Direct backend access (for advanced users / testing)
             "LiteRT-LM (On-device)" -> liteRTLMProvider.get()
-            else -> throw IllegalArgumentException("Unknown LLM provider.")
+            else -> {
+                Log.w(TAG, "Unknown LLM provider persisted; falling back to Google Gemini.")
+                geminiProvider.get()
+            }
         }
         return WrappedLLMProvider(
             delegate = rawProvider,
@@ -112,6 +116,10 @@ class LLMProviderFactory @Inject constructor(
             )
         }
         return request
+    }
+
+    private companion object {
+        const val TAG = "LLMProviderFactory"
     }
 }
 
@@ -158,15 +166,16 @@ class WrappedLLMProvider(
                         }
                     }
                     if (!emitted) {
-                        throw LLMErrorMapper.malformed(name, resolved.model.orEmpty())
+                        throw LLMErrorMapper.malformed(name, resolved.model.orEmpty(), transient = true)
                     }
                     break
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (throwable: Throwable) {
                     val failure = LLMErrorMapper.fromThrowable(name, resolved.model.orEmpty(), throwable)
-                    if (emitted || !shouldRetry(resolved, failure, attempt, startedAt)) throw failure
-                    retryRuntime.delayMillis(retryDelayMillis(failure, attempt, startedAt))
+                    val delayMillis = proposedDelayMillis(failure, attempt)
+                    if (emitted || !shouldRetry(resolved, failure, attempt, startedAt, delayMillis)) throw failure
+                    retryRuntime.delayMillis(delayMillis)
                     attempt++
                 }
             }
@@ -218,8 +227,9 @@ class WrappedLLMProvider(
                 throw cancellation
             } catch (throwable: Throwable) {
                 val failure = LLMErrorMapper.fromThrowable(name, request.model.orEmpty(), throwable)
-                if (!shouldRetry(request, failure, attempt, startedAt)) throw failure
-                retryRuntime.delayMillis(retryDelayMillis(failure, attempt, startedAt))
+                val delayMillis = proposedDelayMillis(failure, attempt)
+                if (!shouldRetry(request, failure, attempt, startedAt, delayMillis)) throw failure
+                retryRuntime.delayMillis(delayMillis)
                 attempt++
             }
         }
@@ -229,27 +239,15 @@ class WrappedLLMProvider(
         request: LLMRequest,
         failure: com.opendroid.ai.core.llm.error.LLMException,
         attempt: Int,
-        startedAt: Long
+        startedAt: Long,
+        proposedDelay: Long
     ): Boolean {
         if (request.retryPolicy == RetryPolicy.NONE || !failure.retryable || attempt >= MAX_ATTEMPTS) {
             return false
         }
         val elapsed = (retryRuntime.nowMillis() - startedAt).coerceAtLeast(0L)
         if (elapsed >= RETRY_WINDOW_MILLIS) return false
-        val delay = proposedDelayMillis(failure, attempt)
-        return delay <= RETRY_WINDOW_MILLIS - elapsed
-    }
-
-    private fun retryDelayMillis(
-        failure: com.opendroid.ai.core.llm.error.LLMException,
-        attempt: Int,
-        startedAt: Long
-    ): Long {
-        val delay = proposedDelayMillis(failure, attempt)
-        val remaining = (RETRY_WINDOW_MILLIS -
-            (retryRuntime.nowMillis() - startedAt).coerceAtLeast(0L)).coerceAtLeast(0L)
-        if (delay > remaining) throw failure
-        return delay
+        return proposedDelay <= RETRY_WINDOW_MILLIS - elapsed
     }
 
     private fun proposedDelayMillis(

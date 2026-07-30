@@ -6,6 +6,7 @@ import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.DownloadStatus
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -125,7 +126,7 @@ class GemmaProvider @Inject constructor(
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
         try {
-            val selectedModel = ProviderCatalog.defaultModel(name)
+            val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(name)
             val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             

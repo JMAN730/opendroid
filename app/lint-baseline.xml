@@ -2,17 +2,6 @@
 <issues format="6" by="lint 8.8.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.8.2)" variant="all" version="8.8.2">
 
     <issue
-        id="MissingPermission"
-        message="Call requires permission which may be rejected by user: code should explicitly check to see if permission is available (with `checkPermission`) or explicitly handle a potential `SecurityException`"
-        errorLine1="                cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {"
-        errorLine2="                ^">
-        <location
-            file="src/main/java/com/opendroid/ai/actions/AdvancedControlActions.kt"
-            line="399"
-            column="17"/>
-    </issue>
-
-    <issue
         id="InlinedApi"
         message="Field requires API level 30 (current min is 29): `android.content.pm.ServiceInfo#FOREGROUND_SERVICE_TYPE_MICROPHONE`"
         errorLine1="                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE"
@@ -65,17 +54,6 @@
             file="src/main/java/com/opendroid/ai/actions/SystemActions.kt"
             line="443"
             column="59"/>
-    </issue>
-
-    <issue
-        id="NewApi"
-        message="Call requires API level 30 (current min is 26): `android.os.Environment#isExternalStorageManager`"
-        errorLine1="        if (sdkInt >= 30 &amp;&amp; Environment.isExternalStorageManager()) {"
-        errorLine2="                                        ~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/ui/screens/PermissionsScreen.kt"
-            line="503"
-            column="41"/>
     </issue>
 
     <issue

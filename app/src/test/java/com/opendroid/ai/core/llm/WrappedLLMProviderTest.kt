@@ -144,6 +144,86 @@ class WrappedLLMProviderTest {
     }
 
     @Test
+    fun `retry validates and executes the same proposed delay`() = runBlocking {
+        var attempts = 0
+        var jitterCalls = 0
+        val delays = mutableListOf<Long>()
+        val delegate = FakeProvider("OpenAI", completion = { request ->
+            attempts++
+            if (attempts == 1) {
+                throw LLMException(
+                    error = LLMError.ServerError,
+                    provider = "OpenAI",
+                    model = request.model.orEmpty(),
+                    status = 503,
+                    retryable = true
+                )
+            }
+            response(request)
+        })
+        val wrapper = WrappedLLMProvider(
+            delegate = delegate,
+            configProvider = {
+                LLMConfig(
+                    activeProvider = "OpenAI",
+                    activeModel = "gpt-4o",
+                    apiKeys = mapOf("OpenAI" to "test-key")
+                )
+            },
+            retryRuntime = RetryRuntime(
+                nowMillis = { 0L },
+                delayMillis = { delays += it },
+                jitterMillis = { upperBound -> jitterCalls++; upperBound }
+            )
+        )
+
+        wrapper.complete(request())
+
+        assertEquals(2, attempts)
+        assertEquals(1, jitterCalls)
+        assertEquals(listOf(750L), delays)
+    }
+
+    @Test
+    fun `empty stream is retried as a transient malformed response`() = runBlocking {
+        var attempts = 0
+        val delegate = FakeProvider(
+            name = "OpenAI",
+            stream = {
+                attempts++
+                flow {
+                    if (attempts > 1) emit("ok")
+                }
+            }
+        )
+
+        val chunks = wrapper(delegate).streamComplete(request()).toList()
+
+        assertEquals(listOf("ok"), chunks)
+        assertEquals(2, attempts)
+    }
+
+    @Test
+    fun `persistently empty stream still fails as malformed after retries`() = runBlocking {
+        var attempts = 0
+        val delegate = FakeProvider(
+            name = "OpenAI",
+            stream = {
+                attempts++
+                flow { }
+            }
+        )
+
+        val failure = runCatching {
+            wrapper(delegate).streamComplete(request()).toList()
+        }.exceptionOrNull()
+
+        assertTrue(failure is LLMException)
+        assertEquals(LLMError.MalformedResponse, (failure as LLMException).error)
+        assertEquals(3, attempts)
+    }
+
+    @Test
     fun `custom provider cannot inherit an implicit OpenAI endpoint`() = runBlocking {
         var called = false
         val delegate = FakeProvider("Custom OpenAI Compatible", completion = {

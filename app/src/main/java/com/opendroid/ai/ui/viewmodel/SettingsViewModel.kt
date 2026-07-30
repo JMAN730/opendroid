@@ -409,6 +409,7 @@ class SettingsViewModel @Inject constructor(
 
     fun testConnection(providerName: String) {
         connectionTestJob?.cancel()
+        clearInFlightConnectionState()
         connectionTestJob = viewModelScope.launch {
             runConnectionTest(providerName, index = 1, total = 1)
         }
@@ -416,6 +417,7 @@ class SettingsViewModel @Inject constructor(
 
     fun testAllConfigured() {
         connectionTestJob?.cancel()
+        clearInFlightConnectionState()
         connectionTestJob = viewModelScope.launch {
             val snapshot = _llmConfig.value
             val providers = ConnectionTestPlanner.configuredProviders(snapshot)
@@ -435,7 +437,21 @@ class SettingsViewModel @Inject constructor(
     fun cancelConnectionTests() {
         connectionTestJob?.cancel()
         connectionTestJob = null
+        clearInFlightConnectionState()
+    }
+
+    /**
+     * Resets everything a cancelled test run would otherwise leave dangling: the batch
+     * progress banner ("Testing X of Y") and any provider row still stuck at Testing.
+     * Cancelled in-flight providers return to their terminal not-tested presentation
+     * rather than being mislabeled as failures.
+     */
+    private fun clearInFlightConnectionState() {
         _connectionBatchProgress.value = null
+        val results = _connectionResults.value
+        if (results.values.any { it is ConnectionTestState.Testing }) {
+            _connectionResults.value = results.filterValues { it !is ConnectionTestState.Testing }
+        }
     }
 
     private suspend fun runConnectionTest(providerName: String, index: Int, total: Int) {

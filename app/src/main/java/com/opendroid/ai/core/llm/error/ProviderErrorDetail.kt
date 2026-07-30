@@ -53,7 +53,8 @@ class ProviderErrorDetail private constructor(
         OPENROUTER("OpenRouter"),
         TOGETHER_AI("Together AI"),
         CUSTOM_OPENAI("Custom OpenAI Compatible"),
-        COPILOT("Copilot API")
+        COPILOT("Copilot API"),
+        OLLAMA("Ollama")
     }
 
     companion object {

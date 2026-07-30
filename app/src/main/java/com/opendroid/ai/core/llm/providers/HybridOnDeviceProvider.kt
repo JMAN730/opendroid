@@ -3,6 +3,7 @@ package com.opendroid.ai.core.llm.providers
 import android.util.Log
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -144,7 +145,7 @@ class HybridOnDeviceProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
-        val selectedModel = ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
         val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
