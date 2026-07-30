@@ -98,4 +98,13 @@ class AutoApprovalPolicyTest {
             AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted, Plan("p1", "test", "1m", 1, steps))
         )
     }
+
+    @Test
+    fun `blank primary action is ignored`() {
+        val steps = listOf(step("s0", "   "))
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, emptySet(), Plan("p1", "test", "1m", 1, steps))
+        )
+        assertEquals(emptyList<String>(), AutoApprovalPolicy.blockedActions(emptySet(), steps))
+    }
 }
