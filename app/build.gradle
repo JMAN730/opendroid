@@ -33,6 +33,12 @@ android {
             project.hasProperty('RELEASE_KEY_PASSWORD') &&
             file("${rootProject.projectDir}/opendroid-release.keystore").exists()
 
+    // Explicit opt-in for building release WITHOUT signing, so CI can exercise
+    // R8/ProGuard (where reflection-dependent code breaks) without holding any
+    // signing secrets. The resulting APK is unsigned and not installable - the
+    // guard below still fails a plain `assembleRelease` when signing is missing.
+    def allowUnsignedRelease = project.hasProperty('allowUnsignedRelease')
+
     if (!hasSigningConfig) {
         logger.warn("WARNING: Release signing not configured. Set credentials in ~/.gradle/gradle.properties (see gradle.properties.example).")
     }
@@ -68,7 +74,7 @@ android {
         def releaseBuildRequested = graph.allTasks.any { t ->
             t.project == project && t.name ==~ /(assemble|bundle|package)Release.*/
         }
-        if (releaseBuildRequested && !hasSigningConfig) {
+        if (releaseBuildRequested && !hasSigningConfig && !allowUnsignedRelease) {
             throw new GradleException(
                 "Release signing is not configured. Set RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS " +
                 "and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties (or as ORG_GRADLE_PROJECT_* " +
@@ -94,14 +100,33 @@ android {
     buildFeatures {
         compose true
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs the app's resources and manifest on the JVM.
+            includeAndroidResources = true
+        }
+    }
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
     }
     lint {
-        abortOnError false
+        // Pre-existing findings are frozen in the baseline so they do not
+        // block merges; anything NEW fails the build. Shrink the baseline
+        // over time (delete entries, fix, repeat) - never regenerate it to
+        // absorb new findings.
+        baseline file('lint-baseline.xml')
+        abortOnError true
         checkReleaseBuilds true
+    }
+}
+
+kapt {
+    arguments {
+        // Export Room schema JSONs (app/schemas/, committed to Git) so future
+        // migrations can be tested against the real historical schemas.
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 }
 
@@ -167,6 +192,10 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    // Robolectric runs the Room migration tests on the JVM - no emulator, so
+    // they live in src/test and run under the existing testDebugUnitTest.
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2026.06.01')

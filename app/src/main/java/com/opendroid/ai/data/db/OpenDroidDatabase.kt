@@ -41,7 +41,7 @@ import androidx.room.TypeConverters
         CrashLogEntity::class
     ],
     version = 7,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class OpenDroidDatabase : RoomDatabase() {
