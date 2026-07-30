@@ -1,13 +1,27 @@
 package com.opendroid.ai.core.util
 
 import android.util.Log
+import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.agent.guidance
+import com.opendroid.ai.core.agent.title
+import com.opendroid.ai.core.llm.error.LLMException
 
 object NetworkErrorFormatter {
 
     private const val TAG = "NetworkErrorFormatter"
 
     fun toUserMessage(error: Throwable?): String {
-        val message = error?.localizedMessage ?: error?.message ?: return "Something went wrong. Please try again."
+        if (error is LLMException) {
+            val state = ChatErrorUiState.fromException(
+                sessionId = "network",
+                requestId = "network",
+                runId = "network",
+                failure = error
+            )
+            return "${state.title()} ${state.guidance()}"
+        }
+        val message = error?.localizedMessage ?: error?.message
+            ?: return "Something went wrong. Please try again."
         return toUserMessage(message)
     }
 

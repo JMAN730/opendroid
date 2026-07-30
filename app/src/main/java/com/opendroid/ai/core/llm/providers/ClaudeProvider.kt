@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -31,18 +33,21 @@ class ClaudeProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val apiKey = config.apiKeys[name] ?: throw IllegalStateException("API Key for $name is not set.")
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() }
+            ?: config.apiKeys[name]
+            ?: throw IllegalStateException("API Key for $name is not set.")
 
         val startTime = System.currentTimeMillis()
 
         // The persisted model ID is untrusted input: resolve it against the catalog
         // (migrating legacy IDs) rather than sending it to Anthropic verbatim.
-        val selectedModel = if (config.activeModel.isBlank()) {
+        val requestedModel = request.model?.takeIf { it.isNotBlank() }
+        val selectedModel = if (requestedModel == null) {
             ClaudeModelCatalog.defaultModelId
         } else {
-            ClaudeModelCatalog.resolve(config.activeModel)
+            ClaudeModelCatalog.resolve(requestedModel)
                 ?: throw IllegalStateException(
-                    "The selected Claude model \"${config.activeModel}\" is no longer supported. " +
+                    "The selected Claude model \"$requestedModel\" is no longer supported. " +
                         "Please pick another model in Settings."
                 )
         }
@@ -95,9 +100,11 @@ class ClaudeProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                // Never surface or log the raw Anthropic body: it can echo request
-                // content and credentials into logcat and bug reports.
-                throw IOException("Claude request failed with HTTP ${response.code}.")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.CLAUDE,
+                    request = request,
+                    knownSecrets = listOf(apiKey)
+                )
             }
             val responseBody = response.body?.string() ?: throw IOException("Empty response body from Claude")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
@@ -120,19 +127,11 @@ class ClaudeProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: IllegalStateException) {
-            // Configuration problems the user can fix (unsupported model, missing key)
-            // are surfaced as-is: a clear instruction, not an exception dump.
-            emit(e.message ?: "Claude is not configured correctly. Check Settings.")
-        } catch (e: Exception) {
-            emit("Error streaming Claude: ${e.localizedMessage}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

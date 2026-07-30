@@ -243,8 +243,8 @@ private fun CrashCard(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "v${crash.appVersionName} · Android ${crash.androidRelease} · " +
-                    "${crash.deviceManufacturer} ${crash.deviceModel} · ${crash.threadName}",
+                text = "v${crash.device.appVersionName} · Android ${crash.device.androidRelease} · " +
+                    "${crash.device.deviceManufacturer} ${crash.device.deviceModel} · ${crash.threadName}",
                 fontSize = 11.sp,
                 color = themeColors.textSecondary.copy(alpha = 0.7f)
             )

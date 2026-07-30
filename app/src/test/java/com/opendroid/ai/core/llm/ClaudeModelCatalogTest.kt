@@ -20,22 +20,41 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `each supported model id resolves to itself`() {
+        assertEquals("claude-fable-5", ClaudeModelCatalog.resolve("claude-fable-5"))
         assertEquals("claude-opus-5", ClaudeModelCatalog.resolve("claude-opus-5"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-5"))
-        assertEquals("claude-haiku-4-5", ClaudeModelCatalog.resolve("claude-haiku-4-5"))
         assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-8"))
+        assertEquals("claude-opus-4-7", ClaudeModelCatalog.resolve("claude-opus-4-7"))
+        assertEquals("claude-opus-4-6", ClaudeModelCatalog.resolve("claude-opus-4-6"))
+        assertEquals(
+            "claude-opus-4-5-20251101",
+            ClaudeModelCatalog.resolve("claude-opus-4-5-20251101")
+        )
+        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-5"))
         assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-sonnet-4-6"))
+        assertEquals(
+            "claude-sonnet-4-5-20250929",
+            ClaudeModelCatalog.resolve("claude-sonnet-4-5-20250929")
+        )
+        assertEquals(
+            "claude-haiku-4-5-20251001",
+            ClaudeModelCatalog.resolve("claude-haiku-4-5-20251001")
+        )
     }
 
     @Test
     fun `catalog lists exactly the supported models`() {
         assertEquals(
             listOf(
+                "claude-fable-5",
                 "claude-opus-5",
-                "claude-sonnet-5",
-                "claude-haiku-4-5",
                 "claude-opus-4-8",
-                "claude-sonnet-4-6"
+                "claude-opus-4-7",
+                "claude-opus-4-6",
+                "claude-opus-4-5-20251101",
+                "claude-sonnet-5",
+                "claude-sonnet-4-6",
+                "claude-sonnet-4-5-20250929",
+                "claude-haiku-4-5-20251001"
             ).sorted(),
             ClaudeModelCatalog.models.map { it.id }.sorted()
         )
@@ -47,41 +66,67 @@ class ClaudeModelCatalogTest {
     fun `unversioned family aliases resolve to the current family member`() {
         assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4"))
         assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-sonnet-4"))
-        assertEquals("claude-haiku-4-5", ClaudeModelCatalog.resolve("claude-haiku-4"))
+        assertEquals(
+            "claude-haiku-4-5-20251001",
+            ClaudeModelCatalog.resolve("claude-haiku-4")
+        )
     }
 
     @Test
-    fun `date-suffixed haiku id resolves to the canonical unversioned id`() {
-        assertEquals("claude-haiku-4-5", ClaudeModelCatalog.resolve("claude-haiku-4-5-20251001"))
+    fun `previous haiku alias resolves to the pinned active id`() {
+        assertEquals(
+            "claude-haiku-4-5-20251001",
+            ClaudeModelCatalog.resolve("claude-haiku-4-5")
+        )
     }
 
     @Test
     fun `retired 3x model ids resolve to their replacements`() {
         assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-3-opus-20240229"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-3-7-sonnet-20250219"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-3-5-sonnet-20241022"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-3-5-sonnet-20240620"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-3-sonnet-20240229"))
-        assertEquals("claude-haiku-4-5", ClaudeModelCatalog.resolve("claude-3-5-haiku-20241022"))
-        assertEquals("claude-haiku-4-5", ClaudeModelCatalog.resolve("claude-3-haiku-20240307"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-3-7-sonnet-20250219"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-3-5-sonnet-20241022"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-3-5-sonnet-20240620"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-3-sonnet-20240229"))
+        assertEquals(
+            "claude-haiku-4-5-20251001",
+            ClaudeModelCatalog.resolve("claude-3-5-haiku-20241022")
+        )
+        assertEquals(
+            "claude-haiku-4-5-20251001",
+            ClaudeModelCatalog.resolve("claude-3-haiku-20240307")
+        )
     }
 
     @Test
     fun `retired 4x model ids resolve to their replacements`() {
-        // These match the well-formed-ID shape, so without an explicit alias they
-        // would be forwarded verbatim and fail at request time.
         assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-0"))
         assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-20250514"))
-        assertEquals("claude-opus-5", ClaudeModelCatalog.resolve("claude-opus-4-1"))
-        assertEquals("claude-opus-5", ClaudeModelCatalog.resolve("claude-opus-4-1-20250805"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-4-0"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-sonnet-4-20250514"))
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-1"))
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-opus-4-1-20250805"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-sonnet-4-0"))
+        assertEquals("claude-sonnet-4-6", ClaudeModelCatalog.resolve("claude-sonnet-4-20250514"))
     }
 
     @Test
     fun `retired claude 2 ids resolve to their documented replacement`() {
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-2.1"))
-        assertEquals("claude-sonnet-5", ClaudeModelCatalog.resolve("claude-2.0"))
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-2.1"))
+        assertEquals("claude-opus-4-8", ClaudeModelCatalog.resolve("claude-2.0"))
+    }
+
+    @Test
+    fun `retired claude 1 and instant ids resolve to pinned haiku 4 5`() {
+        val replacement = "claude-haiku-4-5-20251001"
+        listOf(
+            "claude-1.0",
+            "claude-1.1",
+            "claude-1.2",
+            "claude-1.3",
+            "claude-instant-1.0",
+            "claude-instant-1.1",
+            "claude-instant-1.2"
+        ).forEach { retiredId ->
+            assertEquals(replacement, ClaudeModelCatalog.resolve(retiredId))
+        }
     }
 
     @Test
@@ -115,17 +160,12 @@ class ClaudeModelCatalogTest {
         }
     }
 
-    // ── Models Anthropic serves but OpenDroid doesn't know yet ──────────
+    // ── Untrusted persisted model IDs ───────────────────────────────────
 
     @Test
-    fun `an unknown but well-formed claude id resolves to itself`() {
-        // A model Anthropic releases before OpenDroid ships a catalog update
-        // must stay selectable rather than failing at request time.
-        assertEquals("claude-opus-9", ClaudeModelCatalog.resolve("claude-opus-9"))
-        assertEquals(
-            "claude-sonnet-5-20260615",
-            ClaudeModelCatalog.resolve("claude-sonnet-5-20260615")
-        )
+    fun `unknown well formed ids from persisted settings are rejected`() {
+        assertNull(ClaudeModelCatalog.resolve("claude-opus-9"))
+        assertNull(ClaudeModelCatalog.resolve("claude-sonnet-5-20260615"))
     }
 
     @Test
@@ -137,7 +177,6 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `retired models with no replacement resolve to null`() {
-        assertNull(ClaudeModelCatalog.resolve("claude-instant-1.2"))
         assertNull(ClaudeModelCatalog.resolve("claude-instant-1"))
         assertNull(ClaudeModelCatalog.resolve("claude-instant-v1"))
     }
@@ -174,17 +213,15 @@ class ClaudeModelCatalogTest {
     }
 
     @Test
-    fun `opus 5 is the premium model`() {
+    fun `fable 5 is the premium model`() {
         val premium = ClaudeModelCatalog.models.filter { it.isPremium }
         assertEquals(1, premium.size)
-        assertEquals("claude-opus-5", premium.single().id)
+        assertEquals("claude-fable-5", premium.single().id)
     }
 
     @Test
-    fun `haiku 4 5 is flagged as the cheap option`() {
-        val cheap = ClaudeModelCatalog.models.filter { it.isFree }
-        assertEquals(1, cheap.size)
-        assertEquals("claude-haiku-4-5", cheap.single().id)
+    fun `paid anthropic models are never flagged free`() {
+        assertTrue(ClaudeModelCatalog.models.none { it.isFree })
     }
 
     @Test
@@ -196,11 +233,25 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `display names use the marketing names`() {
+        assertEquals("Claude Fable 5", ClaudeModelCatalog.specFor("claude-fable-5")?.displayName)
         assertEquals("Claude Opus 5", ClaudeModelCatalog.specFor("claude-opus-5")?.displayName)
-        assertEquals("Claude Sonnet 5", ClaudeModelCatalog.specFor("claude-sonnet-5")?.displayName)
-        assertEquals("Claude Haiku 4.5", ClaudeModelCatalog.specFor("claude-haiku-4-5")?.displayName)
         assertEquals("Claude Opus 4.8", ClaudeModelCatalog.specFor("claude-opus-4-8")?.displayName)
+        assertEquals("Claude Opus 4.7", ClaudeModelCatalog.specFor("claude-opus-4-7")?.displayName)
+        assertEquals("Claude Opus 4.6", ClaudeModelCatalog.specFor("claude-opus-4-6")?.displayName)
+        assertEquals(
+            "Claude Opus 4.5",
+            ClaudeModelCatalog.specFor("claude-opus-4-5-20251101")?.displayName
+        )
+        assertEquals("Claude Sonnet 5", ClaudeModelCatalog.specFor("claude-sonnet-5")?.displayName)
         assertEquals("Claude Sonnet 4.6", ClaudeModelCatalog.specFor("claude-sonnet-4-6")?.displayName)
+        assertEquals(
+            "Claude Sonnet 4.5",
+            ClaudeModelCatalog.specFor("claude-sonnet-4-5-20250929")?.displayName
+        )
+        assertEquals(
+            "Claude Haiku 4.5",
+            ClaudeModelCatalog.specFor("claude-haiku-4-5-20251001")?.displayName
+        )
     }
 
     @Test
@@ -213,15 +264,20 @@ class ClaudeModelCatalogTest {
 
     @Test
     fun `current models reject sampling parameters`() {
+        assertFalse(ClaudeModelCatalog.acceptsSamplingParameters("claude-fable-5"))
         assertFalse(ClaudeModelCatalog.acceptsSamplingParameters("claude-opus-5"))
         assertFalse(ClaudeModelCatalog.acceptsSamplingParameters("claude-sonnet-5"))
         assertFalse(ClaudeModelCatalog.acceptsSamplingParameters("claude-opus-4-8"))
+        assertFalse(ClaudeModelCatalog.acceptsSamplingParameters("claude-opus-4-7"))
     }
 
     @Test
     fun `older models still accept sampling parameters`() {
+        assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-opus-4-6"))
+        assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-opus-4-5-20251101"))
         assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-sonnet-4-6"))
-        assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-haiku-4-5"))
+        assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-sonnet-4-5-20250929"))
+        assertTrue(ClaudeModelCatalog.acceptsSamplingParameters("claude-haiku-4-5-20251001"))
     }
 
     @Test

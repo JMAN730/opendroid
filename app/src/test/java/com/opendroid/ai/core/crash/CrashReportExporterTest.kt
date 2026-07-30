@@ -12,12 +12,14 @@ class CrashReportExporterTest {
         message = "boom",
         threadName = "main",
         stackTrace = "java.lang.IllegalStateException: boom\n\tat com.opendroid.ai.Thing.go(Thing.kt:12)",
-        appVersionName = "1.2.3",
-        appVersionCode = 42L,
-        androidRelease = "14",
-        androidSdkInt = 34,
-        deviceManufacturer = "Google",
-        deviceModel = "Pixel 8"
+        device = DeviceMetadata(
+            appVersionName = "1.2.3",
+            appVersionCode = 42L,
+            androidRelease = "14",
+            androidSdkInt = 34,
+            deviceManufacturer = "Google",
+            deviceModel = "Pixel 8",
+        ),
     )
 
     private val fixedTime: (Long) -> String = { "2023-11-14 22:13:20" }

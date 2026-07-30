@@ -12,12 +12,7 @@ data class CrashLogRecord(
     val message: String?,
     val threadName: String,
     val stackTrace: String,
-    val appVersionName: String,
-    val appVersionCode: Long,
-    val androidRelease: String,
-    val androidSdkInt: Int,
-    val deviceManufacturer: String,
-    val deviceModel: String
+    val device: DeviceMetadata
 ) {
     /** Single-line headline for the crash list. */
     val summary: String

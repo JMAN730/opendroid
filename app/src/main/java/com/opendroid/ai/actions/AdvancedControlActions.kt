@@ -343,6 +343,12 @@ class AdvancedControlActions @Inject constructor() {
             cameraId: String,
             outputFile: File
         ): Boolean = suspendCoroutine { continuation ->
+            // Guard against SecurityException from openCamera - the permission can
+            // be revoked between the caller's check and this capture starting.
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                continuation.resume(false)
+                return@suspendCoroutine
+            }
             val handlerThread = HandlerThread("CameraBackgroundThread")
             handlerThread.start()
             val backgroundHandler = Handler(handlerThread.looper)
