@@ -8,9 +8,12 @@ This document tracks release updates, changelogs, and binary verification checks
 
 Developer-facing pre-release for sideload testing. Not a Play Store production upload.
 
-### Highlights since v1.0.1
-*   **Auto Mode & Safety Controls (#23)**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals (PR #23).
-*   **Android 14/15 Foreground Service Fix (#22)**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService` (PR #22).
+### Highlights since v1.0.1 (Contributor Contributions #22, #23, #24, #25, #26)
+*   **Android 14/15 Foreground Service Fix (PR #22 by @JMAN730)**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService` (PR #22).
+*   **Auto Mode & Safety Controls (PR #23 by @JMAN730)**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals (PR #23).
+*   **Website Redesign & Theme Accessibility (PR #24 by @sudomarc)**: Full visual redesign of the website, light/dark theme toggle, navigation accessibility fix, mobile responsive fixes, and maintenance (PR #24).
+*   **LLM Reliability, Crash Logging & CI Hardening (PR #25 by @JMAN730)**: Added LLM provider error handling, Claude model catalog updates, on-device crash logging (`CrashLogRecorder`, `CrashLogRedactor`, `RoomCrashLogSink`, `CrashLogScreen`), permissions onboarding screen (`PermissionsScreen`), and CI hardening with GitHub Actions workflow (`android-ci.yml`), lint baseline, and Room schemas (PR #25).
+*   **App Package Verification & Handling (PR #26 / PR #49 by @JMAN730)**: Fixed package verification and `APPLICATION_NOT_INSTALLED` fallback handling across action handlers (PR #26, PR #49).
 *   **GitHub Star History Chart (#19, #21)**: Added interactive GitHub Star History chart to `README.md` with theme-aware (light/dark mode) embeds, legend rendering, and direct link to interactive chart page (Closes #17, PR #19, PR #21).
 *   **LiteRT Prompt Context Overflow Prevention (#20)**: Added `PromptBudget` token calculations and expanded on-device model context windows (1280 for Qwen 2.5 0.5B, 4096 for Gemma) to eliminate native C++ `SIGABRT` crashes (Fixes #15, PR #20).
 *   **UI Redesign & Iconography**: Premium developer-tool palette, Auto Mode settings/UI, and iconography upgrades.
@@ -20,13 +23,15 @@ Developer-facing pre-release for sideload testing. Not a Play Store production u
 
 ### Release Assets
 *   **`app-debug.apk`** — Debug build APK for developer testing & logging.
-*   **`app-release.apk`** — Signed release APK (sideload for testing).
-*   **`app-release.aab`** — Signed Android App Bundle.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
 
 ### Checksums (SHA-256)
-*   **`app-debug.apk`**: `9b48ae12c0c10ec886140be34c9b29cf2b8fe74fe8832bde74d8af9ad7ce2a3c`
-*   **`app-release.apk`**: `c860bcb8241d3bd7eff0efc8ffda444a503d7633815f3af583b122d2c8748c67`
-*   **`app-release.aab`**: `9aa470d3ca6d365f1a4dab4fa020cbb3d5c86905a297053654e1be586540dac0`
+*   **`app-debug.apk`**: `cd1c02d696869960f561ec651072e538b721d87aa26220540c395b2ab5075b16`
+*   **`app-release.apk`**: `69bb3e76c85043a9cfcbf06504f9b1087d863c6d2af788c0904d3eb09ee6c14a`
+*   **`app-debug.aab`**: `77a7d0e8554c4f8e415ae63021a2c55dcd129b5dfc5e2964a153941c7fa6f555`
+*   **`app-release.aab`**: `7d7dde34a197006c8d471a0a7c9909cbd34f9ca18a1d97fd41fc08ac5eb57f23`
 
 ### Build Configuration
 *   **Package**: `com.opendroid.aiagent`
