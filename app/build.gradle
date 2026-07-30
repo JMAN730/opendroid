@@ -92,6 +92,12 @@ android {
     buildFeatures {
         compose true
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs the app's resources and manifest on the JVM.
+            includeAndroidResources = true
+        }
+    }
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
@@ -100,6 +106,14 @@ android {
     lint {
         abortOnError false
         checkReleaseBuilds true
+    }
+}
+
+kapt {
+    arguments {
+        // Export Room schema JSONs (app/schemas/, committed to Git) so future
+        // migrations can be tested against the real historical schemas.
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 }
 
@@ -165,6 +179,10 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    // Robolectric runs the Room migration tests on the JVM - no emulator, so
+    // they live in src/test and run under the existing testDebugUnitTest.
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2026.06.01')

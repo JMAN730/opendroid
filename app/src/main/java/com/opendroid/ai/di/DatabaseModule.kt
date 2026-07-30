@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+import com.opendroid.ai.data.db.dao.CrashLogDao
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 
@@ -37,7 +38,8 @@ object DatabaseModule {
             OpenDroidDatabase.MIGRATION_2_3,
             OpenDroidDatabase.MIGRATION_3_4,
             OpenDroidDatabase.MIGRATION_4_5,
-            OpenDroidDatabase.MIGRATION_5_6
+            OpenDroidDatabase.MIGRATION_5_6,
+            OpenDroidDatabase.MIGRATION_6_7
         )
         .fallbackToDestructiveMigration()
         .build()
@@ -78,4 +80,8 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideModelDao(db: OpenDroidDatabase): ModelDao = db.modelDao()
+
+    @Provides
+    @Singleton
+    fun provideCrashLogDao(db: OpenDroidDatabase): CrashLogDao = db.crashLogDao()
 }
