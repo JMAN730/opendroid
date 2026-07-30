@@ -4,7 +4,7 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.2 — Developer Pre-release (July 28, 2026)
+## v1.0.2 — Developer Pre-release (July 30, 2026)
 
 Developer-facing pre-release for sideload testing. Not a Play Store production upload.
 
