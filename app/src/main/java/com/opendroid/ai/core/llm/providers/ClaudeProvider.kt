@@ -24,7 +24,7 @@ class ClaudeProvider @Inject constructor(
 ) : LLMProvider {
 
     override val name: String = "Anthropic Claude"
-    override val availableModels: List<String> = listOf("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5")
+    override val availableModels: List<String> = ClaudeModelCatalog.models.map { it.id }
 
     private val gson = Gson()
     private val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -35,15 +35,16 @@ class ClaudeProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        val selectedModel = if (config.activeModel.isNotBlank()) {
-            when (config.activeModel) {
-                "claude-opus-4-8", "claude-opus-4" -> "claude-opus-4-8"
-                "claude-sonnet-4-6", "claude-sonnet-4" -> "claude-sonnet-4-6"
-                "claude-haiku-4-5", "claude-haiku-4" -> "claude-haiku-4-5-20251001"
-                else -> config.activeModel
-            }
+        // The persisted model ID is untrusted input: resolve it against the catalog
+        // (migrating legacy IDs) rather than sending it to Anthropic verbatim.
+        val selectedModel = if (config.activeModel.isBlank()) {
+            ClaudeModelCatalog.defaultModelId
         } else {
-            "claude-sonnet-4-6"
+            ClaudeModelCatalog.resolve(config.activeModel)
+                ?: throw IllegalStateException(
+                    "The selected Claude model \"${config.activeModel}\" is no longer supported. " +
+                        "Please pick another model in Settings."
+                )
         }
 
         val messagesList = mutableListOf<Map<String, Any>>()
@@ -75,9 +76,12 @@ class ClaudeProvider @Inject constructor(
             "model" to selectedModel,
             "system" to request.systemPrompt,
             "messages" to messagesList,
-            "max_tokens" to request.maxTokens,
-            "temperature" to request.temperature
+            "max_tokens" to request.maxTokens
         )
+        // Current Opus-tier models reject sampling parameters with HTTP 400.
+        if (ClaudeModelCatalog.acceptsSamplingParameters(selectedModel)) {
+            requestBodyMap["temperature"] = request.temperature
+        }
 
         val bodyJson = gson.toJson(requestBodyMap)
         val httpRequest = Request.Builder()
@@ -91,7 +95,9 @@ class ClaudeProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(httpRequest).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Claude request failed: Code ${response.code} - ${response.body?.string()}")
+                // Never surface or log the raw Anthropic body: it can echo request
+                // content and credentials into logcat and bug reports.
+                throw IOException("Claude request failed with HTTP ${response.code}.")
             }
             val responseBody = response.body?.string() ?: throw IOException("Empty response body from Claude")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
@@ -121,6 +127,10 @@ class ClaudeProvider @Inject constructor(
                 emit("$word ")
                 kotlinx.coroutines.delay(50)
             }
+        } catch (e: IllegalStateException) {
+            // Configuration problems the user can fix (unsupported model, missing key)
+            // are surfaced as-is: a clear instruction, not an exception dump.
+            emit(e.message ?: "Claude is not configured correctly. Check Settings.")
         } catch (e: Exception) {
             emit("Error streaming Claude: ${e.localizedMessage}")
         }

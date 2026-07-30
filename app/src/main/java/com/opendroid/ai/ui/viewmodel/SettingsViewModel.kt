@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 
+import com.opendroid.ai.core.llm.ClaudeModelCatalog
 import com.opendroid.ai.core.llm.ImportLocalModelResult
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.ResponseFormat
@@ -176,13 +177,30 @@ class SettingsViewModel @Inject constructor(
             try {
                 val config = _llmConfig.value
                 val provider = config.activeProvider
-                
+
+                // Migrate a legacy Claude selection regardless of cache state, so a
+                // migratable ID is never left persisted or treated as absent below.
+                val isClaude = provider == "Anthropic Claude"
+                val claudeResolved = if (isClaude) ClaudeModelCatalog.resolve(config.activeModel) else null
+                val activeModel = if (isClaude) {
+                    if (claudeResolved != null && claudeResolved != config.activeModel) {
+                        updateActiveModel(claudeResolved)
+                    }
+                    claudeResolved ?: config.activeModel
+                } else {
+                    config.activeModel
+                }
+                // An unresolvable Claude selection (retired with no replacement, or a
+                // hand-edited setting) must never stay persisted: re-run the fetch so
+                // auto-selection below moves the user onto the catalog default.
+                val unsupportedClaudeModel = isClaude && config.activeModel.isNotBlank() && claudeResolved == null
+
                 // Check cache time limit (1 hour) unless forced
                 val lastFetch = config.lastModelFetch[provider] ?: 0L
                 val cacheExists = config.modelCache[provider]?.isNotEmpty() == true
                 val cacheExpired = System.currentTimeMillis() - lastFetch > 60 * 60 * 1000
-                
-                if (force || !cacheExists || cacheExpired) {
+
+                if (force || !cacheExists || cacheExpired || unsupportedClaudeModel) {
                     _modelsLoading.value = true
                     val result = modelFetcher.get().fetchModels(provider)
                     result.onSuccess { models ->
@@ -193,10 +211,16 @@ class SettingsViewModel @Inject constructor(
                         }
                         
                         // Auto-select recommended model if current model is blank or not in fetched list
-                        val currentModel = config.activeModel
-                        val modelExists = models.any { it.id == currentModel }
-                        if (!modelExists || currentModel.isBlank()) {
-                            val recommended = models.find { it.isRecommended } ?: models.firstOrNull()
+                        val modelExists = models.any { it.id == activeModel }
+                        if (!modelExists || activeModel.isBlank() || unsupportedClaudeModel) {
+                            val providerDefault = if (provider == "Anthropic Claude") {
+                                models.find { it.id == ClaudeModelCatalog.defaultModelId }
+                            } else {
+                                null
+                            }
+                            val recommended = providerDefault
+                                ?: models.find { it.isRecommended }
+                                ?: models.firstOrNull()
                             recommended?.let {
                                 updateActiveModel(it.id)
                             }
@@ -218,7 +242,7 @@ class SettingsViewModel @Inject constructor(
         val defaultModel = when (provider) {
             "Google Gemini" -> "gemini-2.0-flash"
             "OpenAI" -> "gpt-4o"
-            "Anthropic Claude" -> "claude-sonnet-4-6"
+            "Anthropic Claude" -> ClaudeModelCatalog.defaultModelId
             "OpenRouter" -> "google/gemini-2.0-flash-exp:free"
             "Groq" -> "llama-3.3-70b-specdec"
             "Together AI" -> "meta-llama/Llama-3-70b-chat-hf"
