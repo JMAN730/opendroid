@@ -28,7 +28,6 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#%EF%B8%8F-getting-started">Get Started</a> •
   <a href="#-supported-llm-providers">Providers</a> •
-  <a href="#-donate">Donate</a> •
   <a href="#-license">License</a>
 </p>
 
@@ -226,29 +225,6 @@ In **Settings**, add your API key for any supported provider. OpenDroid works be
 - **Gemini** (free tier available)
 - **Groq** (fastest inference)
 - **Ollama** (fully offline)
-
----
-
-## 💚 Donate
-
-OpenDroid is free, open-source, and maintained by a community of contributors. If it's helped you, consider supporting the project!
-
-**UPI (India):** `8960457971`
-**Email:** `yashabalam707@gmail.com`
-
-[→ See DONATE.md for more ways to support](docs/DONATE.md)
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
-
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ---
 
