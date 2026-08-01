@@ -7,7 +7,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -49,8 +48,6 @@ fun OpenDroidTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = palette.background.toArgb()
-            window.navigationBarColor = palette.background.toArgb()
             // Light status bar icons for dark theme, dark icons for light theme
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDarkTheme
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !isDarkTheme
