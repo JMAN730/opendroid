@@ -32,6 +32,7 @@ import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
@@ -130,6 +131,19 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            providerCredentialStore.recoveryState.collect { state ->
+                if (state == ProviderCredentialRecoveryState.CredentialsMustBeReentered) {
+                    // An already hydrated in-memory snapshot must not become a credential
+                    // fallback after direct-store recovery begins.
+                    _huggingFaceToken.value = ""
+                    _llmConfig.value = _llmConfig.value.copy(
+                        apiKeys = emptyMap(),
+                        elevenLabsApiKey = ""
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
             // Wait for initial config loading
             settingsRepository.llmConfig.first()
             refreshModels(force = false)
@@ -141,8 +155,6 @@ class SettingsViewModel @Inject constructor(
         _huggingFaceValidationStatus.value = "Token Required"
         if (token.isBlank()) {
             providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
-            _huggingFaceLastVerified.value = "Never"
-            clearHuggingFaceVerificationMetadata()
         } else {
             providerCredentialStore.write(ProviderCredentialId.HuggingFaceToken, token)
         }
@@ -161,8 +173,6 @@ class SettingsViewModel @Inject constructor(
         if (settingsRepository.resetProviderCredentialsForReentry() is CredentialStoreResult.Success) {
             _huggingFaceToken.value = ""
             _huggingFaceValidationStatus.value = "Token Required"
-            _huggingFaceLastVerified.value = "Never"
-            clearHuggingFaceVerificationMetadata()
             _llmConfig.value = _llmConfig.value.copy(
                 apiKeys = emptyMap(),
                 elevenLabsApiKey = ""
