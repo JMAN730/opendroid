@@ -29,9 +29,9 @@ Developer-facing pre-release for sideload testing. Not a Play Store production u
 
 ### Checksums (SHA-256)
 *   **`app-debug.apk`**: `cd1c02d696869960f561ec651072e538b721d87aa26220540c395b2ab5075b16`
-*   **`app-release.apk`**: `69bb3e76c85043a9cfcbf06504f9b1087d863c6d2af788c0904d3eb09ee6c14a`
+*   **`app-release.apk`**: `de455265ef6d9b301e2c5189ab046004026382e0f551108062ad2e5f3fc0d5e9`
 *   **`app-debug.aab`**: `77a7d0e8554c4f8e415ae63021a2c55dcd129b5dfc5e2964a153941c7fa6f555`
-*   **`app-release.aab`**: `7d7dde34a197006c8d471a0a7c9909cbd34f9ca18a1d97fd41fc08ac5eb57f23`
+*   **`app-release.aab`**: `e36c46ac399c6911540ed0c13ff3b868602381982aac310463a31c20860af3b4`
 
 ### Build Configuration
 *   **Package**: `com.opendroid.aiagent`
