@@ -88,6 +88,6 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideCrashLogRepository(db: OpenDroidDatabase): CrashLogRepository =
-        RoomCrashLogSink(db.crashLogDao())
+    fun provideCrashLogRepository(dao: CrashLogDao): CrashLogRepository =
+        RoomCrashLogSink(dao)
 }

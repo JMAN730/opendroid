@@ -898,7 +898,7 @@ fun SettingsScreen(
                                                     text = if (spec.sha256.isBlank()) {
                                                         "Backend: LiteRT-LM · Integrity: unverified · RAM: 6GB+"
                                                     } else {
-                                                        "Backend: LiteRT-LM · SHA-256 verified · RAM: 6GB+"
+                                                        "Backend: LiteRT-LM · SHA-256 digest available · RAM: 6GB+"
                                                     },
                                                     fontSize = 10.sp,
                                                     color = TextSecondary

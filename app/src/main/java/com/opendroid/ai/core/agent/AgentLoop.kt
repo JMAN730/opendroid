@@ -484,7 +484,7 @@ class AgentLoop @Inject constructor(
                 
                 Never dump raw error messages or technical details. If something goes wrong, say it simply and suggest what to do next.
 
-                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = all plans run automatically). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
+                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = plans run automatically except destructive actions, which still need confirmation). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
                 
                 Context about user and device state:
                 $relevantContext
@@ -1066,8 +1066,14 @@ class AgentLoop @Inject constructor(
                                         approval.grantedActions,
                                         mergedPlan.copy(steps = pending)
                                     )) {
+                                    // startNewPlan persisted the merged plan as RUNNING;
+                                    // reflect the approval gate in the stored status too so
+                                    // the Plan tab and history match the PlanProposed state.
+                                    planManager.updatePlanStatus(PlanStatus.PROPOSED)
                                     proposedPlanSessionId = sessionId
-                                    _agentState.value = AgentState.PlanProposed(mergedPlan)
+                                    _agentState.value = AgentState.PlanProposed(
+                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED)
+                                    )
                                     return
                                 }
                             }

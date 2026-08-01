@@ -346,12 +346,6 @@ class ModelDownloadWorker(
             )
             return Result.failure()
         }
-        if (expectedSize > 0 && finalSize != expectedSize) {
-            Log.e(tag, "[FAILURE] Download failed: size mismatch. Expected $expectedSize bytes, got $finalSize bytes")
-            finalModelFile.delete()
-            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
-            return Result.failure()
-        }
 
         // Verify LiteRT compatibility
         Log.i(tag, "[DOWNLOAD FLOW] Verifying LiteRT compatibility...")
