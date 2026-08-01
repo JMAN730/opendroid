@@ -44,8 +44,12 @@ fun OpenDroidNavigation(
             val context = LocalContext.current
             SplashScreen(
                 onNavigateNext = {
-                    val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
-                    val isOnboardingCompleted = sharedPrefs.getBoolean("onboarding_completed", false)
+                    val isOnboardingCompleted = com.opendroid.ai.core.security.SecurePrefs
+                        .getOrNull(context)
+                        // The legacy store cannot tell us safely; take the non-security-critical
+                        // main route so the credential recovery state remains reachable.
+                        ?.getBoolean("onboarding_completed", false)
+                        ?: true
 
                     val destination = if (isOnboardingCompleted) "main" else "onboarding"
                     navController.navigate(destination) {

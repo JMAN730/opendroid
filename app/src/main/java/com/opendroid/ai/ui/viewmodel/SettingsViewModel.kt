@@ -30,6 +30,9 @@ import com.opendroid.ai.core.llm.RetryPolicy
 import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -47,7 +50,8 @@ class SettingsViewModel @Inject constructor(
     private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>,
     private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>,
     val modelRepository: com.opendroid.ai.data.repository.ModelRepository,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val providerCredentialStore: ProviderCredentialStore
 ) : ViewModel() {
 
     private val _huggingFaceToken = MutableStateFlow("")
@@ -86,11 +90,25 @@ class SettingsViewModel @Inject constructor(
     private var customEndpointJob: Job? = null
 
     private var isLoaded = false
+    // #79 owns migration of this non-provider verification metadata. A null legacy store keeps
+    // the provider-credential recovery UI reachable when its old keyset cannot be opened.
+    private val legacySecurePrefs by lazy {
+        com.opendroid.ai.core.security.SecurePrefs.getOrNull(context)
+    }
+
+    val providerCredentialRecoveryState = providerCredentialStore.recoveryState
 
     init {
-        val prefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
-        _huggingFaceToken.value = prefs.getString("huggingface_token", "") ?: ""
-        _huggingFaceLastVerified.value = prefs.getString("huggingface_last_verified", "Never") ?: "Never"
+        providerCredentialStore.migrateLegacyCredentials()
+        _huggingFaceToken.value = when (
+            val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+        ) {
+            is CredentialStoreResult.Success -> result.value.orEmpty()
+            CredentialStoreResult.CredentialsMustBeReentered,
+            CredentialStoreResult.StorageUnavailable -> ""
+        }
+        _huggingFaceLastVerified.value =
+            legacySecurePrefs?.getString(HUGGING_FACE_LAST_VERIFIED, "Never") ?: "Never"
         if (_huggingFaceToken.value.isNotBlank()) {
             _huggingFaceValidationStatus.value = "Token Required"
         }
@@ -121,21 +139,35 @@ class SettingsViewModel @Inject constructor(
     fun updateHuggingFaceToken(token: String) {
         _huggingFaceToken.value = token
         _huggingFaceValidationStatus.value = "Token Required"
-        com.opendroid.ai.core.security.SecurePrefs.get(context)
-            .edit()
-            .putString("huggingface_token", token)
-            .apply()
+        if (token.isBlank()) {
+            providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+            _huggingFaceLastVerified.value = "Never"
+            clearHuggingFaceVerificationMetadata()
+        } else {
+            providerCredentialStore.write(ProviderCredentialId.HuggingFaceToken, token)
+        }
     }
 
     fun removeHuggingFaceToken() {
         _huggingFaceToken.value = ""
         _huggingFaceValidationStatus.value = "Token Required"
         _huggingFaceLastVerified.value = "Never"
-        com.opendroid.ai.core.security.SecurePrefs.get(context)
-            .edit()
-            .remove("huggingface_token")
-            .remove("huggingface_last_verified")
-            .apply()
+        providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+        clearHuggingFaceVerificationMetadata()
+    }
+
+    /** Removes only unavailable provider credential records so the user can enter new values. */
+    fun resetProviderCredentialsForReentry() {
+        if (settingsRepository.resetProviderCredentialsForReentry() is CredentialStoreResult.Success) {
+            _huggingFaceToken.value = ""
+            _huggingFaceValidationStatus.value = "Token Required"
+            _huggingFaceLastVerified.value = "Never"
+            clearHuggingFaceVerificationMetadata()
+            _llmConfig.value = _llmConfig.value.copy(
+                apiKeys = emptyMap(),
+                elevenLabsApiKey = ""
+            )
+        }
     }
 
     fun validateHuggingFaceToken() {
@@ -159,10 +191,9 @@ class SettingsViewModel @Inject constructor(
                         val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
                         val dateStr = "Today " + sdf.format(java.util.Date())
                         _huggingFaceLastVerified.value = dateStr
-                        com.opendroid.ai.core.security.SecurePrefs.get(context)
-                            .edit()
-                            .putString("huggingface_last_verified", dateStr)
-                            .apply()
+                        legacySecurePrefs?.edit()
+                            ?.putString(HUGGING_FACE_LAST_VERIFIED, dateStr)
+                            ?.apply()
                     } else if (response.code == 401) {
                         _huggingFaceValidationStatus.value = "Invalid"
                     } else {
@@ -652,5 +683,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             modelRepository.deleteUnusedModels()
         }
+    }
+
+    private fun clearHuggingFaceVerificationMetadata() {
+        legacySecurePrefs?.edit()
+            ?.remove(HUGGING_FACE_LAST_VERIFIED)
+            ?.apply()
+    }
+
+    private companion object {
+        const val HUGGING_FACE_LAST_VERIFIED = "huggingface_last_verified"
     }
 }

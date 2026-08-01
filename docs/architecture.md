@@ -34,7 +34,7 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 ```
 
 ### Core Design Principles
-1. **Privacy-First & Sandboxed Execution:** All sensitive credentials (API keys, HF tokens) use Android `EncryptedSharedPreferences` backed by Hardware KeyStore via [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt). System actions and scrapers operate locally on device.
+1. **Privacy-First & Sandboxed Execution:** Provider credentials (API keys and Hugging Face tokens) use the direct Android Keystore [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt), with versioned AES-GCM envelopes outside the plaintext DataStore. System actions and scrapers operate locally on device.
 2. **Autonomous Agentic Loop:** Implements self-evaluation, error detection, and dynamic re-planning using LLM re-evaluators when an execution step fails.
 3. **Hybrid Inference Pipeline:** Seamless support for cloud LLM providers (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter) and local on-device inference engines (LiteRT-LM, Ollama, ML Kit GenAI).
 4. **Resilient System Interactivity:** Native Android APIs are prioritized; when direct permissions are missing, OpenDroid automatically falls back to UI Intents or Accessibility node tree manipulation.
@@ -50,7 +50,8 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 * **`ActionDispatcher` & Action Handlers:** Dispatches parsed plan step calls to concrete action handlers (`SystemActions`, `CommunicationActions`, `CalendarActions`, `MediaActions`, `AdvancedControlActions`, etc.).
 * **`VisionEngine` & Accessibility Scraper:** `VisionEngine` captures screen state via Android Media Projection (Android 11+) and processes visual frames via multimodal LLMs. The node scraper in `OpenDroidAccessibilityService` recursively parses accessibility window node trees (`AccessibilityNodeInfo`) as text fallback.
 * **`OpenDroidNotificationListener` & `AutoReplyEngine`:** Intercepts incoming device notifications, matches automated trigger rules, and dispatches context-aware AI auto-responses for platforms like WhatsApp or SMS.
-* **`SecurePrefs`:** Encrypts local key-value configurations using AES256-SIV data keys and AES128-ECB index keys backed by Android's `MasterKey`.
+* **`ProviderCredentialStore`:** Stores provider credentials with direct Android Keystore AES-256-GCM envelopes bound to logical credential IDs.
+* **`SecurePrefs`:** Legacy encrypted preferences for non-provider local values and narrowly scoped provider-credential migration.
 
 ### 2.2. Component Interaction & Scoping
 * **UI to Engine Communication:** ViewModels expose read-only `StateFlow<UiState>` models to Jetpack Compose components. User commands are dispatched as asynchronous coroutines via `viewModelScope`.
@@ -70,7 +71,7 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 For offline LiteRT-LM execution (`.task` / `.litertlm` formats), OpenDroid implements a robust downloading and verification infrastructure:
 * **WorkManager Orchestration:** `ModelDownloadWorker` manages downloads asynchronously, remaining resilient against app closures or process kills.
 * **HTTP Range Resumption:** Uses OkHttp chunked streaming supporting HTTP `Range` headers to resume interrupted model downloads seamlessly without re-downloading existing chunks.
-* **Hugging Face CDN & Auth Integration:** Authenticates gated models via `EncryptedSharedPreferences` token integration, querying Hugging Face's `whoami-v2` API before initiating transfers.
+* **Hugging Face CDN & Auth Integration:** Authenticates gated models via `ProviderCredentialStore`, querying Hugging Face's `whoami-v2` API before initiating transfers.
 * **Integrity & Compatibility Verification Pipeline:**
   1. File size pre-validation against remote headers.
   2. Streaming SHA-256 hash checksum calculation post-download.
@@ -99,7 +100,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Dependency Injection** | Dagger-Hilt | 2.58 | Centralized dependency graph and scope management |
 | **Local Database** | Room DB (SQLite) | 2.8.4 | Multi-tier persistent memory storage |
 | **Key-Value Storage** | DataStore Preferences | 1.1.1 | Reactive user settings management |
-| **Security & Key Encryption** | Jetpack Security Crypto | 1.1.0-alpha06 | KeyStore-backed `EncryptedSharedPreferences` ([`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt)) |
+| **Provider credential encryption** | Android Keystore | Platform API | AES-256-GCM versioned envelopes ([`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt)); `security-crypto` remains for legacy non-provider preferences |
 | **Local On-Device AI** | LiteRT-LM Android Library | 0.14.0 | Offline LLM inference execution engine (`.task` models) |
 | **Google GenAI API** | Google ML Kit GenAI | 1.0.0-beta2 | Device-integrated Gemini Nano prompt API integration |
 | **Network & REST API** | OkHttp3 / Retrofit2 | 4.12.0 / 2.9.0 | HTTP client engine, JSON parsing, chunked downloads |
@@ -322,7 +323,7 @@ interface ModelManager {
 
 ## 7. Security Architecture & Permission Guardrails
 
-1. **Hardware KeyStore Encrypted Preference Store:** API keys, access tokens, and confidential server URLs are saved via [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt) using `EncryptedSharedPreferences` backed by an Android `MasterKey`.
+1. **Direct Android Keystore Provider Credential Store:** API keys and provider access tokens are saved through [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt) as AES-256-GCM envelopes bound to their logical credential IDs. [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt) remains for legacy non-provider preferences.
 2. **Runtime Permission Safeguards:** High-privilege permissions (SMS, Phone, Accessibility, Media Projection) require explicit user opt-in during the onboarding flow.
 3. **Intent Cascade Fallback:** If high-privilege direct permissions (e.g. `SEND_SMS` or `CALL_PHONE`) are denied by the user, the execution dispatcher degrades gracefully to standard system intent pickers (`Intent.ACTION_SENDTO`, `Intent.ACTION_DIAL`), ensuring zero permission crashes.
 4. **Data Transmission Privacy:** Accessibility tree node details and screen frames are never logged to external servers unless explicitly dispatched to the user-configured LLM provider over HTTPS.
