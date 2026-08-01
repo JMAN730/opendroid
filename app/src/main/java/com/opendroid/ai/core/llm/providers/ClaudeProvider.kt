@@ -3,9 +3,11 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -127,11 +129,28 @@ class ClaudeProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        val response = complete(request)
-        val words = response.content.split(" ")
-        for (word in words) {
-            emit("$word ")
-            kotlinx.coroutines.delay(50)
+        try {
+            val response = complete(request)
+            val words = response.content.split(" ")
+            for (word in words) {
+                emit("$word ")
+                kotlinx.coroutines.delay(50)
+            }
+        } catch (e: CancellationException) {
+            // Never convert cancellation into a failure: it must propagate so the
+            // collecting coroutine unwinds normally.
+            throw e
+        } catch (e: LLMException) {
+            // Typed API errors (rate limit, invalid key, server errors) must reach
+            // AgentLoop's LLMException handlers unchanged; wrapping them in IOException
+            // would bypass publishChatError and the structured error card.
+            throw e
+        } catch (e: IllegalStateException) {
+            // Configuration failures belong in AgentLoop's Error state, not in
+            // persisted assistant content that looks like a Claude response.
+            throw e
+        } catch (e: Exception) {
+            throw IOException("Claude streaming failed.", e)
         }
     }
 

@@ -140,6 +140,25 @@ Standardized REST endpoints used for integrations:
 * **Debouncing Input:** Auto-saving input fields (API keys, URLs) must debounce keystrokes by 1000ms.
 * **Exception Containment:** File system writes must use `try-catch` blocks to prevent crash propagation if the disk is full or database locks occur.
 
+### 5.3. Crash log and model integrity
+
+Crash records are stored locally in Room behind a crash-log repository. The
+record includes the exception, thread, stack, app version, and device metadata;
+credentials and token-like values are redacted before persistence and export.
+The log is pruned to the bounded retention count and can be cleared by the
+user. The uncaught-exception path may block for a bounded budget so the record
+write can complete before process termination; pruning is lower priority than
+the insert.
+
+On-device model registry entries publish a SHA-256 digest and artifact size
+when available. Downloads verify both values. Entries without a published
+digest are explicitly presented as unverified in Settings and skip only the
+digest check; a published size is still enforced.
+
+Room migrations are explicit for every schema version. Destructive migration
+fallback is prohibited because it can silently erase conversations, plans,
+memories, and crash history.
+
 ---
 
 ## 6. Project Dependencies & Toolchain Versions

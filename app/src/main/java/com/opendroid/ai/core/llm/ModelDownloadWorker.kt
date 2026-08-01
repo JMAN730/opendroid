@@ -338,10 +338,12 @@ class ModelDownloadWorker(
         }
         val finalSize = finalModelFile.length()
         Log.i(tag, "[DOWNLOAD FLOW] Final model file verified. Path: ${finalModelFile.absolutePath}, Size: $finalSize bytes")
-        if (expectedSize > 0 && finalSize != expectedSize) {
-            Log.e(tag, "[FAILURE] Download failed: size mismatch. Expected $expectedSize bytes, got $finalSize bytes")
+        if (expectedSize > 0L && finalSize != expectedSize) {
+            Log.e(tag, "[FAILURE] Model size verification failed for $modelId. Expected $expectedSize, got $finalSize")
             finalModelFile.delete()
-            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
+            modelDao.updateDownloadProgressDetails(
+                modelId, 0, 0L, "", "Downloaded model size does not match the published artifact.", ModelStatus.FAILED
+            )
             return Result.failure()
         }
 

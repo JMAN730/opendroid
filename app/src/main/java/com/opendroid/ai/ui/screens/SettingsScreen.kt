@@ -895,7 +895,11 @@ fun SettingsScreen(
                                                     }
                                                 }
                                                 Text(
-                                                    text = "Backend: LiteRT-LM · Context: 32K · RAM: 6GB+",
+                                                    text = if (spec.sha256.isBlank()) {
+                                                        "Backend: LiteRT-LM · Integrity: unverified · RAM: 6GB+"
+                                                    } else {
+                                                        "Backend: LiteRT-LM · SHA-256 digest available · RAM: 6GB+"
+                                                    },
                                                     fontSize = 10.sp,
                                                     color = TextSecondary
                                                 )

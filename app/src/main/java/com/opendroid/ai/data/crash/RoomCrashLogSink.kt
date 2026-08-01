@@ -1,11 +1,11 @@
 package com.opendroid.ai.data.crash
 
 import com.opendroid.ai.core.crash.CrashLogRecord
-import com.opendroid.ai.core.crash.CrashLogSink
 import com.opendroid.ai.data.db.dao.CrashLogDao
 import com.opendroid.ai.data.db.entities.CrashLogEntity
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Persists crashes to Room from the crashing thread.
@@ -22,7 +22,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 class RoomCrashLogSink(
     private val dao: CrashLogDao,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS
-) : CrashLogSink {
+) : CrashLogRepository {
+
+    override fun getAllFlow(): Flow<List<CrashLogEntity>> = dao.getAllFlow()
+
+    override suspend fun getAll(): List<CrashLogEntity> = dao.getAll()
+
+    override suspend fun clearAll() = dao.clearAll()
 
     /**
      * Monotonic deadline shared by every write for a single crash, set on the
