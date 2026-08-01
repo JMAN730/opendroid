@@ -68,7 +68,7 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 
 ### 3.2. Background Model Downloader Infrastructure
 For offline LiteRT-LM execution (`.task` / `.litertlm` formats), OpenDroid implements a robust downloading and verification infrastructure:
-* **WorkManager Orchestration:** `ModelDownloadWorker` manages downloads asynchronously, remaining resilient against app closures or process kills.
+* **WorkManager Orchestration:** `ModelDownloadWorker` runs as a long-running `dataSync` foreground worker for user-initiated multi-GB downloads, requires a connected network, and remains resilient against app closures or process kills.
 * **HTTP Range Resumption:** Uses OkHttp chunked streaming supporting HTTP `Range` headers to resume interrupted model downloads seamlessly without re-downloading existing chunks.
 * **Hugging Face CDN & Auth Integration:** Authenticates gated models via `EncryptedSharedPreferences` token integration, querying Hugging Face's `whoami-v2` API before initiating transfers.
 * **Integrity & Compatibility Verification Pipeline:**
@@ -103,7 +103,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Local On-Device AI** | LiteRT-LM Android Library | 0.14.0 | Offline LLM inference execution engine (`.task` models) |
 | **Google GenAI API** | Google ML Kit GenAI | 1.0.0-beta2 | Device-integrated Gemini Nano prompt API integration |
 | **Network & REST API** | OkHttp3 / Retrofit2 | 4.12.0 / 2.9.0 | HTTP client engine, JSON parsing, chunked downloads |
-| **Background Processing**| Jetpack WorkManager | 2.9.0 | Resilient background downloads and task scheduling |
+| **Background Processing**| Jetpack WorkManager | 2.10.5 | Resilient background downloads and task scheduling |
 | **Serialization** | Kotlinx Serialization | 2.4.0 | Fast, type-safe JSON serialization/deserialization |
 | **Voice & Speech Engine** | Android SpeechRecognizer / ElevenLabs API | System Native / REST | Speech-to-Text parsing and natural Text-to-Speech audio synthesis |
 | **Image & Animation** | Coil / Lottie Compose | 2.5.0 / 6.3.0 | Image caching and dynamic vector UI micro-animations |

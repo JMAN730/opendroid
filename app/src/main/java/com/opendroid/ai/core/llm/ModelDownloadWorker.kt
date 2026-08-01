@@ -1,18 +1,22 @@
 package com.opendroid.ai.core.llm
 
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.Backend
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
+import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelStatus
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -44,6 +48,9 @@ class ModelDownloadWorker(
     private val modelDao = entryPoint.modelDao()
     private val okHttpClient = entryPoint.okHttpClient()
 
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        ModelDownloadForegroundInfoFactory.create(applicationContext)
+
     override suspend fun doWork(): Result {
         val modelId = inputData.getString("model_id") ?: return Result.failure()
         val downloadUrl = inputData.getString("download_url") ?: return Result.failure()
@@ -52,32 +59,40 @@ class ModelDownloadWorker(
         val expectedSha = inputData.getString("sha256") ?: ""
         val simulate = inputData.getBoolean("simulate", false)
 
-        Log.i(tag, "Starting download task for model: $modelId, url=$downloadUrl, size=$size, simulate=$simulate")
-
-        val spec = OnDeviceModelRegistry.findById(modelId)
-        if (spec != null) {
-            try {
-                OnDeviceModelRegistry.checkDeviceMemoryCompatibility(applicationContext, spec)
-            } catch (e: IllegalStateException) {
-                Log.e(tag, "RAM check failed for model $modelId: ${e.message}")
-                modelDao.updateDownloadProgressDetails(
-                    modelId,
-                    0,
-                    0L,
-                    "",
-                    e.localizedMessage ?: "Insufficient device memory.",
-                    ModelStatus.FAILED
-                )
-                return Result.failure()
-            }
-        }
+        Log.i(tag, "Starting download task for model=$modelId, expectedSize=$size, simulate=$simulate")
 
         try {
+            // Multi-GB downloads need a visible, long-running WorkManager foreground service.
+            setForeground(getForegroundInfo())
+
+            val spec = OnDeviceModelRegistry.findById(modelId)
+            if (spec != null) {
+                try {
+                    OnDeviceModelRegistry.checkDeviceMemoryCompatibility(applicationContext, spec)
+                } catch (e: IllegalStateException) {
+                    Log.e(tag, "RAM check failed for model $modelId: ${e.message}")
+                    modelDao.updateDownloadProgressDetails(
+                        modelId,
+                        0,
+                        0L,
+                        "",
+                        e.localizedMessage ?: "Insufficient device memory.",
+                        ModelStatus.FAILED
+                    )
+                    return Result.failure()
+                }
+            }
+
             if (simulate) {
                 return performSimulation(modelId, targetPath, size)
             }
 
             return performDownload(modelId, downloadUrl, targetPath, size, expectedSha)
+        } catch (e: CancellationException) {
+            // WorkManager owns rescheduling after a stop. Do not turn a cancel/stop into failure
+            // or delete the temp file; the next run will issue a Range request from its byte offset.
+            logStopReason(modelId)
+            throw e
         } catch (e: Exception) {
             Log.e(tag, "Failed to download model $modelId", e)
             modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
@@ -99,7 +114,7 @@ class ModelDownloadWorker(
 
         for (i in (startProgress / 5)..steps) {
             if (isStopped) {
-                modelDao.updateModelStatus(modelId, ModelStatus.PAUSED)
+                logStopReason(modelId)
                 return Result.retry()
             }
 
@@ -199,6 +214,8 @@ class ModelDownloadWorker(
 
         val response = try {
             okHttpClient.newCall(request).execute()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: java.net.UnknownHostException) {
             Log.e(tag, "[FAILURE] Network connection failed: unknown host", e)
             modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Internet connection unavailable.", ModelStatus.FAILED)
@@ -239,10 +256,8 @@ class ModelDownloadWorker(
         try {
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                 if (isStopped) {
-                    outputStream.close()
-                    responseBody.close()
                     Log.i(tag, "[DOWNLOAD FLOW] Worker stopped. Saving progress at $totalRead bytes.")
-                    modelDao.updateModelStatus(modelId, ModelStatus.PAUSED)
+                    logStopReason(modelId)
                     return Result.retry()
                 }
 
@@ -384,6 +399,34 @@ class ModelDownloadWorker(
         tempFile.delete()
         Log.i(tag, "[DOWNLOAD FLOW] Model task completed successfully.")
         return Result.success()
+    }
+
+    private fun logStopReason(modelId: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            Log.w(
+                tag,
+                "Model download stopped for model=$modelId; stop reason is unavailable before API 31. " +
+                    "Partial data is retained for retry."
+            )
+            return
+        }
+
+        val reason = stopReason
+        Log.w(
+            tag,
+            "Model download stopped for model=$modelId; stopReason=${stopReasonLabel(reason)} ($reason), " +
+                "attempt=$runAttemptCount. Partial data is retained for retry."
+        )
+    }
+
+    private fun stopReasonLabel(reason: Int): String = when (reason) {
+        WorkInfo.STOP_REASON_CANCELLED_BY_APP -> "cancelled-by-app"
+        WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY -> "network-constraint"
+        WorkInfo.STOP_REASON_FOREGROUND_SERVICE_TIMEOUT -> "foreground-service-timeout"
+        WorkInfo.STOP_REASON_QUOTA -> "quota"
+        WorkInfo.STOP_REASON_TIMEOUT -> "timeout"
+        WorkInfo.STOP_REASON_USER -> "user"
+        else -> "unknown"
     }
 
     private fun isZipFile(file: File): Boolean {

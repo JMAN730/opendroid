@@ -103,7 +103,9 @@ All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys, Hugging Face 
 
 ### 3.4. Background Model Downloader (WorkManager)
 * **ModelDownloadWorker**: Implements background downloading via OkHttp. Features:
+  * Long-running `dataSync` foreground execution for user-initiated multi-GB transfers, gated on a connected network.
   * Chunk-based byte copying with active cancellation checks (mapping to worker stop signals).
+  * Partial-file preservation and stop-reason diagnostics for safe WorkManager retry with HTTP Range resumption.
   * Real-time transfer speed calculation and ETA estimation.
   * SHA-256 checksum validation.
   * LiteRT engine instantiation compatibility checks using JNI engine bindings to verify download integrity before marking READY.
@@ -183,7 +185,7 @@ memories, and crash history.
 * **Local Database:**
   * **Room DB:** `2.8.4` (utilizing Kapt annotation processing with `kotlin-metadata-jvm:2.4.0` metadata support)
 * **Background Scheduling:**
-  * **WorkManager:** `2.9.0`
+  * **WorkManager:** `2.10.5`
 * **Networking Client:**
   * **OkHttp & Logging Interceptor:** `4.12.0`
   * **Retrofit & Converter Gson:** `2.9.0`
