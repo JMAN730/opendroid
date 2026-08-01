@@ -17,6 +17,7 @@ import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.VisionEngine
 import dagger.Lazy
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -31,6 +32,11 @@ class ResourceCleanupTestApplication : Application()
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = ResourceCleanupTestApplication::class)
 class ResourceCleanupTest {
+
+    @After
+    fun resetCursorProvider() {
+        ThrowingCursorProvider.reset()
+    }
 
     @Test
     fun `legacy contact resolution closes cursors when reading fails`() {
@@ -68,7 +74,7 @@ class ResourceCleanupTest {
 
     private fun installThrowingCursorProvider(): MutableList<ThrowingCursor> {
         val cursors = mutableListOf<ThrowingCursor>()
-        ThrowingCursorProvider.cursorFactory = {
+        ThrowingCursorProvider.install {
             ThrowingCursor().also(cursors::add)
         }
         Robolectric.setupContentProvider(
@@ -84,6 +90,10 @@ class ResourceCleanupTest {
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
     ) {
+        init {
+            addRow(arrayOf("Ada", "5550100"))
+        }
+
         var closeCount = 0
             private set
 
@@ -103,7 +113,15 @@ class ResourceCleanupTest {
 
 class ThrowingCursorProvider : ContentProvider() {
     companion object {
-        lateinit var cursorFactory: () -> Cursor
+        private var cursorFactory: (() -> Cursor)? = null
+
+        fun install(factory: () -> Cursor) {
+            cursorFactory = factory
+        }
+
+        fun reset() {
+            cursorFactory = null
+        }
     }
 
     override fun onCreate(): Boolean = true
@@ -114,7 +132,9 @@ class ThrowingCursorProvider : ContentProvider() {
         selection: String?,
         selectionArgs: Array<String>?,
         sortOrder: String?
-    ): Cursor = cursorFactory()
+    ): Cursor = requireNotNull(cursorFactory) {
+        "Install a cursor factory before querying the test provider"
+    }.invoke()
 
     override fun getType(uri: Uri): String? = null
 
