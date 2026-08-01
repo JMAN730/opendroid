@@ -7,8 +7,7 @@ import com.opendroid.ai.core.crash.DeviceMetadata
 import com.opendroid.ai.core.crash.OpenDroidCrashHandler
 import com.opendroid.ai.core.memory.MemoryManager
 import com.opendroid.ai.core.security.SecurePrefs
-import com.opendroid.ai.data.crash.RoomCrashLogSink
-import com.opendroid.ai.data.db.dao.CrashLogDao
+import com.opendroid.ai.data.crash.CrashLogRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +22,7 @@ class OpenDroidApp : Application() {
     lateinit var memoryManager: MemoryManager
 
     @Inject
-    lateinit var crashLogDao: CrashLogDao
+    lateinit var crashLogRepository: CrashLogRepository
 
     private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -50,7 +49,7 @@ class OpenDroidApp : Application() {
     private fun installCrashHandler() {
         try {
             val recorder = CrashLogRecorder(
-                sink = RoomCrashLogSink(crashLogDao),
+                sink = crashLogRepository,
                 // Read here, at startup, rather than at crash time - a dying
                 // process is the wrong place to be querying PackageManager.
                 metadata = DeviceMetadata.fromContext(this),

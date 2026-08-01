@@ -128,11 +128,11 @@ class ClaudeProvider @Inject constructor(
                 kotlinx.coroutines.delay(50)
             }
         } catch (e: IllegalStateException) {
-            // Configuration problems the user can fix (unsupported model, missing key)
-            // are surfaced as-is: a clear instruction, not an exception dump.
-            emit(e.message ?: "Claude is not configured correctly. Check Settings.")
+            // Configuration failures belong in AgentLoop's Error state, not in
+            // persisted assistant content that looks like a Claude response.
+            throw e
         } catch (e: Exception) {
-            emit("Error streaming Claude: ${e.localizedMessage}")
+            throw IOException("Claude streaming failed.", e)
         }
     }
 

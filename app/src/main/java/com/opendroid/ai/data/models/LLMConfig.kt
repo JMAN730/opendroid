@@ -36,3 +36,13 @@ fun LLMConfig.resolvedAutoMode(): AutoMode =
 
 fun LLMConfig.effectiveGrantedActions(): Map<String, Long> =
     grantedActions ?: AutoMode.DEFAULT_GRANTS.associateWith { 0L }
+
+data class ApprovalSettings(
+    val mode: AutoMode,
+    val grantedActions: Set<String>
+)
+
+fun LLMConfig.approvalSettings(): ApprovalSettings = ApprovalSettings(
+    mode = resolvedAutoMode(),
+    grantedActions = effectiveGrantedActions().keys
+)

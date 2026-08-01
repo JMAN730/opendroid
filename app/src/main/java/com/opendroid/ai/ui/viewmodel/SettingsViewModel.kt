@@ -276,7 +276,7 @@ class SettingsViewModel @Inject constructor(
         activeModelJob?.cancel()
         activeModelJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(activeModel = model)
                 }
@@ -296,7 +296,7 @@ class SettingsViewModel @Inject constructor(
         apiKeyUpdateJobs[providerName]?.cancel()
         apiKeyUpdateJobs[providerName] = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     val currentKeys = current.apiKeys.toMutableMap()
                     currentKeys[providerName] = key
@@ -318,7 +318,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsApiKeyJob?.cancel()
         elevenLabsApiKeyJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsApiKey = key)
                 }
@@ -335,7 +335,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsVoiceIdJob?.cancel()
         elevenLabsVoiceIdJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsVoiceId = voiceId)
                 }
@@ -352,7 +352,7 @@ class SettingsViewModel @Inject constructor(
         ollamaUrlJob?.cancel()
         ollamaUrlJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(ollamaUrl = url)
                 }
@@ -369,7 +369,7 @@ class SettingsViewModel @Inject constructor(
         copilotUrlJob?.cancel()
         copilotUrlJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(copilotUrl = url)
                 }
@@ -389,7 +389,7 @@ class SettingsViewModel @Inject constructor(
         customEndpointJob?.cancel()
         customEndpointJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     val currentEndpoints = current.customEndpoints.toMutableMap()
                     currentEndpoints[providerName] = url

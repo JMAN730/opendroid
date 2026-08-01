@@ -53,7 +53,7 @@ class AutoModeConfigTest {
                 "DEFINE_WORD", "CONVERT_UNITS", "CURRENCY_CONVERT", "CHECK_STOCK",
                 "SUMMARIZE_URL", "FACT_CHECK",
                 "TOGGLE_FLASHLIGHT", "TOGGLE_DND", "SET_BRIGHTNESS", "SET_VOLUME",
-                "SET_RINGER_MODE", "TAKE_SCREENSHOT", "GET_SYSTEM_INFO"
+                "SET_RINGER_MODE", "GET_SYSTEM_INFO"
             ),
             AutoMode.DEFAULT_GRANTS
         )

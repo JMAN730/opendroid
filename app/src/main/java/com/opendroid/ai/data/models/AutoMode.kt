@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /**
  * Plan auto-approval mode. AUTO approves a plan only when every step's action
  * is in the granted allowlist and none is flagged neverAutoApprove; YOLO
- * approves everything (in-action destructive confirmations still fire).
+ * still requires confirmation for actions flagged neverAutoApprove.
  */
 @Serializable
 enum class AutoMode {
@@ -25,7 +25,7 @@ enum class AutoMode {
             "SUMMARIZE_URL", "FACT_CHECK",
             // Reversible SYSTEM
             "TOGGLE_FLASHLIGHT", "TOGGLE_DND", "SET_BRIGHTNESS", "SET_VOLUME",
-            "SET_RINGER_MODE", "TAKE_SCREENSHOT", "GET_SYSTEM_INFO"
+            "SET_RINGER_MODE", "GET_SYSTEM_INFO"
         )
     }
 }
