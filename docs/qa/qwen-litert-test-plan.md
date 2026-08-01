@@ -41,7 +41,7 @@ Inference will not complete unless these hold. **Do not log product bugs until s
 |----|-------|-------------|-----|
 | E1 | Guest RAM | ≥ 4 GB, ≥ 2.5 GB available at idle | `adb shell cat /proc/meminfo` |
 | E2 | Host RAM headroom | ≥ 2 GB free with emulator running | `free -m` |
-| E3 | ABI | `liblitertlm_jni.so` present for the device ABI | confirmed for `x86_64` and `arm64-v8a` in `litertlm-android:0.14.0` |
+| E3 | ABI | `liblitertlm_jni.so` present for the device ABI | `adb shell getprop ro.product.cpu.abi`, then confirm that ABI has a `jni/<abi>/liblitertlm_jni.so` entry: `unzip -l app/build/outputs/apk/debug/app-debug.apk \| grep litertlm_jni`. `litertlm-android:0.14.0` ships `x86_64` and `arm64-v8a` only |
 | E4 | Disk | ≥ 1.5 GB free on the model partition | Settings → Storage Cleanup |
 | E5 | Model integrity | `sha256 = e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2`, size `546660344` | `sha256sum` on host before push |
 
@@ -73,9 +73,10 @@ Inference will not complete unless these hold. **Do not log product bugs until s
 | A3 | Pause / resume | Pause mid-download, wait 10 s, resume | Resumes from the existing byte offset, not from 0 |
 | A4 | Cancel | Cancel mid-download | Status → `Not Downloaded`; model dir and `litert_models/<id>.litertlm` ref file removed; temp file in cacheDir removed |
 | A5 | Network loss | Enable airplane mode mid-download | Clear error surfaced, no silent stall; resumable afterwards |
-| A6 | Checksum mismatch | Truncate/corrupt the file, restart app | App must not report `Downloaded` for a bad file. **Note:** current `initModelsInDatabase` only gates on `MIN_VERIFIED_BYTES` (10 MB) plus manifest presence — a 400 MB truncated file may pass. Expect this to fail; file as a real defect if so |
+| A6 | Download checksum mismatch | Point the manifest `sha256` at a wrong value (or serve a corrupt payload) and run Path A to completion | Exercises `ModelDownloadWorker`: SHA-256 over the temp file mismatches, download fails with a clear error, temp file removed, status stays `Not Downloaded`. This is the only case that covers the worker's checksum comparison |
 | A7 | No-auth repo | Confirm Qwen downloads with no Hugging Face token set | Succeeds; HF token remains `Token Required` and does not block |
 | A8 | Local import | Settings → import a `.task` from device storage | `Engine.initialize()` compat check runs; manifest.json and ref file written; a non-LiteRT file is rejected with a readable message and deleted |
+| A9 | Installed-file integrity | With the model already `Downloaded`, truncate/corrupt the file on disk, restart app | App must not report `Downloaded` for a bad file. **Note:** this exercises `initModelsInDatabase`, which only gates on `MIN_VERIFIED_BYTES` (10 MB) plus manifest presence — a 400 MB truncated file may pass. Expect this to fail; flag as a real defect if so (see section 10, D-1) |
 
 ## 6. Inference — core
 
@@ -92,7 +93,7 @@ Send from Chat with the model active. Record wall-clock to first token and to co
 | B7 | Empty / whitespace input | Send `   ` | Send is rejected or no-ops; no crash, no empty bubble |
 | B8 | Unicode + emoji | `Explain 日本語 briefly 🙂` | No mojibake, no tokenizer crash |
 | B9 | Long single prompt | ~1,000-token paste | Either answers or reports a budget error — must not crash natively |
-| B10 | Context overflow | Converse until input + output approaches `contextWindow = 1280` | `PromptBudget` truncates or errors cleanly. **A native crash here is a P1** — the spec comment states exceeding `maxNumTokens` crashes natively |
+| B10 | Context overflow | Converse until input + output approaches `contextWindow = 1280` | `PromptBudget` truncates or errors cleanly. **A native crash here is a P1** — the spec comment states exceeding `maxNumTokens` crashes natively. The missing guard is a known defect independent of this run (see section 10, D-2); B10 confirms whether the fix holds, it is not what discovers it |
 
 ## 7. Failure paths
 
@@ -103,7 +104,7 @@ Send from Chat with the model active. Record wall-clock to first token and to co
 | C3 | Model file deleted underneath | Delete the `.task` while app is running, send a message | `checkModelReady` / `verifyModelFileIntegrity` produce a readable error, not `FileNotFoundException` in the UI |
 | C4 | Zero-byte file | Replace model with a 0-byte file | Rejected by integrity check; status corrected to `Not Downloaded` |
 | C5 | Unsupported backend | Select an AI Core model on a device without AI Core | "Not supported on this device"; no crash; a fallback path is offered |
-| C6 | Crash logging | Force any of the above | Crash log captured and redacted per `CrashLogRedactorTest` — no file paths or tokens leaked |
+| C6 | Crash logging | Trigger a **deliberate uncaught JVM exception** (debug-only crash trigger, or `adb shell am broadcast` into a debug crash receiver), then relaunch the app. Do *not* rely on C1–C5: `OpenDroidCrashHandler` records only uncaught throwables, and those cases produce either handled provider errors or a `mem-pressure-event` process kill that delivers no JVM exception | A crash record is stored and visible after relaunch, and credential material is redacted per `CrashLogRedactor` — API keys, `Bearer` tokens, `?key=` query values. **File paths are deliberately *not* redacted** (`CrashLogRedactorTest` asserts `/data/models/gemma.task` survives verbatim), so do not fail this case on a model path appearing in the record |
 
 ## 8. Switching and persistence
 
@@ -120,9 +121,20 @@ Send from Chat with the model active. Record wall-clock to first token and to co
 - Section 3 fully green on the test device, recorded in the run log.
 - B1–B5 pass. Any failure among them blocks release of on-device Qwen.
 - B10 and C1 produce a handled error rather than a process kill or native crash.
-- A4, A6, C3, C4 leave the app in a self-consistent state — reported status always matches what is on disk.
+- A4, A6, A9, C3, C4 leave the app in a self-consistent state — reported status always matches what is on disk.
 - Every defect filed carries: device, RAM, ABI, model sha256, and the relevant logcat window.
 
-## 10. Recording results
+## 10. Known product defects — tracked before the run
+
+These are visible in the source today. They are **not** discoveries of this test run. Both are filed, so a failing case gets attached to the existing issue rather than closed out as "untested".
+
+| Ref | Defect | Evidence | Covered by |
+|-----|--------|----------|------------|
+| D-1 ([#53](https://github.com/JMAN730/opendroid/issues/53)) | Installed-model integrity check is a size gate, not a checksum. `ModelRepository.initModelsInDatabase` accepts any file over `ModelStoragePaths.MIN_VERIFIED_BYTES` (10 MB) with a manifest present, so a ~400 MB truncated 546 MB model is reported `Downloaded`. The E5 SHA-256 is a manual host-side check by the QA engineer and gives no in-app protection. Fix: persist the manifest `sha256` and re-verify it (or at minimum the expected byte size) at init. | `ModelRepository.kt:78`, `ModelRepository.kt:190`, `ModelStoragePaths.kt:13` | A9 |
+| D-2 ([#54](https://github.com/JMAN730/opendroid/issues/54)) | No guard against exceeding the engine's `maxNumTokens`. `LiteRTLMProvider` passes `maxNumTokens = spec.contextWindow`, and `PromptBudget`'s own doc comment states that overshooting it kills the process natively — an out-of-JVM crash that `OpenDroidCrashHandler` cannot record. Fix: a hard budget check in `PromptBudget` or at the inference call site that raises a handled error before the native call. | `PromptBudget.kt:7`, `LiteRTLMProvider.kt:390-398` | B10 |
+
+Section 3's E6 (`adb push` ownership) is an environment/test-harness item, not in this table — the open question there is whether the app should surface a readable "model file unreadable" error at all.
+
+## 11. Recording results
 
 For each case log: ID, pass/fail, device, wall-clock timings for section 6, and the logcat slice filtered to `LiteRTLMProvider|ModelRepository|ModelDownloadWorker|ActivityManager`. Treat "app process disappeared" as a distinct outcome from "app showed an error" — the 2026-07-29 run showed only the former, and the two have very different root causes.
