@@ -68,7 +68,7 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 
 ### 3.2. Background Model Downloader Infrastructure
 For offline LiteRT-LM execution (`.task` / `.litertlm` formats), OpenDroid implements a robust downloading and verification infrastructure:
-* **WorkManager Orchestration:** `ModelDownloadWorker` runs as a long-running `dataSync` foreground worker for user-initiated multi-GB downloads, requires a connected network, and remains resilient against app closures or process kills.
+* **WorkManager Orchestration:** `ModelDownloadWorker` runs as a long-running `dataSync` foreground worker for user-initiated multi-GB downloads, requires an unmetered network, and remains resilient against app closures or process kills.
 * **HTTP Range Resumption:** Uses OkHttp chunked streaming supporting HTTP `Range` headers to resume interrupted model downloads seamlessly without re-downloading existing chunks.
 * **Hugging Face CDN & Auth Integration:** Authenticates gated models via `EncryptedSharedPreferences` token integration, querying Hugging Face's `whoami-v2` API before initiating transfers.
 * **Integrity & Compatibility Verification Pipeline:**

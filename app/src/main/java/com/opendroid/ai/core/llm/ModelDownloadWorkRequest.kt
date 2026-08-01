@@ -17,7 +17,8 @@ internal object ModelDownloadWorkRequest {
         OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    // Multi-GB retries must not silently consume a user's metered cellular plan.
+                    .setRequiredNetworkType(NetworkType.UNMETERED)
                     .build()
             )
             .setBackoffCriteria(

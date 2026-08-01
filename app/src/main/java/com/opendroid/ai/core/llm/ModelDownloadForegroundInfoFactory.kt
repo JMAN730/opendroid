@@ -10,19 +10,20 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import com.opendroid.ai.MainActivity
+import java.util.UUID
 
 /** Builds the visible foreground-service notification for user-initiated model downloads. */
 internal object ModelDownloadForegroundInfoFactory {
 
     internal const val CHANNEL_ID = "model_downloads"
-    internal const val NOTIFICATION_ID = 1002
 
-    fun create(context: Context): ForegroundInfo {
+    fun create(context: Context, workId: UUID): ForegroundInfo {
         createNotificationChannel(context)
+        val notificationId = notificationIdFor(workId)
 
         val openAppIntent = PendingIntent.getActivity(
             context,
-            NOTIFICATION_ID,
+            notificationId,
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             },
@@ -40,7 +41,7 @@ internal object ModelDownloadForegroundInfoFactory {
             .build()
 
         return ForegroundInfo(
-            NOTIFICATION_ID,
+            notificationId,
             notification,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -48,6 +49,12 @@ internal object ModelDownloadForegroundInfoFactory {
                 0
             }
         )
+    }
+
+    /** Keeps a notification stable across retries while avoiding cross-download cancellation. */
+    internal fun notificationIdFor(workId: UUID): Int {
+        val candidate = workId.hashCode() and Int.MAX_VALUE
+        return if (candidate == 0) 1 else candidate
     }
 
     private fun createNotificationChannel(context: Context) {
