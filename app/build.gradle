@@ -5,6 +5,7 @@ plugins {
     id 'dagger.hilt.android.plugin'
     id 'kotlinx-serialization'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'androidx.room'
 }
 
 android {
@@ -32,6 +33,12 @@ android {
             project.hasProperty('RELEASE_KEY_ALIAS') &&
             project.hasProperty('RELEASE_KEY_PASSWORD') &&
             file("${rootProject.projectDir}/opendroid-release.keystore").exists()
+
+    // Explicit opt-in for building release WITHOUT signing, so CI can exercise
+    // R8/ProGuard (where reflection-dependent code breaks) without holding any
+    // signing secrets. The resulting APK is unsigned and not installable - the
+    // guard below still fails a plain `assembleRelease` when signing is missing.
+    def allowUnsignedRelease = project.hasProperty('allowUnsignedRelease')
 
     if (!hasSigningConfig) {
         logger.warn("WARNING: Release signing not configured. Set credentials in ~/.gradle/gradle.properties (see gradle.properties.example).")
@@ -64,17 +71,27 @@ android {
 
     // Fail release builds loudly when release signing is not configured,
     // instead of silently producing a debug-signed or unsigned artifact.
+    // CI (and other non-distribution builds) can opt out explicitly with
+    // -PallowUnsignedRelease to compile-check release without signing.
     gradle.taskGraph.whenReady { graph ->
         def releaseBuildRequested = graph.allTasks.any { t ->
             t.project == project && t.name ==~ /(assemble|bundle|package)Release.*/
         }
         if (releaseBuildRequested && !hasSigningConfig) {
-            throw new GradleException(
-                "Release signing is not configured. Set RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS " +
-                "and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties (or as ORG_GRADLE_PROJECT_* " +
-                "environment variables) and place opendroid-release.keystore at the project root " +
-                "(see gradle.properties.example). Refusing to sign a release build with the debug key."
-            )
+            if (allowUnsignedRelease) {
+                logger.warn(
+                    "WARNING: Building an UNSIGNED release because -PallowUnsignedRelease was set. " +
+                    "This artifact must never be distributed."
+                )
+            } else {
+                throw new GradleException(
+                    "Release signing is not configured. Set RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS " +
+                    "and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties (or as ORG_GRADLE_PROJECT_* " +
+                    "environment variables) and place opendroid-release.keystore at the project root " +
+                    "(see gradle.properties.example). Refusing to sign a release build with the debug key. " +
+                    "To build an unsigned release on purpose (e.g. CI compile checks), pass -PallowUnsignedRelease=true."
+                )
+            }
         }
     }
     compileOptions {
@@ -94,15 +111,40 @@ android {
     buildFeatures {
         compose true
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs the app's resources and manifest on the JVM.
+            includeAndroidResources = true
+        }
+    }
+    sourceSets {
+        // This AGP version does not merge unit-test sourceSet assets into the
+        // Robolectric resource APK, so the exported Room schemas are exposed via
+        // the debug variant (unit tests run against debug); release stays clean.
+        debug {
+            assets.srcDirs += "$projectDir/schemas".toString()
+        }
+    }
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
     }
     lint {
-        abortOnError false
+        // Pre-existing findings are frozen in the baseline so they do not
+        // block merges; anything NEW fails the build. Shrink the baseline
+        // over time (delete entries, fix, repeat) - never regenerate it to
+        // absorb new findings.
+        abortOnError true
         checkReleaseBuilds true
+        baseline = file("lint-baseline.xml")
     }
+}
+
+// Export Room schema JSONs (app/schemas/, committed to Git) so future
+// migrations can be tested against the real historical schemas.
+room {
+    schemaDirectory "$projectDir/schemas"
 }
 
 dependencies {
@@ -156,9 +198,6 @@ dependencies {
     // Lottie animations
     implementation 'com.airbnb.android:lottie-compose:6.3.0'
 
-    // Accompanist Permissions
-    implementation 'com.google.accompanist:accompanist-permissions:0.34.0'
-
     // Google ML Kit GenAI Prompt API (Android AI Core)
     implementation 'com.google.mlkit:genai-prompt:1.0.0-beta2'
 
@@ -167,6 +206,11 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'androidx.room:room-testing:2.8.4'
+    testImplementation 'androidx.test:core:1.6.1'
+    // Robolectric runs the Room migration tests on the JVM - no emulator, so
+    // they live in src/test and run under the existing testDebugUnitTest.
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2026.06.01')

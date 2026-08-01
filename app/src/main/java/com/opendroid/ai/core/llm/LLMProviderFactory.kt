@@ -1,17 +1,27 @@
 package com.opendroid.ai.core.llm
 
+import android.util.Log
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.core.agent.IntentClassifier
 import com.opendroid.ai.core.agent.QueryComplexity
 import com.opendroid.ai.core.llm.prompts.SystemPrompts
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
+import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.core.llm.providers.*
 import com.opendroid.ai.core.llm.providers.HybridOnDeviceProvider
 import com.opendroid.ai.core.llm.providers.LiteRTLMProvider
+import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
+import kotlin.math.min
+import kotlin.random.Random
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -58,98 +68,22 @@ class LLMProviderFactory @Inject constructor(
             "Gemma 4 (On-device)" -> hybridOnDeviceProvider.get()
             // Direct backend access (for advanced users / testing)
             "LiteRT-LM (On-device)" -> liteRTLMProvider.get()
-            else -> geminiProvider.get()
+            else -> {
+                Log.w(TAG, "Unknown LLM provider persisted; falling back to Google Gemini.")
+                geminiProvider.get()
+            }
         }
-        return WrappedLLMProvider(rawProvider, actionDispatcher, intentClassifier, deviceStateProvider)
-    }
-
-    private fun getFallbackChain(primaryName: String): List<LLMProvider> {
-        val providersList = listOf(
-            "Google Gemini",
-            "OpenAI",
-            "Anthropic Claude",
-            "Groq",
-            "Mistral AI",
-            "OpenRouter",
-            "Together AI",
-            "Cohere",
-            "DeepSeek",
-            "Copilot API",
-            "Custom OpenAI Compatible",
-            "Ollama",
-            "On-Device AI"
+        return WrappedLLMProvider(
+            delegate = rawProvider,
+            configProvider = { settingsRepository.llmConfig.first() },
+            requestRewriter = ::rewriteRequestIfNeeded
         )
-        // Normalize legacy name
-        val normalizedPrimary = if (primaryName == "Gemma 4 (On-device)") "On-Device AI" else primaryName
-        val orderedNames = mutableListOf<String>()
-        orderedNames.add(normalizedPrimary)
-        providersList.forEach { name ->
-            if (name != normalizedPrimary) orderedNames.add(name)
-        }
-        return orderedNames.map { getProviderByName(it) }
     }
 
     suspend fun getActiveProvider(): LLMProvider {
         val config = settingsRepository.llmConfig.first()
-        val chain = getFallbackChain(config.activeProvider)
-        for (provider in chain) {
-            if (provider.isAvailable()) {
-                return provider
-            }
-        }
-        // If nothing is configured, default to Gemini (it has Nano offline mock fallback)
-        return getProviderByName("Google Gemini")
+        return getProviderByName(ProviderCatalog.canonicalName(config.activeProvider))
     }
-
-    suspend fun executeWithFallback(request: LLMRequest): LLMResponse {
-        val config = settingsRepository.llmConfig.first()
-        val chain = getFallbackChain(config.activeProvider)
-        val errors = mutableListOf<String>()
-
-        for (provider in chain) {
-            if (provider.isAvailable()) {
-                try {
-                    val response = provider.complete(request)
-                    // Benchmark successfully executed provider in settings background
-                    updateLatencyBenchmark(provider.name, response.latencyMs)
-                    return response
-                } catch (e: Exception) {
-                    errors.add("${provider.name}: ${e.localizedMessage}")
-                }
-            }
-        }
-        throw IllegalStateException("All available LLM providers failed execution:\n" + errors.joinToString("\n"))
-    }
-
-    private suspend fun updateLatencyBenchmark(providerName: String, latency: Long) {
-        settingsRepository.updateConfig { current ->
-            val updatedBenchmarks = current.latencyBenchmarks.toMutableMap()
-            updatedBenchmarks[providerName] = latency
-            current.copy(latencyBenchmarks = updatedBenchmarks)
-        }
-    }
-}
-
-class WrappedLLMProvider(
-    private val delegate: LLMProvider,
-    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
-    private val intentClassifier: dagger.Lazy<IntentClassifier>,
-    private val deviceStateProvider: DeviceStateProvider
-) : LLMProvider {
-    override val name: String get() = delegate.name
-    override val availableModels: List<String> get() = delegate.availableModels
-
-    override suspend fun complete(request: LLMRequest): LLMResponse {
-        val rewrittenRequest = rewriteRequestIfNeeded(request)
-        return delegate.complete(rewrittenRequest)
-    }
-
-    override fun streamComplete(request: LLMRequest): Flow<String> {
-        val rewrittenRequest = rewriteRequestIfNeeded(request)
-        return delegate.streamComplete(rewrittenRequest)
-    }
-
-    override suspend fun isAvailable(): Boolean = delegate.isAvailable()
 
     private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {
         if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains("AVAILABLE ACTIONS")) {
@@ -169,19 +103,175 @@ class WrappedLLMProvider(
 
             val currentDateTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
             val deviceState = deviceStateProvider.getFullStateString()
-
             val registeredActions = actionDispatcher.get().getAllRegisteredActions()
 
-            val newSystemPrompt = SystemPrompts.buildMainPrompt(
-                registeredActions = registeredActions,
-                memoryContext = memoryContext,
-                currentDateTime = currentDateTime,
-                deviceState = deviceState,
-                maxSteps = maxSteps
+            return request.copy(
+                systemPrompt = SystemPrompts.buildMainPrompt(
+                    registeredActions = registeredActions,
+                    memoryContext = memoryContext,
+                    currentDateTime = currentDateTime,
+                    deviceState = deviceState,
+                    maxSteps = maxSteps
+                )
             )
-
-            return request.copy(systemPrompt = newSystemPrompt)
         }
         return request
+    }
+
+    private companion object {
+        const val TAG = "LLMProviderFactory"
+    }
+}
+
+data class RetryRuntime(
+    val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    val delayMillis: suspend (Long) -> Unit = { delay(it) },
+    val jitterMillis: (Long) -> Long = { upperBound ->
+        if (upperBound <= 0L) 0L else Random.nextLong(upperBound + 1L)
+    }
+)
+
+class WrappedLLMProvider(
+    private val delegate: LLMProvider,
+    private val configProvider: suspend () -> LLMConfig,
+    private val requestRewriter: (LLMRequest) -> LLMRequest = { it },
+    private val retryRuntime: RetryRuntime = RetryRuntime()
+) : LLMProvider {
+    override val name: String get() = delegate.name
+    override val availableModels: List<String> get() = delegate.availableModels
+
+    override suspend fun complete(request: LLMRequest): LLMResponse {
+        val resolved = resolveRequest(request)
+        val registrations = registerSecrets(resolved)
+        return try {
+            executeWithRetry(resolved) { delegate.complete(it) }
+        } finally {
+            registrations.asReversed().forEach(AutoCloseable::close)
+        }
+    }
+
+    override fun streamComplete(request: LLMRequest): Flow<String> = flow {
+        val resolved = resolveRequest(request)
+        val registrations = registerSecrets(resolved)
+        var attempt = 1
+        var emitted = false
+        val startedAt = retryRuntime.nowMillis()
+        try {
+            while (true) {
+                try {
+                    delegate.streamComplete(resolved).collect { chunk ->
+                        if (chunk.isNotEmpty()) {
+                            emitted = true
+                            emit(chunk)
+                        }
+                    }
+                    if (!emitted) {
+                        throw LLMErrorMapper.malformed(name, resolved.model.orEmpty(), transient = true)
+                    }
+                    break
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (throwable: Throwable) {
+                    val failure = LLMErrorMapper.fromThrowable(name, resolved.model.orEmpty(), throwable)
+                    val delayMillis = proposedDelayMillis(failure, attempt)
+                    if (emitted || !shouldRetry(resolved, failure, attempt, startedAt, delayMillis)) throw failure
+                    retryRuntime.delayMillis(delayMillis)
+                    attempt++
+                }
+            }
+        } finally {
+            registrations.asReversed().forEach(AutoCloseable::close)
+        }
+    }
+
+    override suspend fun isAvailable(): Boolean = delegate.isAvailable()
+
+    private suspend fun resolveRequest(request: LLMRequest): LLMRequest {
+        val config = configProvider()
+        val provider = ProviderCatalog.canonicalName(name)
+        val model = config.selectedModelFor(provider)
+        val endpoint = when (provider) {
+            "Custom OpenAI Compatible" -> config.customEndpoints[provider].orEmpty().trim()
+            "Copilot API" -> config.copilotUrl.trim()
+            "Ollama" -> config.ollamaUrl.trim()
+            else -> config.customEndpoints[provider].orEmpty().trim()
+        }
+        val apiKey = config.apiKeys[provider].orEmpty()
+
+        if (ProviderCatalog.requiresApiKey(provider) &&
+            !(provider == "Google Gemini" && model == "gemini-nano") &&
+            apiKey.isBlank()
+        ) {
+            throw LLMErrorMapper.authMissing(provider, model)
+        }
+        if (provider in setOf("Custom OpenAI Compatible", "Copilot API", "Ollama") && endpoint.isBlank()) {
+            throw LLMErrorMapper.requestInvalid(provider, model)
+        }
+
+        return requestRewriter(request).copy(
+            model = model,
+            providerConfig = ProviderRequestConfig(apiKey = apiKey, endpoint = endpoint)
+        )
+    }
+
+    private suspend fun <T> executeWithRetry(
+        request: LLMRequest,
+        operation: suspend (LLMRequest) -> T
+    ): T {
+        var attempt = 1
+        val startedAt = retryRuntime.nowMillis()
+        while (true) {
+            try {
+                return operation(request)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                val failure = LLMErrorMapper.fromThrowable(name, request.model.orEmpty(), throwable)
+                val delayMillis = proposedDelayMillis(failure, attempt)
+                if (!shouldRetry(request, failure, attempt, startedAt, delayMillis)) throw failure
+                retryRuntime.delayMillis(delayMillis)
+                attempt++
+            }
+        }
+    }
+
+    private fun shouldRetry(
+        request: LLMRequest,
+        failure: com.opendroid.ai.core.llm.error.LLMException,
+        attempt: Int,
+        startedAt: Long,
+        proposedDelay: Long
+    ): Boolean {
+        if (request.retryPolicy == RetryPolicy.NONE || !failure.retryable || attempt >= MAX_ATTEMPTS) {
+            return false
+        }
+        val elapsed = (retryRuntime.nowMillis() - startedAt).coerceAtLeast(0L)
+        if (elapsed >= RETRY_WINDOW_MILLIS) return false
+        return proposedDelay <= RETRY_WINDOW_MILLIS - elapsed
+    }
+
+    private fun proposedDelayMillis(
+        failure: com.opendroid.ai.core.llm.error.LLMException,
+        attempt: Int
+    ): Long {
+        failure.retryAfterMillis?.let { retryAfter ->
+            return retryAfter + retryRuntime.jitterMillis(250L).coerceIn(0L, 250L)
+        }
+        val exponentialCap = min(500L shl (attempt - 1), 4_000L)
+        return 250L + retryRuntime.jitterMillis(exponentialCap).coerceIn(0L, exponentialCap)
+    }
+
+    private fun registerSecrets(request: LLMRequest): List<AutoCloseable> = buildList {
+        request.providerConfig?.apiKey?.takeIf(String::isNotBlank)?.let {
+            add(SecretRegistry.register(it))
+        }
+        request.providerConfig?.endpoint?.takeIf(String::isNotBlank)?.let {
+            add(SecretRegistry.register(it))
+        }
+    }
+
+    private companion object {
+        const val MAX_ATTEMPTS = 3
+        const val RETRY_WINDOW_MILLIS = 30_000L
     }
 }

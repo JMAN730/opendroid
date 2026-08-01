@@ -82,9 +82,9 @@ object CrashReportExporter {
     ): String = buildString {
         appendLine("Crash:   ${record.summary}")
         appendLine("Time:    ${formatTimestamp(record.timestamp)}")
-        appendLine("App:     ${record.appVersionName} (${record.appVersionCode})")
-        appendLine("Android: ${record.androidRelease} (SDK ${record.androidSdkInt})")
-        appendLine("Device:  ${record.deviceManufacturer} ${record.deviceModel}")
+        appendLine("App:     ${record.device.appVersionName} (${record.device.appVersionCode})")
+        appendLine("Android: ${record.device.androidRelease} (SDK ${record.device.androidSdkInt})")
+        appendLine("Device:  ${record.device.deviceManufacturer} ${record.device.deviceModel}")
         appendLine("Thread:  ${record.threadName}")
         appendLine()
         append(record.stackTrace)

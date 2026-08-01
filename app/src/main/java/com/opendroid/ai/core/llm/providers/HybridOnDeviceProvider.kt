@@ -3,6 +3,7 @@ package com.opendroid.ai.core.llm.providers
 import android.util.Log
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -65,8 +66,8 @@ class HybridOnDeviceProvider @Inject constructor(
     }
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 
@@ -102,8 +103,8 @@ class HybridOnDeviceProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 
@@ -144,8 +145,8 @@ class HybridOnDeviceProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
-        val config = settingsRepository.llmConfig.first()
-        val backend = resolveBackend(config.activeModel)
+        val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
+        val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
 

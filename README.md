@@ -28,7 +28,6 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#%EF%B8%8F-getting-started">Get Started</a> •
   <a href="#-supported-llm-providers">Providers</a> •
-  <a href="#-donate">Donate</a> •
   <a href="#-license">License</a>
 </p>
 
@@ -191,7 +190,10 @@ OpenDroid supports **12 LLM providers** with automatic failover:
 ## ⚡️ Getting Started
 
 ### Prerequisites
-- **JDK 21+**
+- **JDK 21** — not newer. Gradle 8.10.2 cannot run on JDK 24+, and the project
+  compiles against Java 21 (`jvmToolchain(21)`). `gradle/gradle-daemon-jvm.properties`
+  makes `./gradlew` select an installed JDK 21 automatically, so you do not have to
+  change `JAVA_HOME` — but a JDK 21 must be installed.
 - **Android SDK 35** (Android 15)
 
 ### Build & Install
@@ -229,33 +231,10 @@ In **Settings**, add your API key for any supported provider. OpenDroid works be
 
 ---
 
-## 💚 Donate
-
-OpenDroid is free, open-source, and maintained by a solo developer. If it's helped you, consider supporting the project!
-
-**UPI (India):** `8960457971`
-**Email:** `yashabalam707@gmail.com`
-
-[→ See DONATE.md for more ways to support](DONATE.md)
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
 ## 🔒 Security
 
 Found a vulnerability? Please report it responsibly.
-See [SECURITY.md](SECURITY.md) for details.
+See [SECURITY.md](docs/SECURITY.md) for details.
 
 ---
 

@@ -1,6 +1,6 @@
 # 💚 Support OpenDroid
 
-OpenDroid is a free, open-source AI assistant for Android — built with passion and maintained by a solo developer. If OpenDroid has made your life easier, consider supporting the project to keep it alive and growing.
+OpenDroid is a free, open-source AI assistant for Android — built and maintained by a community of contributors. If OpenDroid has made your life easier, consider supporting the project to keep it alive and growing.
 
 ---
 
@@ -47,6 +47,6 @@ Not able to donate? You can still support OpenDroid:
 
 Your support means the world. Every donation directly fuels the future of OpenDroid.
 
-> *"Built by one, powered by many."*
+> *"Built by many, powered by many."*
 
-— **Yashab Alam**, Creator of OpenDroid
+— **Yashab Alam**, Creator of OpenDroid, and the OpenDroid contributors
