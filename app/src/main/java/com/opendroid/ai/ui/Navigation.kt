@@ -296,6 +296,7 @@ fun MainDashboard(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .consumeWindowInsets(paddingValues)
         ) {
             when (currentTab) {
                 Screen.Chat -> ChatScreen(viewModel = chatViewModel)
