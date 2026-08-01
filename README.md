@@ -191,7 +191,10 @@ OpenDroid supports **12 LLM providers** with automatic failover:
 ## ⚡️ Getting Started
 
 ### Prerequisites
-- **JDK 21+**
+- **JDK 21** — not newer. Gradle 8.10.2 cannot run on JDK 24+, and the project
+  compiles against Java 21 (`jvmToolchain(21)`). `gradle/gradle-daemon-jvm.properties`
+  makes `./gradlew` select an installed JDK 21 automatically, so you do not have to
+  change `JAVA_HOME` — but a JDK 21 must be installed.
 - **Android SDK 35** (Android 15)
 
 ### Build & Install
