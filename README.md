@@ -231,18 +231,18 @@ In **Settings**, add your API key for any supported provider. OpenDroid works be
 
 ## 💚 Donate
 
-OpenDroid is free, open-source, and maintained by a solo developer. If it's helped you, consider supporting the project!
+OpenDroid is free, open-source, and maintained by a community of contributors. If it's helped you, consider supporting the project!
 
 **UPI (India):** `8960457971`
 **Email:** `yashabalam707@gmail.com`
 
-[→ See DONATE.md for more ways to support](DONATE.md)
+[→ See DONATE.md for more ways to support](docs/DONATE.md)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 1. Fork the repo
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -255,7 +255,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 ## 🔒 Security
 
 Found a vulnerability? Please report it responsibly.
-See [SECURITY.md](SECURITY.md) for details.
+See [SECURITY.md](docs/SECURITY.md) for details.
 
 ---
 
