@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.BackoffPolicy
 import androidx.work.Data
 import androidx.work.NetworkType
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.impl.foreground.SystemForegroundService
 import com.opendroid.ai.data.db.entities.ModelStatus
@@ -54,6 +55,30 @@ class ModelDownloadSchedulingTest {
         )
         assertEquals("test-model", request.workSpec.input.getString("model_id"))
         assertTrue(request.tags.contains("download_test-model"))
+    }
+
+    @Test
+    fun `model downloads add no constraint that would strand a long transfer`() {
+        val request = ModelDownloadWorkRequest.create(Data.EMPTY, "test-model")
+        val constraints = request.workSpec.constraints
+
+        // Only the unmetered-network requirement is intended; charging, idle,
+        // battery and storage constraints would leave multi-GB transfers unrunnable.
+        assertFalse(constraints.requiresCharging())
+        assertFalse(constraints.requiresDeviceIdle())
+        assertFalse(constraints.requiresBatteryNotLow())
+        assertFalse(constraints.requiresStorageNotLow())
+        assertFalse(constraints.hasContentUriTriggers())
+    }
+
+    @Test
+    fun `model downloads run as regular work, never expedited quota work`() {
+        val request = ModelDownloadWorkRequest.create(Data.EMPTY, "test-model")
+
+        // Expedited work draws on the app's JobScheduler quota; a foreground
+        // data-sync worker must not compete for it (see the Android 16 quota work).
+        assertFalse(request.workSpec.expedited)
+        assertEquals(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST, request.workSpec.outOfQuotaPolicy)
     }
 
     @Test
