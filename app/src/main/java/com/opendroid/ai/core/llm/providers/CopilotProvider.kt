@@ -84,8 +84,8 @@ class CopilotProvider @Inject constructor(
                     knownSecrets = listOfNotNull(apiKey)
                 )
             }
-            val responseBody = response.body?.string()
-            if (responseBody == null) {
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) {
                 throw IOException("Empty response body from Copilot API")
             }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
