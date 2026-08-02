@@ -14,10 +14,13 @@ buildscript {
         classpath 'com.google.dagger:hilt-android-gradle-plugin:2.58'
         classpath 'org.jetbrains.kotlin:kotlin-serialization:2.4.0'
         classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.0'
+        classpath 'com.google.devtools.ksp:symbol-processing-gradle-plugin:2.3.10'
     }
 }
 
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
+// rootProject.buildDir was removed in Gradle 9; layout.buildDirectory is the
+// supported replacement and is configuration-cache friendly.
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
 }

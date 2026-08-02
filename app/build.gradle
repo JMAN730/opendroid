@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'kotlin-kapt'
+    id 'com.google.devtools.ksp'
     id 'dagger.hilt.android.plugin'
     id 'kotlinx-serialization'
     id 'org.jetbrains.kotlin.plugin.compose'
@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace 'com.opendroid.ai'
+    namespace = 'com.opendroid.ai'
     compileSdk 36
 
     defaultConfig {
@@ -21,7 +21,7 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
-            useSupportLibrary true
+            useSupportLibrary = true
         }
     }
 
@@ -58,7 +58,7 @@ android {
     buildTypes {
         release {
             minifyEnabled true
-            shrinkResources false
+            shrinkResources = false
             // Never fall back to the (publicly known) debug key for release builds.
             // Without a signing config the build produces an unsigned APK, and the
             // taskGraph guard below fails release builds explicitly.
@@ -98,18 +98,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
-    kotlinOptions {
-        jvmTarget = '21'
-        freeCompilerArgs += [
-            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-        ]
-    }
-    kotlin {
-        jvmToolchain(21)
-    }
     buildFeatures {
-        compose true
+        compose = true
     }
     testOptions {
         unitTests {
@@ -125,7 +115,8 @@ android {
             assets.srcDirs += "$projectDir/schemas".toString()
         }
     }
-    packagingOptions {
+    // `packagingOptions` was removed in AGP 9; `packaging` is the supported name.
+    packaging {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
@@ -135,9 +126,24 @@ android {
         // block merges; anything NEW fails the build. Shrink the baseline
         // over time (delete entries, fix, repeat) - never regenerate it to
         // absorb new findings.
-        abortOnError true
-        checkReleaseBuilds true
+        abortOnError = true
+        checkReleaseBuilds = true
         baseline = file("lint-baseline.xml")
+    }
+}
+
+// AGP 9 removes `android { kotlinOptions { ... } }`. The Kotlin Gradle plugin's
+// own `kotlin { compilerOptions { ... } }` block is the supported replacement and
+// is already honoured by the current AGP/KGP pair, so the settings below are
+// byte-for-byte the same compiler flags the old block produced.
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+        freeCompilerArgs.addAll(
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        )
     }
 }
 
@@ -171,8 +177,10 @@ dependencies {
     // Room Database
     implementation 'androidx.room:room-runtime:2.8.4'
     implementation 'androidx.room:room-ktx:2.8.4'
-    kapt 'androidx.room:room-compiler:2.8.4'
-    kapt 'org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.0'
+    // KSP, not kapt: kapt is unsupported under AGP 9's built-in Kotlin. The
+    // `kotlin-metadata-jvm` pin that kapt needed is gone with it - KSP reads the
+    // Kotlin declarations directly instead of round-tripping through metadata.
+    ksp 'androidx.room:room-compiler:2.8.4'
 
     // WorkManager
     implementation 'androidx.work:work-runtime-ktx:2.11.2'
@@ -188,7 +196,18 @@ dependencies {
 
     // Hilt Dependency Injection
     implementation 'com.google.dagger:hilt-android:2.58'
-    kapt 'com.google.dagger:hilt-compiler:2.58'
+    ksp 'com.google.dagger:hilt-compiler:2.58'
+    // Hilt's aggregating step still runs its processor under javac, and Dagger 2.58
+    // resolves an older kotlin-metadata-jvm that rejects Kotlin 2.4.0 metadata
+    // ("maximum supported version is 2.3.0"). Forcing the matching metadata library
+    // onto that processor classpath is the same pin the kapt configuration carried.
+    // This reaches the aggregating step by design, not by accident: the Hilt Gradle
+    // plugin builds `hiltAnnotationProcessor<Variant>` - the annotationProcessorPath
+    // of `hiltJavaCompile<Variant>` - by extending the variant's own
+    // annotationProcessor configuration (HiltGradlePlugin.kt,
+    // configureHiltAnnotationProcessorConfiguration). Gradle's conflict resolution
+    // then picks 2.4.0 over Dagger's older transitive metadata library.
+    annotationProcessor 'org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.0'
     implementation 'androidx.hilt:hilt-navigation-compose:1.1.0'
 
     // Networking
