@@ -57,6 +57,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var windowManager: WindowManager? = null
     private var floatingView: FloatingWidgetView? = null
+    private var touchTargetView: TouchTargetView? = null
     private var isButtonAdded = false
     private var isDeviceLocked = false
     private var showFloatingButtonSetting = false
@@ -165,11 +166,18 @@ class OpenDroidAccessibilityService : AccessibilityService() {
         view.updateState(agentLoop.agentState.value)
         floatingView = view
 
+        // Draw layer: renders the icon, including its animated glow, which can reach the
+        // full edge of this 64dp box. It is deliberately not touchable (FLAG_NOT_TOUCHABLE):
+        // without that, the transparent margin around the visible icon (the box is a square,
+        // the icon is a circle inscribed in it) would swallow taps meant for whatever app is
+        // underneath. See #107.
         val params = WindowManager.LayoutParams(
             dpToPx(64),
             dpToPx(64),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -177,7 +185,29 @@ class OpenDroidAccessibilityService : AccessibilityService() {
             y = 300
         }
 
-        view.setOnTouchListener(object : View.OnTouchListener {
+        // Touch layer: an invisible window sized and centered to match the icon's static
+        // footprint (matches the inset used in FloatingWidgetView.onDraw's radius calc), kept
+        // in lockstep with the draw layer's position. This is the only part of the widget that
+        // is actually touchable, so a tap or drag has to land on the visible icon to be caught
+        // by the widget at all — everywhere else in the old 64dp square now falls through to
+        // whatever is underneath, same as if the widget weren't there.
+        val touchTarget = TouchTargetView(this)
+        touchTargetView = touchTarget
+
+        val touchInset = dpToPx(8)
+        val touchParams = WindowManager.LayoutParams(
+            dpToPx(64) - 2 * touchInset,
+            dpToPx(64) - 2 * touchInset,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = params.x + touchInset
+            y = params.y + touchInset
+        }
+
+        touchTarget.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
@@ -197,7 +227,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         isClick = true
-                        view.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                        touchTarget.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -206,7 +236,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) {
                             if (isClick) {
                                 isClick = false
-                                view.removeCallbacks(longPressRunnable)
+                                touchTarget.removeCallbacks(longPressRunnable)
                             }
                         }
                         params.x = initialX + dx.toInt()
@@ -218,22 +248,26 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         params.x = params.x.coerceIn(0, screenWidth - params.width)
                         params.y = params.y.coerceIn(0, screenHeight - params.height)
 
+                        touchParams.x = params.x + touchInset
+                        touchParams.y = params.y + touchInset
+
                         try {
                             windowManager?.updateViewLayout(view, params)
+                            windowManager?.updateViewLayout(touchTarget, touchParams)
                         } catch (e: Exception) {
                             // View might have been removed
                         }
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        view.removeCallbacks(longPressRunnable)
+                        touchTarget.removeCallbacks(longPressRunnable)
                         if (isClick) {
-                            openMainActivityAction()
+                            touchTarget.performClick()
                         }
                         return true
                     }
                     MotionEvent.ACTION_CANCEL -> {
-                        view.removeCallbacks(longPressRunnable)
+                        touchTarget.removeCallbacks(longPressRunnable)
                         return true
                     }
                 }
@@ -243,9 +277,22 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
         try {
             windowManager?.addView(view, params)
+            windowManager?.addView(touchTarget, touchParams)
             isButtonAdded = true
         } catch (e: Exception) {
             e.printStackTrace()
+            try {
+                windowManager?.removeView(view)
+            } catch (removeError: Exception) {
+                // Ignore: view may not have been added.
+            }
+            try {
+                windowManager?.removeView(touchTarget)
+            } catch (removeError: Exception) {
+                // Ignore: view may not have been added.
+            }
+            floatingView = null
+            touchTargetView = null
         }
     }
 
@@ -253,10 +300,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
         if (!isButtonAdded) return
         try {
             floatingView?.let { windowManager?.removeView(it) }
+            touchTargetView?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
             floatingView = null
+            touchTargetView = null
             isButtonAdded = false
         }
     }
@@ -289,6 +338,20 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     private fun dpToPx(dp: Int): Int {
         return Math.round(dp * resources.displayMetrics.density)
+    }
+
+    /**
+     * The invisible window that actually receives touches for the floating widget, sized to
+     * just the icon's footprint (see [addFloatingButton]). Given its own named type — rather
+     * than plain [android.view.View] — so it draws the same treatment [FloatingWidgetView]
+     * already gets from the Lint `StaticFieldLeak` check.
+     */
+    private inner class TouchTargetView(context: Context) : View(context) {
+        override fun performClick(): Boolean {
+            super.performClick()
+            openMainActivityAction()
+            return true
+        }
     }
 
     inner class FloatingWidgetView(context: Context) : android.widget.ImageView(context) {
