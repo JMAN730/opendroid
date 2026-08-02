@@ -764,6 +764,9 @@ class SystemActions @Inject constructor(
 
     private class VerifyContactAction : Action {
         override val name: String = "VERIFY_CONTACT"
+        // lint false positive: the cursor is closed by `?.use { }` on every path,
+        // but the Recycle detector does not model Kotlin's use() inlining. See #67.
+        @Suppress("Recycle")
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contactName = params["contactName"] ?: params["contact"]
                 ?: return ActionResult(false, null, "contactName parameter is missing")

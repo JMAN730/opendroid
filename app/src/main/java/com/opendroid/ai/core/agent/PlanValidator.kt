@@ -154,6 +154,9 @@ class PlanValidator @Inject constructor(
         return cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })
     }
 
+    // lint false positive: both cursors are closed by `?.use { }` on every path,
+    // but the Recycle detector does not model Kotlin's use() inlining. See #67.
+    @Suppress("Recycle")
     private fun resolveContactToPhoneNumber(context: Context, contact: String): String? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
         try {

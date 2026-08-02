@@ -99,6 +99,9 @@ class ContactResolver @Inject constructor(
             return ContactResult.NotFound(cleaned)
         }
 
+        // lint false positive: the cursor is closed by `?.use { }` on every path,
+        // but the Recycle detector does not model Kotlin's use() inlining. See #67.
+        @Suppress("Recycle")
         private fun searchContactsLegacy(context: Context, name: String, exact: Boolean): ContactResult.Found? {
             val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
             val projection = arrayOf(
@@ -343,6 +346,9 @@ class ContactResolver @Inject constructor(
         return results.sortedByDescending { it.matchScore }
     }
 
+    // lint false positive: the cursor is closed by `?.use { }` on every path,
+    // but the Recycle detector does not model Kotlin's use() inlining. See #67.
+    @Suppress("Recycle")
     private fun queryContacts(
         uri: android.net.Uri,
         projection: Array<String>,
