@@ -7,6 +7,7 @@ import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -115,7 +116,7 @@ class FinanceActions @Inject constructor() {
                 }
                 
                 val share = total / numPeople
-                val formattedShare = String.format("%.2f", share)
+                val formattedShare = String.format(Locale.getDefault(), "%.2f", share)
                 
                 val summary = if (peopleList.firstOrNull()?.startsWith("Person ") == true) {
                     "Total: $totalAmountStr divided among $numPeople people. " +

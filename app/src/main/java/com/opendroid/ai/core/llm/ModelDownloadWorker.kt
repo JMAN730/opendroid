@@ -24,6 +24,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 
 /**
  * Downloads only registry-owned catalog artifacts. URL, destination, size, and checksum are
@@ -378,14 +379,16 @@ class ModelDownloadWorker(
 
     private fun formatSpeed(bytesPerSecond: Long): String = when {
         bytesPerSecond >= 1024L * 1024L ->
-            String.format("%.1f MB/s", bytesPerSecond.toDouble() / (1024L * 1024L))
-        bytesPerSecond >= 1024L -> String.format("%.1f KB/s", bytesPerSecond.toDouble() / 1024L)
+            String.format(Locale.getDefault(), "%.1f MB/s", bytesPerSecond.toDouble() / (1024L * 1024L))
+        bytesPerSecond >= 1024L ->
+            String.format(Locale.getDefault(), "%.1f KB/s", bytesPerSecond.toDouble() / 1024L)
         else -> "$bytesPerSecond B/s"
     }
 
     private fun formatEta(seconds: Long): String = when {
-        seconds >= 3_600L -> String.format("%dh %dm", seconds / 3_600L, (seconds % 3_600L) / 60L)
-        seconds >= 60L -> String.format("%dm %ds", seconds / 60L, seconds % 60L)
+        seconds >= 3_600L ->
+            String.format(Locale.getDefault(), "%dh %dm", seconds / 3_600L, (seconds % 3_600L) / 60L)
+        seconds >= 60L -> String.format(Locale.getDefault(), "%dm %ds", seconds / 60L, seconds % 60L)
         else -> "${seconds}s"
     }
 
