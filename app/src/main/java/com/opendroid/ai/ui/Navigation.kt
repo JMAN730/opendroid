@@ -31,16 +31,56 @@ import com.opendroid.ai.ui.screens.*
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.*
 
+/**
+ * Route names of the top-level navigation graph.
+ *
+ * Kept next to [navigateAfterSplash] and [navigateAfterOnboarding] so the back-stack
+ * rules of the entry flow can be exercised without composing the screens themselves.
+ */
+object OpenDroidRoutes {
+    const val SPLASH = "splash"
+    const val ONBOARDING = "onboarding"
+    const val MAIN = "main"
+    const val BENCHMARK = "benchmark"
+    const val PRIVACY_POLICY = "privacy_policy"
+    const val TERMS_OF_USE = "terms_of_use"
+    const val HELP_CENTER = "help_center"
+    const val LICENSE = "license"
+    const val ABOUT = "about"
+    const val AUTO_REPLY_SETTINGS = "auto_reply_settings"
+    const val NOTIFICATION_HISTORY = "notification_history"
+    const val PERMISSIONS = "permissions"
+    const val CRASH_LOG = "crash_log"
+}
+
+/**
+ * Leaves the splash screen for onboarding or the main dashboard, dropping splash from the
+ * back stack so system back from the first real screen exits the app instead of replaying it.
+ */
+fun NavHostController.navigateAfterSplash(isOnboardingCompleted: Boolean) {
+    val destination = if (isOnboardingCompleted) OpenDroidRoutes.MAIN else OpenDroidRoutes.ONBOARDING
+    navigate(destination) {
+        popUpTo(OpenDroidRoutes.SPLASH) { inclusive = true }
+    }
+}
+
+/** Enters the dashboard after onboarding, so back never returns to the completed flow. */
+fun NavHostController.navigateAfterOnboarding() {
+    navigate(OpenDroidRoutes.MAIN) {
+        popUpTo(OpenDroidRoutes.ONBOARDING) { inclusive = true }
+    }
+}
+
 @Composable
 fun OpenDroidNavigation(
     navController: NavHostController = rememberNavController()
 ) {
     NavHost(
         navController = navController,
-        startDestination = "splash",
+        startDestination = OpenDroidRoutes.SPLASH,
         modifier = Modifier.fillMaxSize().background(AppTheme.colors.background)
     ) {
-        composable("splash") {
+        composable(OpenDroidRoutes.SPLASH) {
             val context = LocalContext.current
             SplashScreen(
                 onNavigateNext = {
@@ -51,60 +91,53 @@ fun OpenDroidNavigation(
                         ?.getBoolean("onboarding_completed", false)
                         ?: true
 
-                    val destination = if (isOnboardingCompleted) "main" else "onboarding"
-                    navController.navigate(destination) {
-                        popUpTo("splash") { inclusive = true }
-                    }
+                    navController.navigateAfterSplash(isOnboardingCompleted)
                 }
             )
         }
 
-        composable("onboarding") {
+        composable(OpenDroidRoutes.ONBOARDING) {
             OnboardingScreen(
-                onFinished = {
-                    navController.navigate("main") {
-                        popUpTo("onboarding") { inclusive = true }
-                    }
-                }
+                onFinished = { navController.navigateAfterOnboarding() }
             )
         }
 
-        composable("main") {
+        composable(OpenDroidRoutes.MAIN) {
             MainDashboard(
                 onNavigateToBenchmark = {
-                    navController.navigate("benchmark")
+                    navController.navigate(OpenDroidRoutes.BENCHMARK)
                 },
                 onNavigateToPrivacyPolicy = {
-                    navController.navigate("privacy_policy")
+                    navController.navigate(OpenDroidRoutes.PRIVACY_POLICY)
                 },
                 onNavigateToTermsOfUse = {
-                    navController.navigate("terms_of_use")
+                    navController.navigate(OpenDroidRoutes.TERMS_OF_USE)
                 },
                 onNavigateToHelpCenter = {
-                    navController.navigate("help_center")
+                    navController.navigate(OpenDroidRoutes.HELP_CENTER)
                 },
                 onNavigateToLicense = {
-                    navController.navigate("license")
+                    navController.navigate(OpenDroidRoutes.LICENSE)
                 },
                 onNavigateToAbout = {
-                    navController.navigate("about")
+                    navController.navigate(OpenDroidRoutes.ABOUT)
                 },
                 onNavigateToAutoReply = {
-                    navController.navigate("auto_reply_settings")
+                    navController.navigate(OpenDroidRoutes.AUTO_REPLY_SETTINGS)
                 },
                 onNavigateToNotificationHistory = {
-                    navController.navigate("notification_history")
+                    navController.navigate(OpenDroidRoutes.NOTIFICATION_HISTORY)
                 },
                 onNavigateToPermissions = {
-                    navController.navigate("permissions")
+                    navController.navigate(OpenDroidRoutes.PERMISSIONS)
                 },
                 onNavigateToCrashLog = {
-                    navController.navigate("crash_log")
+                    navController.navigate(OpenDroidRoutes.CRASH_LOG)
                 }
             )
         }
 
-        composable("benchmark") {
+        composable(OpenDroidRoutes.BENCHMARK) {
             val settingsViewModel: SettingsViewModel = hiltViewModel()
             BenchmarkScreen(
                 viewModel = settingsViewModel,
@@ -114,7 +147,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("privacy_policy") {
+        composable(OpenDroidRoutes.PRIVACY_POLICY) {
             PrivacyPolicyScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -122,7 +155,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("about") {
+        composable(OpenDroidRoutes.ABOUT) {
             AboutScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -130,7 +163,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("terms_of_use") {
+        composable(OpenDroidRoutes.TERMS_OF_USE) {
             TermsOfUseScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -138,7 +171,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("help_center") {
+        composable(OpenDroidRoutes.HELP_CENTER) {
             HelpCenterScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -146,7 +179,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("license") {
+        composable(OpenDroidRoutes.LICENSE) {
             LicenseScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -154,7 +187,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("auto_reply_settings") {
+        composable(OpenDroidRoutes.AUTO_REPLY_SETTINGS) {
             val settingsRepo = hiltViewModel<AutoReplyViewModel>().settingsRepository
             AutoReplySettingsScreen(
                 settingsRepository = settingsRepo,
@@ -164,7 +197,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("notification_history") {
+        composable(OpenDroidRoutes.NOTIFICATION_HISTORY) {
             val notifDao = hiltViewModel<NotificationHistoryViewModel>().notificationDao
             NotificationHistoryScreen(
                 notificationDao = notifDao,
@@ -174,7 +207,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("permissions") {
+        composable(OpenDroidRoutes.PERMISSIONS) {
             PermissionsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -182,7 +215,7 @@ fun OpenDroidNavigation(
             )
         }
 
-        composable("crash_log") {
+        composable(OpenDroidRoutes.CRASH_LOG) {
             CrashLogScreen(
                 viewModel = hiltViewModel(),
                 onBack = {

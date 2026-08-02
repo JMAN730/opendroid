@@ -47,6 +47,51 @@ class OpenDroidEdgeToEdgeTest {
         }
     }
 
+    @Test
+    fun `system bars keep the app theme when a configuration change reapplies edge-to-edge`() {
+        val activity = Robolectric.buildActivity(EdgeToEdgeTestActivity::class.java).setup().get()
+
+        activity.withSystemNightMode(Configuration.UI_MODE_NIGHT_NO) {
+            activity.enableOpenDroidEdgeToEdge(isDarkTheme = true)
+        }
+
+        // Activity 1.13 reinvokes enableEdgeToEdge on configuration changes, so the
+        // second application must still resolve the scrim from the in-app theme.
+        activity.withSystemNightMode(Configuration.UI_MODE_NIGHT_YES) {
+            activity.enableOpenDroidEdgeToEdge(isDarkTheme = true)
+
+            assertEquals(DarkPalette.background.toArgb(), activity.window.navigationBarColor)
+            assertFalse(activity.window.decorView.hasLightNavigationBar())
+        }
+    }
+
+    @Test
+    fun `an in-app theme switch repaints the system bars for the new palette`() {
+        val activity = Robolectric.buildActivity(EdgeToEdgeTestActivity::class.java).setup().get()
+
+        activity.enableOpenDroidEdgeToEdge(isDarkTheme = true)
+        assertEquals(DarkPalette.background.toArgb(), activity.window.navigationBarColor)
+
+        activity.enableOpenDroidEdgeToEdge(isDarkTheme = false)
+
+        assertEquals(LightPalette.background.toArgb(), activity.window.navigationBarColor)
+        assertTrue(activity.window.decorView.hasLightNavigationBar())
+    }
+
+    @Test
+    @Config(sdk = [36], application = EdgeToEdgeTestApplication::class)
+    fun `both system bars stay transparent on API 29 and later`() {
+        val activity = Robolectric.buildActivity(EdgeToEdgeTestActivity::class.java).setup().get()
+
+        activity.enableOpenDroidEdgeToEdge(isDarkTheme = true)
+
+        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.statusBarColor)
+        assertEquals(android.graphics.Color.TRANSPARENT, activity.window.navigationBarColor)
+        // On API 29+ the bars are transparent and the platform, not the app, decides
+        // when a navigation-bar scrim is needed.
+        assertTrue(activity.window.isNavigationBarContrastEnforced)
+    }
+
     private fun View.hasLightNavigationBar(): Boolean =
         systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR != 0
 
