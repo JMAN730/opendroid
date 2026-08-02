@@ -1,7 +1,10 @@
 package com.opendroid.ai.core.llm
 
 import android.content.Context
+import android.os.Build
+import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
@@ -18,6 +21,7 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
 
@@ -29,6 +33,8 @@ class ModelDownloadWorker(
     appContext: Context,
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
+
+    private val tag = "ModelDownloadWorker"
 
     private val verifier = ModelArtifactVerifier()
     private val installer = ModelArtifactInstaller()
@@ -50,6 +56,9 @@ class ModelDownloadWorker(
     private val okHttpClient = entryPoint.okHttpClient()
     private val providerCredentialStore = entryPoint.providerCredentialStore()
 
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        ModelDownloadForegroundInfoFactory.create(applicationContext, id)
+
     override suspend fun doWork(): Result {
         val modelId = inputData.getString("model_id") ?: return Result.failure()
         val spec = OnDeviceModelRegistry.findById(modelId)
@@ -68,8 +77,14 @@ class ModelDownloadWorker(
         }
 
         return try {
+            // Multi-GB downloads need a visible, long-running WorkManager foreground service;
+            // a regular worker would be cut short by the JobScheduler runtime quota.
+            setForeground(getForegroundInfo())
             performDownload(modelId, spec)
         } catch (error: CancellationException) {
+            // WorkManager owns rescheduling after a stop. Do not turn a cancel/stop into a failure
+            // or delete the partial file; the next run resumes it with a Range request.
+            logStopReason(modelId)
             throw error
         } catch (_: Exception) {
             fail(modelId, "Could not download and verify this model.")
@@ -95,11 +110,32 @@ class ModelDownloadWorker(
 
             if (temporaryFile.length() < expectedSize) {
                 val startBytes = temporaryFile.takeIf(File::exists)?.length() ?: 0L
-                val response = executeRequest(downloadUrl, startBytes)
-                    ?: return fail(modelId, "Internet connection unavailable.")
+                val response = when (val outcome = executeRequest(downloadUrl, startBytes)) {
+                    is RequestOutcome.Received -> outcome.response
+                    is RequestOutcome.Retryable -> {
+                        Log.w(
+                            tag,
+                            "[RETRY] Transport failed for model=$modelId; retaining partial " +
+                                "download (${outcome.error.javaClass.simpleName})."
+                        )
+                        retainTemporaryFileForResume = true
+                        return Result.retry()
+                    }
+                    RequestOutcome.Failed ->
+                        return fail(modelId, "Internet connection unavailable.")
+                }
 
                 response.use { httpResponse ->
                     if (!httpResponse.isSuccessful && httpResponse.code != 206) {
+                        if (ModelDownloadRetryPolicy.isRetryableHttpStatus(httpResponse.code)) {
+                            Log.w(
+                                tag,
+                                "[RETRY] HTTP ${httpResponse.code} for model=$modelId; " +
+                                    "retaining partial download."
+                            )
+                            retainTemporaryFileForResume = true
+                            return Result.retry()
+                        }
                         return fail(modelId, httpFailureMessage(httpResponse.code))
                     }
 
@@ -129,6 +165,7 @@ class ModelDownloadWorker(
 
             if (isStopped) {
                 retainTemporaryFileForResume = true
+                logStopReason(modelId)
                 return Result.retry()
             }
 
@@ -168,6 +205,14 @@ class ModelDownloadWorker(
                 ModelStatus.READY
             )
             return Result.success()
+        } catch (interrupted: RetryableTransportInterruption) {
+            Log.w(
+                tag,
+                "[RETRY] Transport interrupted for model=$modelId; retaining partial download " +
+                    "(${interrupted.cause?.javaClass?.simpleName})."
+            )
+            retainTemporaryFileForResume = true
+            return Result.retry()
         } finally {
             if (!retainTemporaryFileForResume) {
                 temporaryFile.delete()
@@ -175,7 +220,7 @@ class ModelDownloadWorker(
         }
     }
 
-    private fun executeRequest(downloadUrl: String, startBytes: Long) = try {
+    private fun executeRequest(downloadUrl: String, startBytes: Long): RequestOutcome = try {
         val request = Request.Builder()
             .url(downloadUrl)
             .apply {
@@ -188,11 +233,15 @@ class ModelDownloadWorker(
                 }
             }
             .build()
-        okHttpClient.newCall(request).execute()
+        RequestOutcome.Received(okHttpClient.newCall(request).execute())
     } catch (error: CancellationException) {
         throw error
-    } catch (_: Exception) {
-        null
+    } catch (error: Exception) {
+        if (ModelDownloadRetryPolicy.isRetryableTransport(error)) {
+            RequestOutcome.Retryable(error)
+        } else {
+            RequestOutcome.Failed
+        }
     }
 
     private fun huggingFaceToken(): String? {
@@ -221,7 +270,18 @@ class ModelDownloadWorker(
 
         while (true) {
             if (isStopped) return
-            val bytesRead = input.read(buffer)
+            val bytesRead = try {
+                input.read(buffer)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // A mid-stream drop keeps every byte already written; the retry resumes from it.
+                if (ModelDownloadRetryPolicy.isRetryableTransport(error)) {
+                    output.fd.sync()
+                    throw RetryableTransportInterruption(error)
+                }
+                throw error
+            }
             if (bytesRead < 0) break
             if (totalRead + bytesRead > expectedSize) {
                 throw IllegalStateException("Downloaded payload exceeded its published size")
@@ -252,6 +312,25 @@ class ModelDownloadWorker(
                 bytesSinceLastUpdate = 0L
             }
         }
+    }
+
+    private fun logStopReason(modelId: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            Log.w(
+                tag,
+                "Model download stopped for model=$modelId; stop reason is unavailable before " +
+                    "API 31. Partial data is retained for retry."
+            )
+            return
+        }
+
+        val reason = stopReason
+        Log.w(
+            tag,
+            "Model download stopped for model=$modelId; " +
+                "stopReason=${ModelDownloadStopReason.label(reason)} ($reason), " +
+                "attempt=$runAttemptCount. Partial data is retained for retry."
+        )
     }
 
     private fun verifyLiteRtCompatibility(file: File) {
@@ -311,4 +390,16 @@ class ModelDownloadWorker(
         seconds >= 60L -> String.format("%dm %ds", seconds / 60L, seconds % 60L)
         else -> "${seconds}s"
     }
+
+    /** Distinguishes a resumable transport failure from an outright unreachable host. */
+    private sealed interface RequestOutcome {
+        data class Received(val response: Response) : RequestOutcome
+        data class Retryable(val error: Throwable) : RequestOutcome
+        data object Failed : RequestOutcome
+    }
+
+    /** Signals that a partially written download should be resumed rather than failed. */
+    private class RetryableTransportInterruption(
+        cause: Throwable
+    ) : Exception(cause)
 }
