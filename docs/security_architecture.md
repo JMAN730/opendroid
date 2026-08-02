@@ -36,50 +36,41 @@ OpenDroid is designed with a **Privacy-First, Defense-in-Depth** security philos
 
 ## 2. Encryption & Data Protection at Rest
 
-All credentials, API keys (OpenAI, Anthropic, ElevenLabs), and Hugging Face authentication tokens are encrypted at rest using Android's Hardware-backed KeyStore via [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt).
+Provider API keys, the ElevenLabs key, and Hugging Face tokens use the direct Android Keystore
+[`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt).
+The legacy [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt)
+store remains only for non-provider callers and as the narrowly scoped migration source for those
+provider credentials.
 
 ### 2.1. Cryptographic Schemes
 
 | Storage Scope | Key Store / Master Key | Key Encryption Scheme | Value Encryption Scheme |
 |:---|:---|:---|:---|
-| **API Keys & Sensitive Prefs** | Android KeyStore (`MasterKey` AES256_GCM) | `AES256_SIV` (Deterministic AEAD) | `AES256_GCM` (Authenticated Encryption) |
+| **Provider credentials** | Android KeyStore (`AES`, 256-bit, encrypt/decrypt only) | N/A | `AES/GCM/NoPadding`, random 96-bit IV, credential-ID AAD, versioned envelope |
+| **Legacy non-provider preferences** | Android KeyStore (`MasterKey` AES256_GCM) | `AES256_SIV` (Deterministic AEAD) | `AES256_GCM` (Authenticated Encryption) |
 | **Room Database (SQLite)** | App Sandboxed Storage (`opendroid_database`) | System Scoped Permissions | System Scoped Permissions |
 | **Downloaded Models** | Sandboxed Files Dir (`.litertlm` / `.task`) | Integrity Validation via SHA-256 | Integrity Validation via SHA-256 |
 
 ### 2.2. Zero Plaintext Fallback Policy
 
-[`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt) strictly enforces a **Zero Plaintext Fallback** policy:
+`ProviderCredentialStore` strictly enforces a **Zero Plaintext Fallback** policy:
 
-- If the KeyStore entry is invalidated (e.g. after a device credential reset or restore onto a new device), the corrupt preference store is deleted and recreated.
-- If re-creation fails, a `SecurityException` is thrown, halting sensitive operations rather than silently falling back to unencrypted `SharedPreferences`.
-
-```kotlin
-// SecurePrefs.kt implementation snippet
-private fun createEncryptedPrefs(context: Context): SharedPreferences {
-    return try {
-        buildEncryptedPrefs(context)
-    } catch (first: Exception) {
-        if (isUnrecoverable(first)) {
-            context.deleteSharedPreferences(PREFS_NAME)
-            try {
-                buildEncryptedPrefs(context)
-            } catch (second: Exception) {
-                // Refuse to fall back to unencrypted plaintext storage
-                throw SecurityException(
-                    "Unable to initialize encrypted preferences; refusing plaintext fallback",
-                    second
-                )
-            }
-        } else {
-            throw first
-        }
-    }
-}
-```
+- The app-private credential file holds only versioned AES-GCM envelopes; plaintext provider
+  credentials are not written to the DataStore JSON.
+- Every envelope is bound to its logical credential ID using GCM AAD. Malformed envelopes,
+  unknown versions, authentication failures, and unavailable Keystore keys surface a
+  `CredentialsMustBeReentered` state without logging credential material.
+- Recovery clears only the dedicated provider credential records. It never uses message-string
+  heuristics or deletes the legacy encrypted preferences file, preserving non-provider settings.
 
 ### 2.3. Automated Plaintext Migration Engine
 
-During application startup, `SecurePrefs.migrateFromPlaintext(context)` automatically migrates legacy unencrypted keys into the hardware-encrypted store and wipes the legacy `opendroid_prefs` file from disk.
+During application startup, `SecurePrefs.migrateFromPlaintext(context)` retains its legacy
+non-provider migration. Separately, `ProviderCredentialStore.migrateLegacyCredentials()` imports
+only `llm_api_key_*`, `elevenlabs_api_key`, and `huggingface_token` from legacy
+`EncryptedSharedPreferences`. It durably commits the direct-keystore envelope before removing the
+matching legacy credential, so retries are idempotent and destination failures leave the source
+intact.
 
 ---
 
@@ -114,7 +105,9 @@ Cleartext HTTP traffic is permitted **only** for local loopback addresses (enabl
 
 ## 4. Data Leakage & Backup Exclusion Rules
 
-To prevent sensitive user conversations, extracted semantic facts, and API tokens from leaking off-device via cloud backups or device-to-device transfers, OpenDroid explicitly disables backups in [`AndroidManifest.xml`](file:///workspaces/opendroid/app/src/main/AndroidManifest.xml) (`android:allowBackup="true"`, overridden by strict exclusion rules).
+To prevent sensitive user conversations, extracted semantic facts, and API tokens from leaking
+off-device via cloud backups or device-to-device transfers, OpenDroid applies strict exclusions in
+[`AndroidManifest.xml`](file:///workspaces/opendroid/app/src/main/AndroidManifest.xml) backup rules.
 
 ### 4.1. Excluded Domains (`backup_rules.xml` & `data_extraction_rules.xml`)
 

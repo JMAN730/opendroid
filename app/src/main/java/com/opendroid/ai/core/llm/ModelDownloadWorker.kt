@@ -15,6 +15,9 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -36,6 +39,7 @@ class ModelDownloadWorker(
     interface WorkerEntryPoint {
         fun modelDao(): ModelDao
         fun okHttpClient(): OkHttpClient
+        fun providerCredentialStore(): ProviderCredentialStore
     }
 
     private val entryPoint = EntryPointAccessors.fromApplication(
@@ -45,6 +49,7 @@ class ModelDownloadWorker(
 
     private val modelDao = entryPoint.modelDao()
     private val okHttpClient = entryPoint.okHttpClient()
+    private val providerCredentialStore = entryPoint.providerCredentialStore()
 
     override suspend fun getForegroundInfo(): ForegroundInfo =
         ModelDownloadForegroundInfoFactory.create(applicationContext, id)
@@ -199,8 +204,14 @@ class ModelDownloadWorker(
         Log.i(tag, "[DOWNLOAD FLOW] Requesting HTTP download for model=$modelId")
         Log.i(tag, "[DOWNLOAD FLOW] Resume status: $isResume, starting from $startBytes bytes")
 
-        val securePrefs = com.opendroid.ai.core.security.SecurePrefs.get(applicationContext)
-        val hfToken = securePrefs.getString("huggingface_token", null)
+        providerCredentialStore.migrateLegacyCredentials()
+        val hfToken = when (
+            val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+        ) {
+            is CredentialStoreResult.Success -> result.value
+            CredentialStoreResult.CredentialsMustBeReentered,
+            CredentialStoreResult.StorageUnavailable -> null
+        }
 
         val requestBuilder = Request.Builder().url(downloadUrl)
         if (!hfToken.isNullOrBlank()) {

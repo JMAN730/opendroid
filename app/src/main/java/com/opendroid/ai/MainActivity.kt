@@ -16,6 +16,7 @@ import com.opendroid.ai.data.repository.SettingsRepository
 import com.opendroid.ai.ui.OpenDroidNavigation
 import com.opendroid.ai.ui.theme.AppTheme
 import com.opendroid.ai.ui.theme.OpenDroidTheme
+import com.opendroid.ai.ui.theme.enableOpenDroidEdgeToEdge
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -25,8 +26,9 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableOpenDroidEdgeToEdge(isDarkTheme = true)
         super.onCreate(savedInstanceState)
-        
+
         // Start foreground assistant service only if RECORD_AUDIO permission is granted
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             OpenDroidService.start(this)
