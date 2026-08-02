@@ -166,13 +166,13 @@ memories, and crash history.
 ## 6. Project Dependencies & Toolchain Versions
 
 ### 6.1. Build Toolchain
-* **Gradle Version:** `8.10.2`
-* **Android Gradle Plugin (AGP):** `8.8.2`
+* **Gradle Version:** `9.6.1`
+* **Android Gradle Plugin (AGP):** `9.3.1`
 * **Kotlin Compiler / Gradle Plugin:** `2.4.0`
 * **Compose Compiler Plugin:** `2.4.0`
 * **Kotlin Serialization Plugin:** `2.4.0`
-* **Dagger / Hilt Gradle Plugin:** `2.58`
-* **R8 Optimizer:** `9.1.31`
+* **Dagger / Hilt Gradle Plugin:** `2.60.1`
+* **R8 Optimizer:** `9.3.16` (bundled with AGP; no standalone pin)
 * **Target Android SDK:** `35`
 * **Minimum Android SDK:** `26`
 
@@ -181,9 +181,9 @@ memories, and crash history.
   * **LiteRT-LM Android Library:** `com.google.ai.edge.litertlm:litertlm-android:0.14.0`
   * **Google ML Kit GenAI Prompt API (AI Core):** `com.google.mlkit:genai-prompt:1.0.0-beta2`
 * **Dependency Injection:**
-  * **Dagger-Hilt:** `2.58`
+  * **Dagger-Hilt:** `2.60.1`
 * **Local Database:**
-  * **Room DB:** `2.8.4` (utilizing Kapt annotation processing with `kotlin-metadata-jvm:2.4.0` metadata support)
+  * **Room DB:** `2.8.4` (annotation processing via KSP)
 * **Background Scheduling:**
   * **WorkManager:** `2.10.5`
 * **Networking Client:**

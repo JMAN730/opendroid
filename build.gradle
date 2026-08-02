@@ -5,13 +5,21 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // R8 pin needed until AGP >= 9.1 — AGP 8.13.x bundles R8 8.13.19, which only
-        // supports Kotlin 2.3 metadata; this project is on Kotlin 2.4.0.
-        classpath 'com.android.tools:r8:9.1.31'
-        classpath 'com.android.tools.build:gradle:8.13.2'
+        // AGP 9.3.1 requires Gradle >= 9.5.0 (VersionCheckPlugin); the wrapper is
+        // pinned to 9.6.1 with a checksum. No standalone com.android.tools:r8 pin:
+        // the R8 bundled with this AGP handles Kotlin 2.4.0 metadata, and the
+        // minified release was verified against the AGP 8.13.2 + R8 9.1.31 output
+        // (see docs/build/agp9-migration.md).
+        classpath 'com.android.tools.build:gradle:9.3.1'
         classpath 'androidx.room:room-gradle-plugin:2.8.4'
+        // AGP 9's built-in Kotlin support compiles with whatever Kotlin Gradle
+        // plugin is on this classpath, not with a version of its own. AGP 9.3.1
+        // brings 2.2.10 transitively; this entry keeps the project on 2.4.0.
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0'
-        classpath 'com.google.dagger:hilt-android-gradle-plugin:2.58'
+        // Dagger/Hilt 2.58's Gradle plugin reads AGP's removed BaseExtension and
+        // fails under AGP 9 ("Could not find the Android Gradle Plugin (AGP) base
+        // extension"); 2.60.1 uses the current APIs.
+        classpath 'com.google.dagger:hilt-android-gradle-plugin:2.60.1'
         classpath 'org.jetbrains.kotlin:kotlin-serialization:2.4.0'
         classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.0'
         classpath 'com.google.devtools.ksp:symbol-processing-gradle-plugin:2.3.10'
