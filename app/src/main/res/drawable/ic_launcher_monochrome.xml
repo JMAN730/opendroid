@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Single-color droid/terminal glyph for Android's themed launcher icon. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="3"
+        android:pathData="M42,30L37,22M66,30L71,22" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M36,48C36,35.9 44.1,27 54,27C63.9,27 72,35.9 72,48L72,54L36,54ZM45,40C43.3,40 42,41.3 42,43C42,44.7 43.3,46 45,46C46.7,46 48,44.7 48,43C48,41.3 46.7,40 45,40ZM63,40C61.3,40 60,41.3 60,43C60,44.7 61.3,46 63,46C64.7,46 66,44.7 66,43C66,41.3 64.7,40 63,40Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M31,54L77,54C82.5,54 87,58.5 87,64L87,78C87,83.5 82.5,88 77,88L31,88C25.5,88 21,83.5 21,78L21,64C21,58.5 25.5,54 31,54ZM39,63L69,63C71.2,63 73,64.8 73,67L73,78C73,80.2 71.2,82 69,82L39,82C36.8,82 35,80.2 35,78L35,67C35,64.8 36.8,63 39,63ZM46,69L52,75L46,81L49.5,84.5L59,75L49.5,65.5ZM61,79L69,79L69,83L61,83Z" />
+</vector>
