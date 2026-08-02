@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -21,6 +20,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.graphics.toColorInt
 import com.opendroid.ai.R
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
@@ -360,7 +360,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
             val radius = (width / 2f) - dpToPx(8f)
 
             // Draw cyber grey background circle
-            paint.color = Color.parseColor("#121216")
+            paint.color = "#121216".toColorInt()
             paint.style = Paint.Style.FILL
             canvas.drawCircle(cx, cy, radius, paint)
 
@@ -369,12 +369,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
             // Draw glow border
             val color = when (state) {
-                is AgentState.Idle -> Color.parseColor("#00FF66") // Neon green
-                is AgentState.Listening -> Color.parseColor("#FF3B30") // Pulsing red
-                is AgentState.Thinking -> Color.parseColor("#00F0FF") // Cyan
-                is AgentState.Speaking -> Color.parseColor("#007AFF") // Neon blue
-                is AgentState.ExecutingPlan -> Color.parseColor("#00FFCC") // Cyan-green
-                else -> Color.parseColor("#00FF66")
+                is AgentState.Idle -> "#00FF66".toColorInt() // Neon green
+                is AgentState.Listening -> "#FF3B30".toColorInt() // Pulsing red
+                is AgentState.Thinking -> "#00F0FF".toColorInt() // Cyan
+                is AgentState.Speaking -> "#007AFF".toColorInt() // Neon blue
+                is AgentState.ExecutingPlan -> "#00FFCC".toColorInt() // Cyan-green
+                else -> "#00FF66".toColorInt()
             }
 
             paint.color = color

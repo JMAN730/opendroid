@@ -129,6 +129,9 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         baseline = file("lint-baseline.xml")
+        // A check joins this list in the PR that drives it to zero, so a
+        // burned-down check cannot silently regress.
+        error 'UseKtx'
     }
 }
 

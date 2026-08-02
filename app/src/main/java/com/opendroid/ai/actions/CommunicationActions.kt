@@ -4,10 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
@@ -167,7 +167,7 @@ class CommunicationActions @Inject constructor(
     private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
         val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
         return try {
-            val callUri = Uri.parse("tel:$cleanPhone")
+            val callUri = "tel:$cleanPhone".toUri()
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                 val intent = Intent(Intent.ACTION_CALL, callUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -191,7 +191,7 @@ class CommunicationActions @Inject constructor(
             }
         } catch (e: SecurityException) {
             try {
-                val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
+                val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$cleanPhone".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(dialIntent)
@@ -218,9 +218,9 @@ class CommunicationActions @Inject constructor(
         return try {
             val encodedMsg = URLEncoder.encode(message, "UTF-8")
             val whatsappUri = if (phone.matches(Regex("\\+?[0-9]+"))) {
-                Uri.parse("https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg")
+                "https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg".toUri()
             } else {
-                Uri.parse("whatsapp://send?text=$encodedMsg")
+                "whatsapp://send?text=$encodedMsg".toUri()
             }
             val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
                 setPackage("com.whatsapp")
@@ -307,7 +307,7 @@ class CommunicationActions @Inject constructor(
                 }
             }
             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = Uri.parse("smsto:$phone")
+                data = "smsto:$phone".toUri()
                 putExtra("sms_body", message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -326,7 +326,7 @@ class CommunicationActions @Inject constructor(
         } catch (e: Exception) {
             try {
                 val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("sms:$phone")
+                    data = "sms:$phone".toUri()
                     putExtra("sms_body", message)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -358,7 +358,7 @@ class CommunicationActions @Inject constructor(
             val body = params["body"] ?: ""
             return try {
                 val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("mailto:")
+                    data = "mailto:".toUri()
                     putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
                     putExtra(Intent.EXTRA_SUBJECT, subject)
                     putExtra(Intent.EXTRA_TEXT, body)
@@ -401,7 +401,7 @@ class CommunicationActions @Inject constructor(
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$phone")).apply {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=$phone".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -416,7 +416,7 @@ class CommunicationActions @Inject constructor(
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
                         } else {
-                            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
+                            val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$phone".toUri()).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(dialIntent)

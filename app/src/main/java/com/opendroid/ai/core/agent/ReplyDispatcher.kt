@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.service.notification.StatusBarNotification
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -103,7 +104,7 @@ class ReplyDispatcher @Inject constructor(
         // Fallback: open email compose intent
         return try {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = android.net.Uri.parse("mailto:")
+                data = "mailto:".toUri()
                 putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
                 putExtra(Intent.EXTRA_SUBJECT, "Re: $subject")
                 putExtra(Intent.EXTRA_TEXT, replyText)
