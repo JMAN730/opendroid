@@ -17,6 +17,7 @@ import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ContactResolution
 import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.maskPhone
+import com.opendroid.ai.core.util.DeviceCapabilities
 import android.provider.ContactsContract
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -166,9 +167,18 @@ class CommunicationActions @Inject constructor(
 
     private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
         val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
+        val callUri = "tel:$cleanPhone".toUri()
+        // Telephony is optional (see AndroidManifest uses-feature). Without a radio,
+        // ACTION_CALL goes nowhere — but a VoIP dialer (Google Voice, Phone Hub) may
+        // still handle tel: on ChromeOS and tablets, so only fail when nothing can.
+        val hasTelephony = DeviceCapabilities.canMakeCalls(context)
+        if (!hasTelephony &&
+            Intent(Intent.ACTION_DIAL, callUri).resolveActivity(context.packageManager) == null) {
+            return ActionResult(false, null, "This device can't make phone calls — it has no phone hardware or dialer app. Try WhatsApp instead?")
+        }
         return try {
-            val callUri = "tel:$cleanPhone".toUri()
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            if (hasTelephony &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                 val intent = Intent(Intent.ACTION_CALL, callUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -295,7 +305,8 @@ class CommunicationActions @Inject constructor(
 
     private suspend fun executeSms(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
         return try {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+            if (DeviceCapabilities.canSendSms(context) &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                 try {
                     val smsManager = context.getSystemService(SmsManager::class.java)
                     if (smsManager != null) {
@@ -310,6 +321,11 @@ class CommunicationActions @Inject constructor(
                 data = "smsto:$phone".toUri()
                 putExtra("sms_body", message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // Telephony is optional: a device with no radio and no messaging app
+            // would throw ActivityNotFoundException here.
+            if (intent.resolveActivity(context.packageManager) == null) {
+                return ActionResult(false, null, "This device can't send text messages — there's no messaging app or phone hardware. Want me to use WhatsApp?")
             }
             context.startActivity(intent)
 
@@ -418,6 +434,11 @@ class CommunicationActions @Inject constructor(
                         } else {
                             val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$phone".toUri()).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            // Telephony is optional — a device with no radio and no
+                            // dialer app has nothing left to fall back to.
+                            if (dialIntent.resolveActivity(context.packageManager) == null) {
+                                return ActionResult(false, null, "No video call app is installed, and this device can't place phone calls. Try WhatsApp?")
                             }
                             context.startActivity(dialIntent)
                         }

@@ -10,6 +10,7 @@ import android.service.notification.StatusBarNotification
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.net.toUri
+import com.opendroid.ai.core.util.DeviceCapabilities
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -68,6 +69,10 @@ class ReplyDispatcher @Inject constructor(
      * Send an SMS reply directly using SmsManager.
      */
     fun replyViaSms(phoneNumber: String, replyText: String, context: Context): Boolean {
+        if (!DeviceCapabilities.canSendSms(context)) {
+            Log.w(TAG, "SMS reply skipped: device has no SMS-capable telephony hardware")
+            return false
+        }
         return try {
             val smsManager = context.getSystemService(SmsManager::class.java)
             if (smsManager != null) {

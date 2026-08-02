@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.util.DeviceCapabilities
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -164,6 +165,10 @@ class MediaActions @Inject constructor() {
     private class TakePhotoAction : Action {
         override val name: String = "TAKE_PHOTO"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            // Camera hardware is optional (see AndroidManifest uses-feature).
+            if (!DeviceCapabilities.hasCamera(context)) {
+                return ActionResult(false, null, "This device doesn't have a camera.")
+            }
             val camera = params["camera"] ?: "back"
             return try {
                 val intent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
@@ -189,6 +194,10 @@ class MediaActions @Inject constructor() {
     private class RecordVideoAction : Action {
         override val name: String = "RECORD_VIDEO"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            // Camera hardware is optional (see AndroidManifest uses-feature).
+            if (!DeviceCapabilities.hasCamera(context)) {
+                return ActionResult(false, null, "This device doesn't have a camera.")
+            }
             val camera = params["camera"] ?: "back"
             return try {
                 val intent = Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA).apply {
