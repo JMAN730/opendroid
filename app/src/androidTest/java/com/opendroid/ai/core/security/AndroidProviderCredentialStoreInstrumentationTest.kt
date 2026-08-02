@@ -5,9 +5,10 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.KeyInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import java.security.KeyFactory
 import java.security.KeyStore
 import java.util.UUID
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -60,8 +61,10 @@ class AndroidProviderCredentialStoreInstrumentationTest {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val key = keyStore.getKey(keyAlias, null)
         assertNotNull(key)
-        val keyInfo = KeyFactory.getInstance(key.algorithm, "AndroidKeyStore")
-            .getKeySpec(key, KeyInfo::class.java) as KeyInfo
+        // KeyFactory handles asymmetric keys only; a symmetric AES SecretKey needs
+        // SecretKeyFactory, or the provider answers "no such algorithm: AES".
+        val keyInfo = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore")
+            .getKeySpec(key as SecretKey, KeyInfo::class.java) as KeyInfo
         assertEquals(256, keyInfo.keySize)
         assertEquals(
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,

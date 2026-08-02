@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-variant manifest additions. Declares the accessibility test-fixture
+     probe Activity (#105, promoted from the #66 prototype) that scrape/gesture
+     instrumentation tests drive - debug-only, like ui-test-manifest's own
+     activities, since unit/instrumentation tests run against the debug variant. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name="com.opendroid.ai.accessibility.testfixtures.A11yProbeActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light" />
+    </application>
+</manifest>
