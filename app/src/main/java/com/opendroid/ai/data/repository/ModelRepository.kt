@@ -35,6 +35,9 @@ class ModelRepository @Inject constructor(
     private val tag = "ModelRepository"
     private val scope = CoroutineScope(Dispatchers.IO)
     private val workManager = WorkManager.getInstance(context)
+    private val artifactManifestStore = ModelArtifactManifestStore()
+    private val artifactVerifier = ModelArtifactVerifier()
+    private val artifactInstaller = ModelArtifactInstaller()
 
     // Coordinate initialization to ensure it runs exactly once
     private val initMutex = Mutex()
@@ -69,21 +72,26 @@ class ModelRepository @Inject constructor(
         registeredModels.forEach { spec ->
             val existing = modelDao.getModelById(spec.id)
             val dir = getModelDir(spec.id)
-            val manifestFile = File(dir, "manifest.json")
-
-            // Delete unverified placeholders (no manifest) under the min size gate
+            val manifestFile = ModelStoragePaths.manifestFile(dir)
             val candidate = ModelStoragePaths.resolveExistingFile(dir, spec)
-                ?: ModelStoragePaths.targetFile(dir, spec)
-            if (candidate.exists() && !manifestFile.exists() && candidate.length() < ModelStoragePaths.MIN_VERIFIED_BYTES) {
-                Log.w(tag, "Deleting unverified placeholder model file: ${candidate.absolutePath} (size: ${candidate.length()} bytes, no manifest)")
-                try {
-                    candidate.delete()
-                } catch (e: Exception) {
-                    Log.e(tag, "Failed to delete placeholder model file", e)
+            val hasFiles = candidate?.let { file ->
+                when (artifactVerifier.verifyForStartup(file, manifestFile, spec)) {
+                    ArtifactVerificationResult.Valid -> true
+                    is ArtifactVerificationResult.Invalid -> {
+                        // Pre-manifest catalog installs are repaired only after a full hash check
+                        // against registry-owned metadata. Unknown/local legacy files fail closed.
+                        val repairedManifest = artifactVerifier
+                            .manifestForVerifiedLegacyCatalogFile(file, spec)
+                        if (repairedManifest == null) {
+                            false
+                        } else {
+                            runCatching {
+                                artifactManifestStore.writeAtomically(manifestFile, repairedManifest)
+                            }.isSuccess
+                        }
+                    }
                 }
-            }
-
-            val hasFiles = dir.exists() && ModelStoragePaths.hasVerifiedModel(dir, spec)
+            } ?: false
 
             val currentStatus = when {
                 hasFiles -> ModelStatus.READY
@@ -108,7 +116,8 @@ class ModelRepository @Inject constructor(
                 downloadProgress = currentProgress,
                 lastUsed = existing?.lastUsed ?: 0L,
                 installedAt = existing?.installedAt ?: (if (hasFiles) System.currentTimeMillis() else 0L),
-                downloadedSize = existing?.downloadedSize ?: (if (hasFiles) spec.expectedSize else 0L)
+                downloadedSize = existing?.downloadedSize
+                    ?: (if (hasFiles) candidate.length() else 0L)
             )
  
             modelDao.insertModel(entity)
@@ -116,29 +125,41 @@ class ModelRepository @Inject constructor(
     }
 
     private fun getModelDownloadUrl(spec: OnDeviceModelSpec): String {
-        return "https://huggingface.co/${spec.modelPath}/resolve/main/${spec.modelFilename}"
+        return spec.managedArtifact
+            ?.takeIf { it.isComplete }
+            ?.downloadUrl
+            .orEmpty()
     }
 
     override suspend fun download(model: OnDeviceModel) {
-        startDownload(model, simulate = false)
+        startDownload(model)
     }
 
-    suspend fun startDownload(model: OnDeviceModel, simulate: Boolean) {
-        val entity = modelDao.getModelById(model.id) ?: return
+    suspend fun startDownload(model: OnDeviceModel) {
+        val spec = OnDeviceModelRegistry.findById(model.id) ?: return
+        modelDao.getModelById(spec.id) ?: return
+        if (!spec.isManagedDownloadAvailable) {
+            modelDao.updateDownloadProgressDetails(
+                spec.id,
+                0,
+                0L,
+                "",
+                "In-app download is unavailable until publisher integrity metadata is recorded.",
+                ModelStatus.FAILED
+            )
+            return
+        }
         
         val inputData = Data.Builder()
-            .putString("model_id", model.id)
-            .putString("download_url", entity.downloadUrl)
-            .putString("target_path", entity.localPath)
-            .putLong("size", entity.size)
-            .putString("sha256", model.sha256)
-            .putBoolean("simulate", simulate)
+            // The worker resolves URL, path, byte size, and checksum from the immutable registry.
+            // WorkManager input is transport data, not an integrity trust boundary.
+            .putString("model_id", spec.id)
             .build()
 
         val downloadRequest = ModelDownloadWorkRequest.create(inputData, model.id)
 
         workManager.enqueueUniqueWork(
-            "download_${model.id}",
+            "download_${spec.id}",
             ExistingWorkPolicy.REPLACE,
             downloadRequest
         )
@@ -165,60 +186,53 @@ class ModelRepository @Inject constructor(
                 return@withContext ImportLocalModelResult.Failure(reason)
             }
 
-            val dir = getModelDir(modelId)
-            if (!dir.exists()) dir.mkdirs()
-            val targetFile = ModelStoragePaths.targetFile(dir, spec)
+                val dir = getModelDir(modelId)
+                if (!dir.exists() && !dir.mkdirs()) {
+                    return@withContext ImportLocalModelResult.Failure(
+                        "Could not prepare private model storage. Free space and try again."
+                    )
+                }
+                val targetFile = ModelStoragePaths.targetFile(dir, spec)
+                val manifestFile = ModelStoragePaths.manifestFile(dir)
+                val temporaryImport = File.createTempFile(".model-import-", ".tmp", context.cacheDir)
 
-            try {
-                val input = context.contentResolver.openInputStream(uri)
-                if (input == null) {
+                try {
+                    val input = context.contentResolver.openInputStream(uri)
+                    if (input == null) {
                     return@withContext ImportLocalModelResult.Failure(
                         "Could not open the selected file. Try another file manager or copy the model to Downloads first."
                     )
-                }
-                input.use { stream ->
-                    targetFile.outputStream().use { output ->
-                        stream.copyTo(output)
                     }
-                }
+                    input.use { stream ->
+                        temporaryImport.outputStream().use { output ->
+                            stream.copyTo(output)
+                        }
+                    }
 
-                val finalSize = targetFile.length()
-                if (finalSize < ModelStoragePaths.MIN_VERIFIED_BYTES) {
-                    Log.e(tag, "Imported file size is too small: $finalSize bytes")
-                    targetFile.delete()
+                val finalSize = temporaryImport.length()
+                if (finalSize < ModelStoragePaths.MIN_LOCAL_IMPORT_BYTES) {
                     return@withContext ImportLocalModelResult.Failure(
                         "Imported file is too small (${finalSize} bytes). Expected a LiteRT model (.litertlm or .task) larger than 10 MB."
                     )
                 }
 
-                Log.i(tag, "Verifying LiteRT compatibility of imported model at ${targetFile.absolutePath}...")
-                try {
-                    val config = EngineConfig(
-                        modelPath = targetFile.absolutePath,
-                        backend = Backend.CPU(),
-                        cacheDir = context.cacheDir.absolutePath
-                    )
-                    Engine(config).use { engine ->
-                        engine.initialize()
+                val install = artifactInstaller.installLocalImport(
+                    source = temporaryImport,
+                    target = targetFile,
+                    manifestFile = manifestFile,
+                    spec = spec,
+                    verifyFormat = ::verifyLiteRtCompatibility
+                )
+                if (!install.isSuccess) {
+                    if (install.failure == ArtifactVerificationFailure.FORMAT_INVALID) {
+                        return@withContext ImportLocalModelResult.Failure(
+                            "LiteRT could not open this file. Ensure it is a valid .litertlm or .task model."
+                        )
                     }
-                    Log.i(tag, "LiteRT compatibility verified successfully.")
-                } catch (e: Throwable) {
-                    Log.e(tag, "Imported file is not LiteRT compatible: ${e.message}", e)
-                    targetFile.delete()
-                    val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
                     return@withContext ImportLocalModelResult.Failure(
-                        "LiteRT could not open this file ($detail). Ensure it is a valid .litertlm or .task model."
+                        "Could not securely install the selected model. The existing installed model was left unchanged."
                     )
                 }
-
-                val manifestFile = File(dir, "manifest.json")
-                val manifest = org.json.JSONObject().apply {
-                    put("model_id", modelId)
-                    put("status", "ready")
-                    put("format", "litertlm")
-                    put("filename", targetFile.name)
-                }
-                manifestFile.writeText(manifest.toString())
 
                 val refFile = File(context.filesDir, "litert_models/${modelId}.litertlm")
                 refFile.parentFile?.mkdirs()
@@ -235,34 +249,34 @@ class ModelRepository @Inject constructor(
 
                 ImportLocalModelResult.Success
             } catch (e: Exception) {
-                Log.e(tag, "Failed to import local model", e)
-                if (targetFile.exists()) targetFile.delete()
-                val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-                ImportLocalModelResult.Failure("Import failed: $detail")
+                Log.e(tag, "Failed to import local model")
+                ImportLocalModelResult.Failure("Import failed. The existing installed model was left unchanged.")
+            } finally {
+                temporaryImport.delete()
             }
         }
 
+    /** Runs the only structural validation permitted for explicitly untrusted local imports. */
+    private fun verifyLiteRtCompatibility(file: File) {
+        val config = EngineConfig(
+            modelPath = file.absolutePath,
+            backend = Backend.CPU(),
+            cacheDir = context.cacheDir.absolutePath
+        )
+        Engine(config).use { engine ->
+            engine.initialize()
+        }
+    }
+
     suspend fun pauseDownload(model: OnDeviceModel) {
-        workManager.cancelUniqueWork("download_${model.id}")
+        if (OnDeviceModelRegistry.findById(model.id) == null) return
         modelDao.updateModelStatus(model.id, ModelStatus.PAUSED)
+        workManager.cancelUniqueWork("download_${model.id}")
     }
 
     suspend fun cancelDownload(model: OnDeviceModel) {
-        workManager.cancelUniqueWork("download_${model.id}")
-        val dir = getModelDir(model.id)
-        if (dir.exists()) {
-            dir.deleteRecursively()
-        }
-        val tempFile = File(context.cacheDir, "${model.id}.tmp")
-        if (tempFile.exists()) {
-            tempFile.delete()
-        }
-        
-        val refFile = File(context.filesDir, "litert_models/${model.id}.litertlm")
-        if (refFile.exists()) {
-            refFile.delete()
-        }
-
+        if (OnDeviceModelRegistry.findById(model.id) == null) return
+        // Mark cancellation before stopping work so a stopping worker cannot restore PAUSED.
         modelDao.updateDownloadProgressDetails(
             model.id,
             0,
@@ -271,11 +285,30 @@ class ModelRepository @Inject constructor(
             "",
             ModelStatus.NOT_DOWNLOADED
         )
+        workManager.cancelUniqueWork("download_${model.id}")
+        val dir = getModelDir(model.id)
+        if (dir.exists()) {
+            dir.deleteRecursively()
+        }
+        listOf(
+            File(context.cacheDir, "${model.id}.download"),
+            File(context.cacheDir, "${model.id}.tmp")
+        ).forEach { temporaryFile ->
+            if (temporaryFile.exists()) {
+                temporaryFile.delete()
+            }
+        }
+        
+        val refFile = File(context.filesDir, "litert_models/${model.id}.litertlm")
+        if (refFile.exists()) {
+            refFile.delete()
+        }
+
     }
 
     suspend fun resumeDownload(model: OnDeviceModel) {
-        val entity = modelDao.getModelById(model.id) ?: return
-        startDownload(model, simulate = false)
+        if (modelDao.getModelById(model.id) == null) return
+        startDownload(model)
     }
 
     override suspend fun delete(model: OnDeviceModel) {
@@ -300,7 +333,12 @@ class ModelRepository @Inject constructor(
     override suspend fun isDownloaded(model: OnDeviceModel): Boolean {
         val spec = OnDeviceModelRegistry.findById(model.id) ?: return false
         val dir = getModelDir(model.id)
-        return dir.exists() && ModelStoragePaths.resolveExistingFile(dir, spec) != null
+        val file = ModelStoragePaths.resolveExistingFile(dir, spec) ?: return false
+        return artifactVerifier.verifyForStartup(
+            file,
+            ModelStoragePaths.manifestFile(dir),
+            spec
+        ) == ArtifactVerificationResult.Valid
     }
 
     override suspend fun currentModel(): OnDeviceModel? {
