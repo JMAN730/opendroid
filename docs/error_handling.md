@@ -169,10 +169,13 @@ In [`ModelDownloadWorker.kt`](file:///workspaces/opendroid/app/src/main/java/com
 
 ## 9. Cryptographic & Security Fail-Safe Policy
 
-In [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt):
+In [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt):
 
-- Unrecoverable KeyStore errors (e.g., master key invalidation post-device reset) trigger preference deletion and re-creation.
-- If re-creation fails, a `SecurityException` is thrown to halt execution rather than falling back to unencrypted plaintext storage.
+- Unreadable Android Keystore keys, malformed envelopes, and AES-GCM authentication failures
+  surface a recoverable `CredentialsMustBeReentered` state; provider operations never fall back
+  to plaintext DataStore values.
+- Recovery targets only the dedicated provider credential records. Legacy encrypted preferences
+  remain intact so non-provider settings are not deleted as a side effect.
 
 ---
 

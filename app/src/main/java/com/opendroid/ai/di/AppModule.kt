@@ -1,6 +1,8 @@
 package com.opendroid.ai.di
 
 import android.content.Context
+import com.opendroid.ai.core.security.AndroidProviderCredentialStore
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -18,6 +20,12 @@ object AppModule {
     @Singleton
     fun provideContext(@ApplicationContext context: Context): Context {
         return context
+    }
+
+    @Provides
+    @Singleton
+    fun provideProviderCredentialStore(@ApplicationContext context: Context): ProviderCredentialStore {
+        return AndroidProviderCredentialStore(context)
     }
 
     @Provides

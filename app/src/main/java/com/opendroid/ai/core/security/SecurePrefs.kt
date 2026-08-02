@@ -7,13 +7,12 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 /**
- * Centralized secure preferences using Android Keystore + EncryptedSharedPreferences.
- * All API keys and sensitive user data are AES-256 encrypted at rest.
+ * Legacy encrypted preferences for non-provider callers.
  *
- * There is deliberately NO plaintext fallback: if the encrypted store cannot be
- * initialized (e.g. the keystore entry was invalidated), the corrupt store is
- * discarded and recreated; if that also fails, a SecurityException is thrown
- * rather than silently downgrading secrets to plaintext storage.
+ * Provider credentials use [AndroidProviderCredentialStore] instead. There is deliberately no
+ * plaintext fallback here. If a legacy keyset is unavailable, this helper leaves the encrypted
+ * file untouched rather than inspecting exception messages or deleting a whole preferences file,
+ * which would also erase non-provider settings.
  */
 object SecurePrefs {
 
@@ -23,42 +22,25 @@ object SecurePrefs {
     @Volatile
     private var instance: SharedPreferences? = null
 
-    fun get(context: Context): SharedPreferences {
-        return instance ?: synchronized(this) {
-            instance ?: createEncryptedPrefs(context).also { instance = it }
-        }
+    fun get(context: Context): SharedPreferences = instance ?: synchronized(this) {
+        instance ?: buildEncryptedPrefs(context).also { instance = it }
     }
 
-    private fun createEncryptedPrefs(context: Context): SharedPreferences {
-        return try {
-            buildEncryptedPrefs(context)
-        } catch (first: Exception) {
-            // Check if this is an unrecoverable master-key or keyset failure
-            val isUnrecoverable = first is java.security.GeneralSecurityException ||
-                                   first.cause is java.security.GeneralSecurityException ||
-                                   first.message?.contains("keyset", ignoreCase = true) == true ||
-                                   first.message?.contains("key", ignoreCase = true) == true
-
-            if (isUnrecoverable) {
-                // Most common cause: the master key was invalidated (device credential
-                // reset, backup restore onto a new device). The stored ciphertext is
-                // unrecoverable, so discard it and start a fresh encrypted store.
-                Log.e(TAG, "Unrecoverable master-key/keyset failure, recreating store: ${first.localizedMessage}")
-                context.deleteSharedPreferences(PREFS_NAME)
-                try {
-                    buildEncryptedPrefs(context)
-                } catch (second: Exception) {
-                    // Never fall back to plaintext storage for secrets.
-                    throw SecurityException(
-                        "Unable to initialize encrypted preferences; refusing plaintext fallback",
-                        second
-                    )
-                }
-            } else {
-                // Transient failure (e.g., IOException) — surface it without wiping data
-                throw first
-            }
-        }
+    /**
+     * Allows non-provider callers to keep the app usable when the legacy keyset is unreadable.
+     * The encrypted file is not modified; provider credential recovery is exposed separately by
+     * [ProviderCredentialStore].
+     */
+    fun getOrNull(context: Context): SharedPreferences? = try {
+        get(context)
+    } catch (_: java.security.GeneralSecurityException) {
+        null
+    } catch (_: java.io.IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    } catch (_: IllegalStateException) {
+        null
     }
 
     private fun buildEncryptedPrefs(context: Context): SharedPreferences {
@@ -76,12 +58,25 @@ object SecurePrefs {
     }
 
     /**
-     * One-time migration from old plaintext "opendroid_prefs" to encrypted store.
-     * Call this once at app startup. Automatically deletes the old file after migration.
+     * One-time migration from old plaintext "opendroid_prefs" to legacy encrypted storage.
+     *
+     * This remains for non-provider data. Provider credential migration is performed exclusively
+     * by [ProviderCredentialStore.migrateLegacyCredentials], which writes the direct-keystore
+     * destination before it removes a legacy credential.
      */
     fun migrateFromPlaintext(context: Context) {
         val oldPrefs = context.getSharedPreferences("opendroid_prefs", Context.MODE_PRIVATE)
-        val securePrefs = get(context)
+        val securePrefs = try {
+            get(context)
+        } catch (_: java.security.GeneralSecurityException) {
+            return
+        } catch (_: java.io.IOException) {
+            return
+        } catch (_: SecurityException) {
+            return
+        } catch (_: IllegalStateException) {
+            return
+        }
 
         // Only migrate if old prefs have data and secure prefs don't yet
         if (oldPrefs.all.isNotEmpty() && !securePrefs.contains("migration_done")) {
