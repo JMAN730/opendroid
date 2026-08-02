@@ -218,41 +218,6 @@
     </issue>
 
     <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.backgroundremoved` appears to be unused">
-        <location
-            file="src/main/res/drawable/backgroundremoved.png"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.blackbg` appears to be unused">
-        <location
-            file="src/main/res/drawable/blackbg.png"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.opendroid` appears to be unused">
-        <location
-            file="src/main/res/drawable/opendroid.png"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.text` appears to be unused">
-        <location
-            file="src/main/res/drawable/text.png"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.whitebg` appears to be unused">
-        <location
-            file="src/main/res/drawable/whitebg.png"/>
-    </issue>
-
-    <issue
         id="IconLauncherShape"
         message="Launcher icons should not fill every pixel of their square region; see the design guide for details">
         <location
@@ -296,53 +261,9 @@
 
     <issue
         id="IconLocation"
-        message="Found bitmap drawable `res/drawable/backgroundremoved.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/backgroundremoved.png"/>
-    </issue>
-
-    <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/blackbg.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/blackbg.png"/>
-    </issue>
-
-    <issue
-        id="IconLocation"
         message="Found bitmap drawable `res/drawable/bot.png` in densityless folder">
         <location
             file="src/main/res/drawable/bot.png"/>
-    </issue>
-
-    <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/opendroid.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/opendroid.png"/>
-    </issue>
-
-    <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/text.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/text.png"/>
-    </issue>
-
-    <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/whitebg.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/whitebg.png"/>
-    </issue>
-
-    <issue
-        id="IconDuplicates"
-        message="The following unrelated icon files have identical contents: blackbg.png, opendroid.png">
-        <location
-            file="src/main/res/drawable/opendroid.png"/>
-        <location
-            file="src/main/res/drawable/blackbg.png"/>
     </issue>
 
     <issue
