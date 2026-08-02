@@ -45,6 +45,14 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission"/>
 
+    <!--
+        Hardware is optional so Play keeps shipping to ChromeOS, telephony-less
+        tablets, and foldables. Call/SMS/camera actions probe DeviceCapabilities
+        before touching the hardware.
+    -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- Alarm Permissions -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
