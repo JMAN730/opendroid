@@ -14,13 +14,21 @@ import android.os.Build
  */
 object DeviceCapabilities {
 
+    // PackageManager.FEATURE_TELEPHONY_CALLING / FEATURE_TELEPHONY_MESSAGING are API 33
+    // constants; minSdk here is 26. hasFeature() below guards their use behind an
+    // SDK_INT check, but that guard lives in a called function, which lint's InlinedApi
+    // detector does not trace back to these call sites — so the constants are inlined as
+    // string literals to avoid referencing API-33-only fields unconditionally.
+    private const val FEATURE_TELEPHONY_CALLING = "android.hardware.telephony.calling"
+    private const val FEATURE_TELEPHONY_MESSAGING = "android.hardware.telephony.messaging"
+
     /** True when the device can place a voice call (not just carry mobile data). */
     fun canMakeCalls(context: Context): Boolean =
-        hasFeature(context, PackageManager.FEATURE_TELEPHONY_CALLING, PackageManager.FEATURE_TELEPHONY)
+        hasFeature(context, FEATURE_TELEPHONY_CALLING, PackageManager.FEATURE_TELEPHONY)
 
     /** True when the device can send SMS through its telephony stack. */
     fun canSendSms(context: Context): Boolean =
-        hasFeature(context, PackageManager.FEATURE_TELEPHONY_MESSAGING, PackageManager.FEATURE_TELEPHONY)
+        hasFeature(context, FEATURE_TELEPHONY_MESSAGING, PackageManager.FEATURE_TELEPHONY)
 
     /** True when the device has any camera (front, back, or external). */
     fun hasCamera(context: Context): Boolean =

@@ -1128,7 +1128,7 @@ private fun ChatErrorRecoveryCard(
     // open, the Retry button is disabled and the remaining seconds tick down here.
     val phase = error.phase
     var waitSecondsLeft by remember(phase) {
-        mutableStateOf(
+        mutableLongStateOf(
             if (phase is ChatErrorUiState.Phase.WaitingUntil) {
                 ((phase.epochMillis - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
             } else {
