@@ -76,7 +76,7 @@ Inference will not complete unless these hold. **Do not log product bugs until s
 | A6 | Download checksum mismatch | Point the manifest `sha256` at a wrong value (or serve a corrupt payload) and run Path A to completion | Exercises `ModelDownloadWorker`: SHA-256 over the temp file mismatches, download fails with a clear error, temp file removed, status stays `Not Downloaded`. This is the only case that covers the worker's checksum comparison |
 | A7 | No-auth repo | Confirm Qwen downloads with no Hugging Face token set | Succeeds; HF token remains `Token Required` and does not block |
 | A8 | Local import | Settings → import a `.task` from device storage | `Engine.initialize()` compat check runs; manifest.json and ref file written; a non-LiteRT file is rejected with a readable message and deleted |
-| A9 | Installed-file integrity | With the model already `Downloaded`, truncate/corrupt the file on disk, restart app | App must not report `Downloaded` for a bad file. **Note:** this exercises `initModelsInDatabase`, which only gates on `MIN_VERIFIED_BYTES` (10 MB) plus manifest presence — a 400 MB truncated file may pass. Expect this to fail; flag as a real defect if so (see section 10, D-1) |
+| A9 | Installed-file integrity | With the model already `Downloaded`, truncate/corrupt the file on disk, restart app | A truncated file must not report `Downloaded`; the startup verifier checks the exact manifest byte count. A same-size corruption must be rejected by the SHA-256 check before LiteRT receives the file. |
 
 ## 6. Inference — core
 
@@ -126,11 +126,10 @@ Send from Chat with the model active. Record wall-clock to first token and to co
 
 ## 10. Known product defects — tracked before the run
 
-These are visible in the source today. They are **not** discoveries of this test run. Both are filed, so a failing case gets attached to the existing issue rather than closed out as "untested".
+These are visible in the source today. They are **not** discoveries of this test run. The installed-file integrity regression is covered by A9 and its automated tests; any remaining failure should be treated as a regression rather than closed out as "untested".
 
 | Ref | Defect | Evidence | Covered by |
 |-----|--------|----------|------------|
-| D-1 ([#53](https://github.com/JMAN730/opendroid/issues/53)) | Installed-model integrity check is a size gate, not a checksum. `ModelRepository.initModelsInDatabase` accepts any file over `ModelStoragePaths.MIN_VERIFIED_BYTES` (10 MB) with a manifest present, so a ~400 MB truncated 546 MB model is reported `Downloaded`. The E5 SHA-256 is a manual host-side check by the QA engineer and gives no in-app protection. Fix: persist the manifest `sha256` and re-verify it (or at minimum the expected byte size) at init. | `ModelRepository.kt:78`, `ModelRepository.kt:190`, `ModelStoragePaths.kt:13` | A9 |
 | D-2 ([#54](https://github.com/JMAN730/opendroid/issues/54)) | No guard against exceeding the engine's `maxNumTokens`. `LiteRTLMProvider` passes `maxNumTokens = spec.contextWindow`, and `PromptBudget`'s own doc comment states that overshooting it kills the process natively — an out-of-JVM crash that `OpenDroidCrashHandler` cannot record. Fix: a hard budget check in `PromptBudget` or at the inference call site that raises a handled error before the native call. | `PromptBudget.kt:7`, `LiteRTLMProvider.kt:390-398` | B10 |
 
 Section 3's E6 (`adb push` ownership) is an environment/test-harness item, not in this table — the open question there is whether the app should surface a readable "model file unreadable" error at all.

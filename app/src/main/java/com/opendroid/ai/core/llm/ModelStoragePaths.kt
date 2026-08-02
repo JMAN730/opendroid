@@ -10,7 +10,9 @@ import java.io.File
  */
 object ModelStoragePaths {
     const val LEGACY_TASK_FILENAME = "model.task"
-    const val MIN_VERIFIED_BYTES = 10L * 1024 * 1024
+    /** A lightweight import sanity check; it never establishes artifact integrity. */
+    const val MIN_LOCAL_IMPORT_BYTES = 10L * 1024 * 1024
+    private val SAFE_PATH_COMPONENT = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
     fun folderName(modelId: String): String = when (modelId) {
         "gemma-4-e2b-it-litert" -> "Gemma4-E2B"
@@ -21,13 +23,15 @@ object ModelStoragePaths {
     }
 
     fun modelDir(modelsRoot: File, modelId: String): File =
-        File(modelsRoot, folderName(modelId))
+        containedChild(modelsRoot, folderName(modelId))
 
     /** Destination file for a new download or local import. */
     fun targetFile(modelDir: File, spec: OnDeviceModelSpec): File {
         val name = spec.modelFilename.ifBlank { LEGACY_TASK_FILENAME }
-        return File(modelDir, name)
+        return containedChild(modelDir, name)
     }
+
+    fun manifestFile(modelDir: File): File = containedChild(modelDir, "manifest.json")
 
     /**
      * Resolves an existing model binary: prefer [OnDeviceModelSpec.modelFilename],
@@ -45,14 +49,22 @@ object ModelStoragePaths {
         return null
     }
 
-    fun hasVerifiedModel(
-        modelDir: File,
-        spec: OnDeviceModelSpec,
-        minBytes: Long = MIN_VERIFIED_BYTES
-    ): Boolean {
-        val file = resolveExistingFile(modelDir, spec) ?: return false
-        return file.length() >= minBytes
+    /**
+     * Model identifiers and registry filenames become filesystem paths. Reject separators,
+     * traversal components, and symlink escapes before performing any destructive operation.
+     */
+    private fun containedChild(directory: File, childName: String): File {
+        require(SAFE_PATH_COMPONENT.matches(childName) && childName != "." && childName != "..") {
+            "Invalid model storage path component"
+        }
+        val canonicalDirectory = directory.canonicalFile
+        val canonicalChild = File(canonicalDirectory, childName).canonicalFile
+        require(canonicalChild.parentFile == canonicalDirectory) {
+            "Model storage path escapes its directory"
+        }
+        return canonicalChild
     }
+
 }
 
 /** Result of [com.opendroid.ai.data.repository.ModelRepository.importLocalModel]. */

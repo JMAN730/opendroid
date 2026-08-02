@@ -849,6 +849,7 @@ fun SettingsScreen(
                                 
                                 var expanded by remember { mutableStateOf(false) }
                                 val isApiCompatible = android.os.Build.VERSION.SDK_INT >= spec.minSdk
+                                val managedDownloadAvailable = spec.isManagedDownloadAvailable
                                 
                                 Card(
                                     modifier = Modifier
@@ -895,10 +896,10 @@ fun SettingsScreen(
                                                     }
                                                 }
                                                 Text(
-                                                    text = if (spec.sha256.isBlank()) {
-                                                        "Backend: LiteRT-LM · Integrity: unverified · RAM: 6GB+"
+                                                    text = if (managedDownloadAvailable) {
+                                                        "Backend: LiteRT-LM · Publisher integrity metadata available"
                                                     } else {
-                                                        "Backend: LiteRT-LM · SHA-256 digest available · RAM: 6GB+"
+                                                        "Backend: LiteRT-LM · In-app download unavailable; local import only"
                                                     },
                                                     fontSize = 10.sp,
                                                     color = TextSecondary
@@ -917,6 +918,7 @@ fun SettingsScreen(
                                             val statusText = when {
                                                 !isApiCompatible -> "API ${spec.minSdk}+ Req"
                                                 status == ModelStatus.READY -> "Downloaded"
+                                                !managedDownloadAvailable -> "In-app unavailable"
                                                 status == ModelStatus.DOWNLOADING -> "${progress}%"
                                                 status == ModelStatus.PAUSED -> "Paused"
                                                 status == ModelStatus.LOADING -> "Loading..."
@@ -1039,21 +1041,23 @@ fun SettingsScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     if (status == ModelStatus.NOT_DOWNLOADED || status == ModelStatus.FAILED) {
-                                                        Button(
-                                                            onClick = {
-                                                                val hfTokenVal = hfToken
-                                                                if (spec.authRequired && hfTokenVal.isBlank()) {
-                                                                    showAuthRequiredDialog = spec.displayName
-                                                                    licenseUrlForDialog = spec.licenseUrl
-                                                                } else {
-                                                                    viewModel.downloadModel(spec.id)
-                                                                }
-                                                            },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
-                                                            modifier = Modifier.weight(1f).height(32.dp),
-                                                            contentPadding = PaddingValues(horizontal = 4.dp)
-                                                        ) {
-                                                            Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                        if (managedDownloadAvailable) {
+                                                            Button(
+                                                                onClick = {
+                                                                    val hfTokenVal = hfToken
+                                                                    if (spec.authRequired && hfTokenVal.isBlank()) {
+                                                                        showAuthRequiredDialog = spec.displayName
+                                                                        licenseUrlForDialog = spec.licenseUrl
+                                                                    } else {
+                                                                        viewModel.downloadModel(spec.id)
+                                                                    }
+                                                                },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                                modifier = Modifier.weight(1f).height(32.dp),
+                                                                contentPadding = PaddingValues(horizontal = 4.dp)
+                                                            ) {
+                                                                Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                            }
                                                         }
 
                                                         Button(

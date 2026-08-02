@@ -593,11 +593,11 @@ class SettingsViewModel @Inject constructor(
         initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
     )
 
-    fun downloadModel(modelId: String, simulate: Boolean = false) {
+    fun downloadModel(modelId: String) {
         viewModelScope.launch {
             val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
             spec?.let {
-                modelRepository.startDownload(it, simulate)
+                modelRepository.startDownload(it)
             }
         }
     }

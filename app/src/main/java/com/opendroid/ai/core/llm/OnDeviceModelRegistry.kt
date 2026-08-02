@@ -40,10 +40,15 @@ data class OnDeviceModelSpec(
     val modelFilename: String = "model.task",
     /** Model version identifier. */
     val version: String = "1.0.0",
-    /** Expected SHA-256 hash checksum of the model file. */
-    val sha256: String = "",
-    /** Expected file size of the model file in bytes. */
-    val expectedSize: Long = 0L,
+    /**
+     * Registry-owned metadata for a model that the app may download itself.
+     * A partial record deliberately makes managed download unavailable.
+     */
+    val managedArtifact: ManagedModelArtifactMetadata? = null,
+    /** Expected SHA-256 hash checksum, retained for existing display callers. */
+    val sha256: String = managedArtifact?.sha256.orEmpty(),
+    /** Expected file size in bytes, retained for memory sizing and display callers. */
+    val expectedSize: Long = managedArtifact?.expectedSize ?: 0L,
     /** Gated repository license terms URL. */
     val licenseUrl: String = "",
     /** Whether downloading this model requires Hugging Face authentication. */
@@ -58,7 +63,11 @@ data class OnDeviceModelSpec(
      * sized from this — exceeding it crashes natively.
      */
     val contextWindow: Int = 1280
-)
+) {
+    /** True only when the catalog has a complete, publisher-verifiable artifact record. */
+    val isManagedDownloadAvailable: Boolean
+        get() = backend == OnDeviceBackend.LITERT_LM && managedArtifact?.isComplete == true
+}
 
 /**
  * Single source of truth for every on-device model the app supports.
@@ -129,7 +138,13 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E2B-it-litert-lm",
             modelFilename = "gemma-3n-E2B-it-int4.litertlm",
-            expectedSize = 2000000000L,  // TODO: Replace with actual published artifact size
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/ba9ca88da013b537b6ed38108be609b8db1c3a16/gemma-3n-E2B-it-int4.litertlm",
+                sourceRevision = "ba9ca88da013b537b6ed38108be609b8db1c3a16",
+                expectedSize = 3655827456L
+                // The official repository is gated. #82 must supply its authenticated LFS OID
+                // before this artifact becomes available for managed download.
+            ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
             authRequired = true,
             minSdk = 31,
@@ -143,7 +158,13 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E4B-it-litert-lm",
             modelFilename = "gemma-3n-E4B-it-int4.litertlm",
-            expectedSize = 4000000000L,  // TODO: Replace with actual published artifact size
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+                sourceRevision = "297ed75955702dec3503e00c2c2ecbbf475300bc",
+                expectedSize = 4919541760L
+                // The official repository is gated. #82 must supply its authenticated LFS OID
+                // before this artifact becomes available for managed download.
+            ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
             authRequired = true,
             minSdk = 31,
@@ -157,8 +178,12 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/Qwen2.5-0.5B-Instruct",
             modelFilename = "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-            expectedSize = 546660344L,
-            sha256 = "e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2",
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/6c237a59eedeb06a821b21f0a59b03d346ac8bc3/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+                sourceRevision = "6c237a59eedeb06a821b21f0a59b03d346ac8bc3",
+                expectedSize = 546660344L,
+                sha256 = "e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2"
+            ),
             licenseUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
             authRequired = false,
             minSdk = 26,
