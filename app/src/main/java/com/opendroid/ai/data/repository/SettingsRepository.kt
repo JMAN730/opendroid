@@ -9,7 +9,10 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.opendroid.ai.core.security.SecurePrefs
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.models.LLMConfig
 import kotlinx.coroutines.CoroutineScope
@@ -22,75 +25,131 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 @Singleton
-class SettingsRepository @Inject constructor(
-    private val context: Context
+class SettingsRepository internal constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val providerCredentialStore: ProviderCredentialStore,
+    private val runStartupMigration: Boolean
 ) {
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        providerCredentialStore: ProviderCredentialStore
+    ) : this(context.dataStore, providerCredentialStore, runStartupMigration = true)
+
     private val json = Json { ignoreUnknownKeys = true }
     private val llmConfigKey = stringPreferencesKey("llm_config")
 
-    // API keys live in EncryptedSharedPreferences (Android Keystore), never in the
-    // DataStore JSON blob, which is plaintext on disk.
-    private val securePrefs by lazy { SecurePrefs.get(context) }
-
-    companion object {
-        private const val PROVIDER_KEY_PREFIX = "llm_api_key_"
-        private const val ELEVENLABS_KEY = "elevenlabs_api_key"
-    }
+    /** A UI-safe recovery signal; it never contains credential or ciphertext data. */
+    val providerCredentialRecoveryState = providerCredentialStore.recoveryState
 
     init {
-        // One-time migration: move any API keys still embedded in the persisted
-        // JSON into the encrypted store and rewrite the JSON without them.
-        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-            try {
-                updateConfig { it }
-            } catch (_: Exception) {
-                // Migration retried on next config write.
+        if (runStartupMigration) {
+            // Legacy EncryptedSharedPreferences credentials are imported before DataStore
+            // secrets are stripped. If either store is unavailable, updateConfig still strips
+            // plaintext rather than using it as a recovery fallback.
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    providerCredentialStore.migrateLegacyCredentials()
+                    updateConfig { it }
+                } catch (_: Exception) {
+                    // The credential store has no plaintext fallback; a later update retries.
+                }
             }
         }
     }
 
-    /** Overlay secrets from the encrypted store onto a persisted (stripped) config. */
-    private fun mergeSecrets(persisted: LLMConfig): LLMConfig {
-        val secureKeys = securePrefs.all
-            .filterKeys { it.startsWith(PROVIDER_KEY_PREFIX) }
-            .mapNotNull { (key, value) ->
-                (value as? String)?.let { key.removePrefix(PROVIDER_KEY_PREFIX) to it }
-            }
-            .toMap()
-        val elevenLabsKey = securePrefs.getString(ELEVENLABS_KEY, null)
+    /**
+     * Reads only authenticated direct-store values. Persisted JSON credentials are migration
+     * input, never a runtime credential fallback.
+     */
+    private fun mergeSecretsForRead(persisted: LLMConfig): LLMConfig {
+        val snapshot = readCredentialSnapshot()
+            ?: return persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
         return persisted.copy(
-            // Legacy keys still in the JSON are kept until migration strips them;
-            // the encrypted store wins on conflict.
-            apiKeys = persisted.apiKeys + secureKeys,
-            elevenLabsApiKey = elevenLabsKey ?: persisted.elevenLabsApiKey
+            apiKeys = snapshot.providerApiKeys,
+            elevenLabsApiKey = snapshot.elevenLabsApiKey.orEmpty()
         )
     }
 
-    /** Write secrets to the encrypted store and return the config with secrets removed. */
+    /**
+     * Supplies legacy DataStore values to a write only when direct credential reads are healthy.
+     * This gives the one-time DataStore migration a source without exposing it to callers.
+     */
+    private fun mergeSecretsForUpdate(persisted: LLMConfig): LLMConfig {
+        val snapshot = readCredentialSnapshot()
+            ?: return persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
+        return persisted.copy(
+            apiKeys = persisted.apiKeys + snapshot.providerApiKeys,
+            elevenLabsApiKey = snapshot.elevenLabsApiKey ?: persisted.elevenLabsApiKey
+        )
+    }
+
+    /** Write direct credentials first and always return a plaintext-free DataStore configuration. */
     private fun storeSecretsAndStrip(config: LLMConfig): LLMConfig {
-        val editor = securePrefs.edit()
-        // Remove provider keys that were deleted from the config
-        securePrefs.all.keys
-            .filter { it.startsWith(PROVIDER_KEY_PREFIX) }
-            .map { it.removePrefix(PROVIDER_KEY_PREFIX) }
-            .filterNot { config.apiKeys.containsKey(it) }
-            .forEach { editor.remove(PROVIDER_KEY_PREFIX + it) }
+        if (providerCredentialStore.recoveryState.value ==
+            ProviderCredentialRecoveryState.CredentialsMustBeReentered
+        ) {
+            return config.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
+        }
+        val storedProviderNames = when (val result = providerCredentialStore.readProviderApiKeys()) {
+            is CredentialStoreResult.Success -> result.value.keys
+            CredentialStoreResult.CredentialsMustBeReentered,
+            CredentialStoreResult.StorageUnavailable -> emptySet()
+        }
+        storedProviderNames
+            .filterNot(config.apiKeys::containsKey)
+            .forEach { providerCredentialStore.remove(ProviderCredentialId.ApiKey(it)) }
         config.apiKeys.forEach { (provider, key) ->
-            editor.putString(PROVIDER_KEY_PREFIX + provider, key)
+            // A corrupt legacy JSON key must not prevent the JSON from being stripped.
+            val credential = runCatching { ProviderCredentialId.ApiKey(provider) }.getOrNull()
+                ?: return@forEach
+            if (key.isBlank()) {
+                providerCredentialStore.remove(credential)
+            } else {
+                providerCredentialStore.write(credential, key)
+            }
         }
         if (config.elevenLabsApiKey.isBlank()) {
-            editor.remove(ELEVENLABS_KEY)
+            providerCredentialStore.remove(ProviderCredentialId.ElevenLabsApiKey)
         } else {
-            editor.putString(ELEVENLABS_KEY, config.elevenLabsApiKey)
+            providerCredentialStore.write(
+                ProviderCredentialId.ElevenLabsApiKey,
+                config.elevenLabsApiKey
+            )
         }
-        // Use commit() for synchronous persistence instead of apply()
-        editor.commit()
         return config.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
     }
+
+    private fun readCredentialSnapshot(): CredentialSnapshot? {
+        if (providerCredentialStore.recoveryState.value ==
+            ProviderCredentialRecoveryState.CredentialsMustBeReentered
+        ) {
+            return null
+        }
+        val providerApiKeys = providerCredentialStore.readProviderApiKeys()
+        val elevenLabsApiKey = providerCredentialStore.read(ProviderCredentialId.ElevenLabsApiKey)
+        if (providerApiKeys !is CredentialStoreResult.Success ||
+            elevenLabsApiKey !is CredentialStoreResult.Success ||
+            providerCredentialStore.recoveryState.value ==
+                ProviderCredentialRecoveryState.CredentialsMustBeReentered
+        ) {
+            return null
+        }
+        return CredentialSnapshot(providerApiKeys.value, elevenLabsApiKey.value)
+    }
+
+    fun resetProviderCredentialsForReentry(): CredentialStoreResult<Unit> =
+        providerCredentialStore.resetForReentry()
+
+    private data class CredentialSnapshot(
+        val providerApiKeys: Map<String, String>,
+        val elevenLabsApiKey: String?
+    )
 
     // Auto-reply preference keys
     private val autoReplyGlobalKey = booleanPreferencesKey("auto_reply_global")
@@ -103,21 +162,11 @@ class SettingsRepository @Inject constructor(
     private val autoReplyCustomPromptKey = stringPreferencesKey("auto_reply_custom_prompt")
     private val autoReplyMaxPerHourKey = intPreferencesKey("auto_reply_max_per_hour")
 
-    val llmConfig: Flow<LLMConfig> = context.dataStore.data.map { preferences ->
-        val configStr = preferences[llmConfigKey]
-        val persisted = if (configStr != null) {
-            try {
-                json.decodeFromString<LLMConfig>(configStr)
-            } catch (e: Exception) {
-                LLMConfig()
-            }
-        } else {
-            LLMConfig()
-        }
-        mergeSecrets(persisted)
+    val llmConfig: Flow<LLMConfig> = dataStore.data.map { preferences ->
+        mergeSecretsForRead(decodeConfig(preferences[llmConfigKey]))
     }
 
-    val autoReplyConfig: Flow<AutoReplyConfig> = context.dataStore.data.map { preferences ->
+    val autoReplyConfig: Flow<AutoReplyConfig> = dataStore.data.map { preferences ->
         AutoReplyConfig(
             // Auto-reply is opt-in (see AutoReplyConfig): default OFF until the
             // user explicitly enables each channel.
@@ -134,20 +183,21 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun updateConfig(update: (LLMConfig) -> LLMConfig) {
-        context.dataStore.edit { preferences ->
-            val currentStr = preferences[llmConfigKey]
-            val currentConfig = if (currentStr != null) {
-                try {
-                    json.decodeFromString<LLMConfig>(currentStr)
-                } catch (e: Exception) {
-                    LLMConfig()
-                }
-            } else {
-                LLMConfig()
-            }
-            val newConfig = update(mergeSecrets(currentConfig))
+        dataStore.edit { preferences ->
+            val currentConfig = decodeConfig(preferences[llmConfigKey])
+            val newConfig = update(mergeSecretsForUpdate(currentConfig))
             preferences[llmConfigKey] = json.encodeToString(storeSecretsAndStrip(newConfig))
         }
+    }
+
+    private fun decodeConfig(configStr: String?): LLMConfig = if (configStr != null) {
+        try {
+            json.decodeFromString<LLMConfig>(configStr)
+        } catch (_: Exception) {
+            LLMConfig()
+        }
+    } else {
+        LLMConfig()
     }
 
     suspend fun saveModelCache(provider: String, models: List<com.opendroid.ai.core.llm.AIModel>) {
@@ -161,7 +211,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun updateAutoReplyConfig(config: AutoReplyConfig) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[autoReplyGlobalKey] = config.globalEnabled
             preferences[autoReplyWhatsAppKey] = config.whatsappEnabled
             preferences[autoReplySmsKey] = config.smsEnabled

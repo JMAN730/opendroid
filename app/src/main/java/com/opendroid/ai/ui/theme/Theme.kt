@@ -1,6 +1,9 @@
 package com.opendroid.ai.ui.theme
 
-import android.app.Activity
+import android.graphics.Color
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -10,6 +13,28 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+
+/**
+ * Applies edge-to-edge using the app's selected theme rather than the device's system theme.
+ *
+ * AndroidX uses the system UI mode to select the API 26-28 navigation-bar scrim by default.
+ * OpenDroid supports an in-app theme toggle, so use the selected palette instead. On API 29+
+ * [SystemBarStyle.auto] keeps both bars transparent, preserving edge-to-edge behavior.
+ */
+internal fun ComponentActivity.enableOpenDroidEdgeToEdge(isDarkTheme: Boolean) {
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.auto(
+            lightScrim = Color.TRANSPARENT,
+            darkScrim = Color.TRANSPARENT,
+            detectDarkMode = { isDarkTheme }
+        ),
+        navigationBarStyle = SystemBarStyle.auto(
+            lightScrim = LightPalette.background.toArgb(),
+            darkScrim = DarkPalette.background.toArgb(),
+            detectDarkMode = { isDarkTheme }
+        )
+    )
+}
 
 private val DarkColorScheme = darkColorScheme(
     primary = DarkPalette.accentNeonGreen,
@@ -46,14 +71,15 @@ fun OpenDroidTheme(
     val colorScheme = if (isDarkTheme) DarkColorScheme else LightColorScheme
 
     val view = LocalView.current
-    if (!view.isInEditMode) {
+    val activity = view.context as? ComponentActivity
+    if (!view.isInEditMode && activity != null) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = palette.background.toArgb()
-            window.navigationBarColor = palette.background.toArgb()
+            activity.enableOpenDroidEdgeToEdge(isDarkTheme)
+            val window = activity.window
+            val insetsController = WindowCompat.getInsetsController(window, view)
             // Light status bar icons for dark theme, dark icons for light theme
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDarkTheme
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !isDarkTheme
+            insetsController.isAppearanceLightStatusBars = !isDarkTheme
+            insetsController.isAppearanceLightNavigationBars = !isDarkTheme
         }
     }
 

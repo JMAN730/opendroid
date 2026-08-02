@@ -6,6 +6,9 @@ import androidx.work.WorkerParameters
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelStatus
 import dagger.hilt.EntryPoint
@@ -35,6 +38,7 @@ class ModelDownloadWorker(
     interface WorkerEntryPoint {
         fun modelDao(): ModelDao
         fun okHttpClient(): OkHttpClient
+        fun providerCredentialStore(): ProviderCredentialStore
     }
 
     private val entryPoint = EntryPointAccessors.fromApplication(
@@ -44,6 +48,7 @@ class ModelDownloadWorker(
 
     private val modelDao = entryPoint.modelDao()
     private val okHttpClient = entryPoint.okHttpClient()
+    private val providerCredentialStore = entryPoint.providerCredentialStore()
 
     override suspend fun doWork(): Result {
         val modelId = inputData.getString("model_id") ?: return Result.failure()
@@ -174,9 +179,7 @@ class ModelDownloadWorker(
         val request = Request.Builder()
             .url(downloadUrl)
             .apply {
-                val token = com.opendroid.ai.core.security.SecurePrefs
-                    .get(applicationContext)
-                    .getString("huggingface_token", null)
+                val token = huggingFaceToken()
                 if (!token.isNullOrBlank()) {
                     header("Authorization", "Bearer $token")
                 }
@@ -190,6 +193,17 @@ class ModelDownloadWorker(
         throw error
     } catch (_: Exception) {
         null
+    }
+
+    private fun huggingFaceToken(): String? {
+        providerCredentialStore.migrateLegacyCredentials()
+        return when (
+            val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+        ) {
+            is CredentialStoreResult.Success -> result.value
+            CredentialStoreResult.CredentialsMustBeReentered,
+            CredentialStoreResult.StorageUnavailable -> null
+        }
     }
 
     private suspend fun copyResponse(

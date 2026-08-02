@@ -57,7 +57,7 @@ OpenDroid will **plan** this as 3 steps, **execute** each one, **verify** the re
 | Capability | Description |
 |------------|-------------|
 | **Background Downloader** | Real network downloads (via WorkManager) with Pause/Resume, speed tracking, and ETA |
-| **Secure Authentication** | Encrypted token storage (EncryptedSharedPreferences) to securely fetch gated Hugging Face models |
+| **Secure Authentication** | Direct Android Keystore AES-GCM token storage to securely fetch gated Hugging Face models |
 | **Integrity Verification** | Computes SHA-256 hashes and verifies LiteRT engine loading compatibility before marking READY |
 | **Local Model Import** | Direct offline importing of custom `.task` or `.litertlm` files with JNI verification checks |
 
@@ -145,7 +145,7 @@ com.opendroid.ai
 │   ├── agent/              AgentLoop, PlanManager, IntentClassifier, VisionEngine
 │   ├── llm/                12 LLM providers, fallback chain, prompt engine
 │   ├── memory/             4-tier memory system + notification intelligence
-│   ├── security/           Encrypted SharedPreferences (EncryptedSharedPreferences)
+│   ├── security/           Direct Keystore provider credentials + legacy encrypted preferences
 │   ├── service/            Foreground service, notification listener, boot receiver
 │   └── voice/              Wake word, speech recognition, TTS engine
 │
