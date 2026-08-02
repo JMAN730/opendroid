@@ -2,8 +2,8 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -33,7 +33,7 @@ class InformationActions @Inject constructor() {
             val query = params["query"] ?: return ActionResult(false, null, "query parameter is missing")
             return try {
                 val encQuery = URLEncoder.encode(query, "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$encQuery")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$encQuery".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -101,7 +101,7 @@ class InformationActions @Inject constructor() {
                 }
 
                 val query = URLEncoder.encode("weather in $location", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -125,7 +125,7 @@ class InformationActions @Inject constructor() {
             val topic = params["topic"] ?: "latest news"
             return try {
                 val query = URLEncoder.encode("news $topic", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://news.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://news.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -148,7 +148,7 @@ class InformationActions @Inject constructor() {
             } catch (e: Exception) {
                 // Fallback: Web search calculation
                 val encExpr = URLEncoder.encode(expression, "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$encExpr")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$encExpr".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -188,7 +188,7 @@ class InformationActions @Inject constructor() {
             val to = params["to"] ?: "en"
             return try {
                 val encText = URLEncoder.encode(text, "UTF-8")
-                val uri = Uri.parse("https://translate.google.com/?sl=$from&tl=$to&text=$encText&op=translate")
+                val uri = "https://translate.google.com/?sl=$from&tl=$to&text=$encText&op=translate".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -207,7 +207,7 @@ class InformationActions @Inject constructor() {
             val word = params["word"] ?: return ActionResult(false, null, "word parameter is missing")
             return try {
                 val query = URLEncoder.encode("define $word", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -227,7 +227,7 @@ class InformationActions @Inject constructor() {
             val to = params["to"] ?: ""
             return try {
                 val query = URLEncoder.encode("convert $value $from to $to", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -247,7 +247,7 @@ class InformationActions @Inject constructor() {
             val to = params["to"] ?: ""
             return try {
                 val query = URLEncoder.encode("convert $amount $from to $to", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -265,7 +265,7 @@ class InformationActions @Inject constructor() {
             val symbol = params["symbol"] ?: return ActionResult(false, null, "symbol is missing")
             return try {
                 val query = URLEncoder.encode("stock $symbol", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -282,7 +282,7 @@ class InformationActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val url = params["url"] ?: return ActionResult(false, null, "url is missing")
             return try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -300,7 +300,7 @@ class InformationActions @Inject constructor() {
             val claim = params["claim"] ?: return ActionResult(false, null, "claim is missing")
             return try {
                 val query = URLEncoder.encode("fact check $claim", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)

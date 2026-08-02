@@ -1,6 +1,7 @@
 package com.opendroid.ai.core.permissions
 
 import android.content.Context
+import androidx.core.content.edit
 
 object PermissionAskedStore {
     private const val PREFS_NAME = "permission_asked"
@@ -22,8 +23,6 @@ object PermissionAskedStore {
         val updated = asked(context) + permissions
         context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putStringSet(KEY_ASKED, updated)
-            .apply()
+            .edit { putStringSet(KEY_ASKED, updated) }
     }
 }

@@ -3,11 +3,11 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
-import android.net.Uri
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
 import android.view.KeyEvent
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.util.DeviceCapabilities
@@ -39,12 +39,12 @@ class MediaActions @Inject constructor() {
                 val encQuery = URLEncoder.encode(query, "UTF-8")
                 val intent = when (app.lowercase()) {
                     "spotify" -> {
-                        Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$encQuery")).apply {
+                        Intent(Intent.ACTION_VIEW, "spotify:search:$encQuery".toUri()).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                     }
                     "youtube" -> {
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/search?q=$encQuery")).apply {
+                        Intent(Intent.ACTION_VIEW, "https://music.youtube.com/search?q=$encQuery".toUri()).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                     }
@@ -140,7 +140,7 @@ class MediaActions @Inject constructor() {
             val query = params["query"] ?: ""
             return try {
                 val encQuery = URLEncoder.encode(query, "UTF-8")
-                val uri = Uri.parse("https://www.youtube.com/results?search_query=$encQuery")
+                val uri = "https://www.youtube.com/results?search_query=$encQuery".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     setPackage("com.google.android.youtube")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

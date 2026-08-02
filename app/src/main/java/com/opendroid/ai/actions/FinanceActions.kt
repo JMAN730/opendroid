@@ -2,8 +2,8 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -29,7 +29,7 @@ class FinanceActions @Inject constructor() {
             
             return try {
                 val encNote = URLEncoder.encode(note, "UTF-8")
-                val upiUri = Uri.parse("upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR")
+                val upiUri = "upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }

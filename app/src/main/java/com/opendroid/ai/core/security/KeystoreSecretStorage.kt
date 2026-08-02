@@ -59,11 +59,15 @@ internal class SharedPreferencesSecretRecordStorage(
         throw SecretRecordMalformedException()
     }
 
-    @Suppress("UseKtx") // The Boolean return from commit() is the durability boundary.
+    // The Boolean return from commit() is the durability boundary; edit { }
+    // discards it, so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun write(key: String, value: String): Boolean =
         preferences.edit().putString(key, value).commit()
 
-    @Suppress("UseKtx") // The Boolean return from commit() is the durability boundary.
+    // The Boolean return from commit() is the durability boundary; edit { }
+    // discards it, so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
 
     override fun keys(): Set<String> = preferences.all.keys
@@ -329,7 +333,9 @@ internal class LegacyEncryptedPreferencesSource(
         if (it.contains(key)) it.getBoolean(key, false) else null
     }
 
-    @Suppress("UseKtx") // Migration must observe whether the legacy deletion committed.
+    // Migration must observe whether the legacy deletion committed; edit { }
+    // discards the Boolean from commit(), so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun remove(key: String): SecretRecordResult<Unit> = withPreferences { preferences ->
         if (preferences.edit().remove(key).commit()) Unit else throw LegacyStorageCommitException()
     }
@@ -389,7 +395,9 @@ internal class LegacyPlaintextPreferencesSource(
         }
     }
 
-    @Suppress("UseKtx") // Migration must observe whether the legacy deletion committed.
+    // Migration must observe whether the legacy deletion committed; edit { }
+    // discards the Boolean from commit(), so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun remove(key: String): SecretRecordResult<Unit> = guarded {
         if (!preferences.edit().remove(key).commit()) throw LegacyStorageCommitException()
     }

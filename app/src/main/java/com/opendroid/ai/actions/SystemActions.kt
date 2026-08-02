@@ -15,6 +15,7 @@ import android.net.wifi.WifiManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
@@ -245,7 +246,7 @@ class SystemActions @Inject constructor(
                     ActionResult(true, "Done! Brightness is set to $level%.", null)
                 } else {
                     val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
+                        data = "package:${context.packageName}".toUri()
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -673,14 +674,14 @@ class SystemActions @Inject constructor(
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val appName = params["appName"] ?: return ActionResult(false, null, "appName parameter missing")
             return try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=${Uri.encode(appName)}")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "market://search?q=${Uri.encode(appName)}".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
                 ActionResult(true, "Opening Play Store to get '$appName' for you.", null)
             } catch (e: Exception) {
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=${Uri.encode(appName)}")).apply {
+                    val intent = Intent(Intent.ACTION_VIEW, "https://play.google.com/store/search?q=${Uri.encode(appName)}".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -1085,7 +1086,7 @@ class SystemActions @Inject constructor(
                     chromeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(chromeIntent)
                 } else {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                    val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -1108,7 +1109,7 @@ class SystemActions @Inject constructor(
                     "https://$url"
                 } else url
 
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fullUrl)).apply {
+                val intent = Intent(Intent.ACTION_VIEW, fullUrl.toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -1125,7 +1126,7 @@ class SystemActions @Inject constructor(
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 // Chrome incognito intent
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                     setPackage("com.android.chrome")
                     putExtra("com.android.browser.application_id", "com.android.chrome")
                     putExtra("create_new_tab", true)
@@ -1139,7 +1140,7 @@ class SystemActions @Inject constructor(
                     ActionResult(true, "Opened Chrome in incognito mode!", null)
                 } else {
                     // Fallback: try to open any browser and tell user
-                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                    val fallback = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(fallback)
@@ -1165,7 +1166,7 @@ class SystemActions @Inject constructor(
                 val chromeSettingsIntent = Intent().apply {
                     action = Intent.ACTION_VIEW
                     setPackage("com.android.chrome")
-                    data = Uri.parse("chrome://settings/clearBrowserData")
+                    data = "chrome://settings/clearBrowserData".toUri()
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
 
@@ -1179,7 +1180,7 @@ class SystemActions @Inject constructor(
                 } catch (_: Exception) {
                     // Fallback: open app info for Chrome
                     val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:com.android.chrome")
+                        data = "package:com.android.chrome".toUri()
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     try {

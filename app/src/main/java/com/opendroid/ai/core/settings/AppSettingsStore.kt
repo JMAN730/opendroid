@@ -47,7 +47,6 @@ internal interface AppSettingsRecordStorage {
     fun remove(key: String): Boolean
 }
 
-@Suppress("UseKtx") // The Boolean return from commit() is the durability boundary.
 private class SharedPreferencesAppSettingsRecordStorage(
     private val preferences: SharedPreferences
 ) : AppSettingsRecordStorage {
@@ -56,14 +55,23 @@ private class SharedPreferencesAppSettingsRecordStorage(
     override fun getBoolean(key: String, defaultValue: Boolean): Boolean =
         preferences.getBoolean(key, defaultValue)
 
+    // The Boolean return from commit() is the durability boundary; edit { }
+    // discards it, so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun putBoolean(key: String, value: Boolean): Boolean =
         preferences.edit().putBoolean(key, value).commit()
 
     override fun getString(key: String): String? = preferences.getString(key, null)
 
+    // The Boolean return from commit() is the durability boundary; edit { }
+    // discards it, so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun putString(key: String, value: String): Boolean =
         preferences.edit().putString(key, value).commit()
 
+    // The Boolean return from commit() is the durability boundary; edit { }
+    // discards it, so the KTX idiom cannot express this. See #99.
+    @Suppress("UseKtx")
     override fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
 }
 
