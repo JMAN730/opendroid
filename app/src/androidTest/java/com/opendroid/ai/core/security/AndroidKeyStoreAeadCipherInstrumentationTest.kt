@@ -9,6 +9,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -67,6 +68,11 @@ class AndroidKeyStoreAeadCipherInstrumentationTest {
         )
     }
 
+    // GCM signals tamper with AEADBadTagException, but that is a GeneralSecurityException, so
+    // withKey normalizes it to SecretKeyUnavailableException before it escapes — every unreadable
+    // record routes to the same re-entry recovery regardless of why it was unreadable. These tests
+    // therefore assert the normalized type and pin the cause, which is what proves GCM actually
+    // rejected the ciphertext rather than the key having gone missing.
     @Test
     fun flippedCiphertextByteIsRejectedWithAeadBadTag() {
         val plaintext = "instrumentation-tamper-check".toByteArray()
@@ -76,9 +82,13 @@ class AndroidKeyStoreAeadCipherInstrumentationTest {
         val tampered = encrypted.ciphertext.copyOf()
         tampered[0] = (tampered[0].toInt() xor 0x01).toByte()
 
-        assertThrows(AEADBadTagException::class.java) {
+        val thrown = assertThrows(SecretKeyUnavailableException::class.java) {
             cipher.decrypt(encrypted.iv, tampered, aad)
         }
+        assertTrue(
+            "tamper must be reported by GCM, not by a missing key; was ${thrown.cause}",
+            thrown.cause is AEADBadTagException
+        )
     }
 
     @Test
@@ -86,8 +96,12 @@ class AndroidKeyStoreAeadCipherInstrumentationTest {
         val plaintext = "instrumentation-aad-check".toByteArray()
         val encrypted = cipher.encrypt(plaintext, "correct-credential-id".toByteArray())
 
-        assertThrows(AEADBadTagException::class.java) {
+        val thrown = assertThrows(SecretKeyUnavailableException::class.java) {
             cipher.decrypt(encrypted.iv, encrypted.ciphertext, "wrong-credential-id".toByteArray())
         }
+        assertTrue(
+            "AAD mismatch must be reported by GCM, not by a missing key; was ${thrown.cause}",
+            thrown.cause is AEADBadTagException
+        )
     }
 }

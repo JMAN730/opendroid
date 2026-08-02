@@ -87,7 +87,11 @@ internal interface SecretAeadCipher {
     fun resetForReentry()
 }
 
-internal class SecretKeyUnavailableException : GeneralSecurityException()
+// Carries its cause so a tamper (AEADBadTagException) stays distinguishable from a vanished key in
+// logs and tests. Callers still treat every case the same way — re-entry — so the cause is
+// diagnostic only and must never be surfaced to the user.
+internal class SecretKeyUnavailableException(cause: Throwable? = null) :
+    GeneralSecurityException(cause)
 
 /**
  * AndroidKeyStore-only AES-256/GCM implementation.
@@ -133,10 +137,10 @@ internal class AndroidKeyStoreAeadCipher(
         block(loadOrCreateKey())
     } catch (exception: SecretKeyUnavailableException) {
         throw exception
-    } catch (_: GeneralSecurityException) {
-        throw SecretKeyUnavailableException()
-    } catch (_: ProviderException) {
-        throw SecretKeyUnavailableException()
+    } catch (exception: GeneralSecurityException) {
+        throw SecretKeyUnavailableException(exception)
+    } catch (exception: ProviderException) {
+        throw SecretKeyUnavailableException(exception)
     }
 
     private fun loadOrCreateKey(): SecretKey {
