@@ -720,6 +720,13 @@ class SettingsViewModel @Inject constructor(
 
     private fun clearHuggingFaceVerificationMetadata() {
         // Invoked only from the IO dispatcher because the commit is synchronous.
-        appSettingsStore.setHuggingFaceLastVerified(null)
+        if (!appSettingsStore.setHuggingFaceLastVerified(null)) {
+            // The in-memory value is already reset to "Never"; only the persisted timestamp
+            // survives, so surface it in the log rather than failing the token removal.
+            android.util.Log.w(
+                "SettingsViewModel",
+                "Failed to clear persisted Hugging Face verification timestamp"
+            )
+        }
     }
 }
