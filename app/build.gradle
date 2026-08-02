@@ -137,10 +137,23 @@ android {
         //    recurrence fails the build. A check joins this list in the exact
         //    PR that drives its count to zero, so a burned-down check cannot
         //    silently regress in the gap.
-        // 3. Everything else - warning, not yet gated. `warningsAsErrors true`
-        //    is deliberately deferred to the final burn-down ticket (#100).
+        // 3. Everything else - now gated too: `warningsAsErrors true` closed the
+        //    third tier in #100, once the ungated count reached zero. A new
+        //    warning fails the build, so there is no longer an ungated middle
+        //    ground for findings to accumulate in.
+        //
+        // The `error` list is still meaningful under warningsAsErrors: it pins
+        // intent for checks already burned down, and it promotes informational
+        // hints (e.g. AutoboxingStateCreation), which warningsAsErrors does not
+        // touch.
+        //
+        // Note the baseline still masks whatever it lists, at any tier. Findings
+        // frozen there - the InlinedApi global-actions cluster, an
+        // AutoboxingStateCreation in LogsScreen - are invisible to this gate.
+        // Retiring those means shrinking the baseline, not adding a check here.
         abortOnError = true
         checkReleaseBuilds = true
+        warningsAsErrors = true
         baseline = file("lint-baseline.xml")
         error 'Recycle', 'UnusedResources', 'IconDuplicates', 'UseKtx', 'DefaultLocale',
                 'DuplicateUsesFeature', 'InlinedApi', 'AutoboxingStateCreation'
