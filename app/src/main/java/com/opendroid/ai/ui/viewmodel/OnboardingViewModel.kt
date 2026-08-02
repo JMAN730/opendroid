@@ -1,5 +1,6 @@
 package com.opendroid.ai.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.core.security.LegacyPreferenceMigration
@@ -46,7 +47,10 @@ class OnboardingViewModel @Inject constructor(
             mutableUiState.value = runCatching {
                 legacyPreferenceMigration.await()
                 withContext(Dispatchers.IO) { loadProfile() }
-            }.getOrElse { OnboardingUiState(isLoading = false, storageError = true) }
+            }.getOrElse { throwable ->
+                Log.e(TAG, "Onboarding profile load failed", throwable)
+                OnboardingUiState(isLoading = false, storageError = true)
+            }
         }
     }
 
@@ -68,7 +72,10 @@ class OnboardingViewModel @Inject constructor(
                         UserProfile(name = state.name.trim(), dateOfBirth = state.dateOfBirth.trim())
                     )
                 }
-            }.getOrDefault(ProfileStoreResult.StorageUnavailable)
+            }.getOrElse { throwable ->
+                Log.e(TAG, "Onboarding profile save failed", throwable)
+                ProfileStoreResult.StorageUnavailable
+            }
             if (result is ProfileStoreResult.Success) {
                 mutableUiState.value = mutableUiState.value.copy(
                     profileMustBeReentered = false,
@@ -87,6 +94,7 @@ class OnboardingViewModel @Inject constructor(
             // A failed flag write only means the user sees onboarding again; the profile they
             // just entered is already stored, so it is not worth blocking them here.
             runCatching { withContext(Dispatchers.IO) { appSettingsStore.setOnboardingCompleted(true) } }
+                .onFailure { throwable -> Log.e(TAG, "Onboarding-completed flag write failed", throwable) }
             onCompleted()
         }
     }
@@ -111,4 +119,7 @@ class OnboardingViewModel @Inject constructor(
             OnboardingUiState(isLoading = false, storageError = true)
     }
 
+    private companion object {
+        const val TAG = "OnboardingViewModel"
+    }
 }

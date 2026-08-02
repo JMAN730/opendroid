@@ -104,6 +104,12 @@ android {
         unitTests {
             // Robolectric needs the app's resources and manifest on the JVM.
             includeAndroidResources = true
+            // Plain (non-Robolectric) unit tests run against the unmocked android.jar, so any
+            // Android API call not backed by Robolectric throws by default. KeystoreSecretRecords
+            // now calls android.util.Log at error boundaries (#104); let unmocked calls return
+            // their default value instead of throwing so those boundaries stay testable without
+            // a Log double.
+            returnDefaultValues = true
         }
     }
     sourceSets {

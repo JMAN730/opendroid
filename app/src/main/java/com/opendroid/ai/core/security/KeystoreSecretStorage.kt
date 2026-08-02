@@ -2,6 +2,7 @@ package com.opendroid.ai.core.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -10,7 +11,6 @@ import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.ProviderException
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -96,13 +96,18 @@ internal class SecretKeyUnavailableException : GeneralSecurityException()
  * requests must be able to decrypt without a foreground unlock prompt.
  */
 internal class AndroidKeyStoreAeadCipher(
-    private val keyAlias: String,
-    private val secureRandom: SecureRandom = SecureRandom()
+    private val keyAlias: String
 ) : SecretAeadCipher {
     override fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedSecret = withKey { key ->
-        val iv = ByteArray(GCM_IV_BYTES).also(secureRandom::nextBytes)
+        // AndroidKeyStore rejects a caller-supplied IV at ENCRYPT_MODE (it enforces randomized
+        // encryption so IVs can never be reused); initializing with no GCMParameterSpec lets the
+        // provider generate the IV, which is read back below.
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val iv = cipher.iv
+        check(iv.size == GCM_IV_BYTES) {
+            "AndroidKeyStore returned a ${iv.size}-byte GCM IV, expected $GCM_IV_BYTES"
+        }
         cipher.updateAAD(aad)
         EncryptedSecret(iv, cipher.doFinal(plaintext))
     }
@@ -213,13 +218,18 @@ internal class KeystoreSecretRecords(
     fun read(storageKey: String, aad: String): SecretRecordResult<ByteArray?> {
         val rawRecord = try {
             storage.read(storageKey)
-        } catch (_: SecretRecordMalformedException) {
+        } catch (exception: SecretRecordMalformedException) {
+            Log.e(TAG, "Malformed record for $storageKey", exception)
             return SecretRecordResult.Unrecoverable
-        } catch (_: RuntimeException) {
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Storage unavailable reading $storageKey", exception)
             return SecretRecordResult.StorageUnavailable
         } ?: return SecretRecordResult.Success(null)
 
-        val envelope = SecretEnvelope.decode(rawRecord) ?: return SecretRecordResult.Unrecoverable
+        val envelope = SecretEnvelope.decode(rawRecord) ?: run {
+            Log.e(TAG, "Envelope for $storageKey failed to decode")
+            return SecretRecordResult.Unrecoverable
+        }
         return try {
             SecretRecordResult.Success(
                 cipher.decrypt(
@@ -228,13 +238,16 @@ internal class KeystoreSecretRecords(
                     aad = aad.toByteArray(StandardCharsets.UTF_8)
                 )
             )
-        } catch (_: SecretKeyUnavailableException) {
+        } catch (exception: SecretKeyUnavailableException) {
+            Log.e(TAG, "Key unavailable decrypting $storageKey", exception)
             SecretRecordResult.Unrecoverable
-        } catch (_: GeneralSecurityException) {
+        } catch (exception: GeneralSecurityException) {
             // Includes AES-GCM authentication failure. Do not distinguish tampering from a lost
             // key; both require the value to be entered again.
+            Log.e(TAG, "Decryption failed for $storageKey", exception)
             SecretRecordResult.Unrecoverable
-        } catch (_: IllegalArgumentException) {
+        } catch (exception: IllegalArgumentException) {
+            Log.e(TAG, "Decryption failed for $storageKey", exception)
             SecretRecordResult.Unrecoverable
         }
     }
@@ -247,15 +260,20 @@ internal class KeystoreSecretRecords(
         if (storage.write(storageKey, SecretEnvelope.encode(encrypted))) {
             SecretRecordResult.Success(Unit)
         } else {
+            Log.e(TAG, "Storage write did not commit for $storageKey")
             SecretRecordResult.StorageUnavailable
         }
-    } catch (_: SecretKeyUnavailableException) {
+    } catch (exception: SecretKeyUnavailableException) {
+        Log.e(TAG, "Key unavailable encrypting $storageKey", exception)
         SecretRecordResult.Unrecoverable
-    } catch (_: GeneralSecurityException) {
+    } catch (exception: GeneralSecurityException) {
+        Log.e(TAG, "Encryption failed for $storageKey", exception)
         SecretRecordResult.Unrecoverable
-    } catch (_: IllegalArgumentException) {
+    } catch (exception: IllegalArgumentException) {
+        Log.e(TAG, "Encryption failed for $storageKey", exception)
         SecretRecordResult.Unrecoverable
-    } catch (_: RuntimeException) {
+    } catch (exception: RuntimeException) {
+        Log.e(TAG, "Storage unavailable writing $storageKey", exception)
         SecretRecordResult.StorageUnavailable
     }
 
@@ -264,23 +282,31 @@ internal class KeystoreSecretRecords(
         if (storage.remove(storageKey)) {
             SecretRecordResult.Success(Unit)
         } else {
+            Log.e(TAG, "Storage remove did not commit for $storageKey")
             SecretRecordResult.StorageUnavailable
         }
-    } catch (_: RuntimeException) {
+    } catch (exception: RuntimeException) {
+        Log.e(TAG, "Storage unavailable removing $storageKey", exception)
         SecretRecordResult.StorageUnavailable
     }
 
     fun keys(): SecretRecordResult<Set<String>> = try {
         SecretRecordResult.Success(storage.keys())
-    } catch (_: RuntimeException) {
+    } catch (exception: RuntimeException) {
+        Log.e(TAG, "Storage unavailable listing keys", exception)
         SecretRecordResult.StorageUnavailable
     }
 
     fun resetKeyMaterial(): SecretRecordResult<Unit> = try {
         cipher.resetForReentry()
         SecretRecordResult.Success(Unit)
-    } catch (_: GeneralSecurityException) {
+    } catch (exception: GeneralSecurityException) {
+        Log.e(TAG, "Key material reset failed", exception)
         SecretRecordResult.Unrecoverable
+    }
+
+    private companion object {
+        const val TAG = "KeystoreSecretRecords"
     }
 }
 
