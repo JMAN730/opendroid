@@ -142,7 +142,8 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         baseline = file("lint-baseline.xml")
-        error 'Recycle', 'UnusedResources', 'IconDuplicates', 'UseKtx', 'DefaultLocale'
+        error 'Recycle', 'UnusedResources', 'IconDuplicates', 'UseKtx', 'DefaultLocale',
+                'DuplicateUsesFeature', 'InlinedApi', 'AutoboxingStateCreation'
     }
 }
 
