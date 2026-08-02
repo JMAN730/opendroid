@@ -74,9 +74,16 @@ class AnnotationProcessorOutputTest {
         // @Database has BINARY retention, so the declared version is not readable
         // by reflection - take it from the source of truth instead.
         val source = moduleFile("src/main/java/com/opendroid/ai/data/db/OpenDroidDatabase.kt")
-        val version = Regex("""version\s*=\s*(\d+)""").find(source.readText())
+        // Anchored to the @Database argument list: a bare `version = N` search would
+        // take the first match anywhere in the file, so a comment or an unrelated
+        // constant above the annotation would silently point this test at the wrong
+        // schema. `[^)]*` keeps the match inside the annotation's own parentheses.
+        val version = Regex("""@Database\s*\([^)]*?\bversion\s*=\s*(\d+)""", RegexOption.DOT_MATCHES_ALL)
+            .find(source.readText())
             ?.groupValues?.get(1)
-            ?: throw AssertionError("Could not read the declared version from ${source.path}")
+            ?: throw AssertionError(
+                "Could not read the @Database version from ${source.path}"
+            )
 
         val schema = moduleFile("schemas/com.opendroid.ai.data.db.OpenDroidDatabase/$version.json")
         assertTrue(
