@@ -121,16 +121,22 @@ android {
         }
     }
     lint {
-        // Pre-existing findings are frozen in the baseline so they do not
-        // block merges; anything NEW fails the build. Shrink the baseline
-        // over time (delete entries, fix, repeat) - never regenerate it to
-        // absorb new findings.
+        // Three-tier lint gate. See app/build.gradle (this block) for the
+        // authoritative policy; ROADMAP.md's Lint row points here.
+        //
+        // 1. Baseline (lint-baseline.xml) - frozen legacy findings. Shrink-only:
+        //    delete entries as they are fixed, never regenerate it to absorb
+        //    new findings.
+        // 2. `error` list below - checks burned down to zero. Hard-gated: any
+        //    recurrence fails the build. A check joins this list in the exact
+        //    PR that drives its count to zero, so a burned-down check cannot
+        //    silently regress in the gap.
+        // 3. Everything else - warning, not yet gated. `warningsAsErrors true`
+        //    is deliberately deferred to the final burn-down ticket (#100).
         abortOnError = true
         checkReleaseBuilds = true
         baseline = file("lint-baseline.xml")
-        // A check joins this list in the PR that drives it to zero, so a
-        // burned-down check cannot silently regress.
-        error 'UseKtx'
+        error 'Recycle', 'UnusedResources', 'IconDuplicates', 'UseKtx'
     }
 }
 

@@ -165,6 +165,9 @@ class ModelRepository @Inject constructor(
         )
     }
 
+    // lint false positive: the InputStream is closed by `.use { }` below, but
+    // the Recycle detector does not model Kotlin's use() inlining. See #67.
+    @Suppress("Recycle")
     suspend fun importLocalModel(modelId: String, uri: android.net.Uri): ImportLocalModelResult =
         withContext(Dispatchers.IO) {
             val spec = OnDeviceModelRegistry.findById(modelId)
