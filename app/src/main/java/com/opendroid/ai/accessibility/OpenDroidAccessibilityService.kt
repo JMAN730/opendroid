@@ -51,6 +51,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var nodeTraversal: AccessibilityNodeTraversal
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var windowManager: WindowManager? = null
     private var floatingView: FloatingWidgetView? = null
@@ -400,27 +403,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     fun findAndClick(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-        for (node in nodes) {
-            if (node.isClickable) {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                node.recycle()
-                return true
-            }
-            // Try parent node if the leaf is not clickable
-            var parent = node.parent
-            while (parent != null) {
-                if (parent.isClickable) {
-                    parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    parent.recycle()
-                    node.recycle()
-                    return true
-                }
-                parent = parent.parent
-            }
-            node.recycle()
-        }
-        return false
+        return nodeTraversal.findAndClick(rootNode, text)
     }
 
     fun findAndClickById(viewId: String): Boolean {
@@ -509,26 +492,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     private fun performSubmitFallback(): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val result = findSubmitNode(rootNode, imeSubmitLabels)
+        val result = nodeTraversal.findAndClickSubmitControl(rootNode, imeSubmitLabels)
         rootNode.recycle()
         return result
-    }
-
-    private fun findSubmitNode(node: AccessibilityNodeInfo, labels: List<String>): Boolean {
-        val text = node.text?.toString()?.lowercase()
-        val contentDesc = node.contentDescription?.toString()?.lowercase()
-        if (node.isClickable && (labels.contains(text) || labels.contains(contentDesc))) {
-            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            if (findSubmitNode(child, labels)) {
-                child.recycle()
-                return true
-            }
-            child.recycle()
-        }
-        return false
     }
 
     fun performScroll(forward: Boolean): Boolean {
@@ -572,27 +538,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     fun getScreenText(): String {
         val rootNode = rootInActiveWindow ?: return ""
-        val sb = StringBuilder()
-        extractTextFromNode(rootNode, sb)
+        val text = nodeTraversal.screenText(rootNode)
         rootNode.recycle()
-        return sb.toString()
-    }
-
-    private fun extractTextFromNode(node: AccessibilityNodeInfo, sb: StringBuilder) {
-        val nodeText = node.text?.toString()
-        val contentDesc = node.contentDescription?.toString()
-        
-        if (!nodeText.isNullOrEmpty()) {
-            sb.append(nodeText).append("\n")
-        } else if (!contentDesc.isNullOrEmpty()) {
-            sb.append(contentDesc).append("\n")
-        }
-        
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            extractTextFromNode(child, sb)
-            child.recycle()
-        }
+        return text
     }
 
     suspend fun takeScreenshotAndEncode(): String? {
