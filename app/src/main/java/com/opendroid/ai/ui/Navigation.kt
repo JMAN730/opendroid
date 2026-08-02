@@ -81,19 +81,22 @@ fun OpenDroidNavigation(
         modifier = Modifier.fillMaxSize().background(AppTheme.colors.background)
     ) {
         composable(OpenDroidRoutes.SPLASH) {
-            val context = LocalContext.current
-            SplashScreen(
-                onNavigateNext = {
-                    val isOnboardingCompleted = com.opendroid.ai.core.security.SecurePrefs
-                        .getOrNull(context)
-                        // The legacy store cannot tell us safely; take the non-security-critical
-                        // main route so the credential recovery state remains reachable.
-                        ?.getBoolean("onboarding_completed", false)
-                        ?: true
+            val startupViewModel: StartupViewModel = hiltViewModel()
+            val startDestination by startupViewModel.startDestination.collectAsState()
+            var splashFinished by remember { mutableStateOf(false) }
 
-                    navController.navigateAfterSplash(isOnboardingCompleted)
+            SplashScreen(onNavigateNext = { splashFinished = true })
+
+            // The destination is decided off the main thread, so wait for both the animation and
+            // the decrypted profile check rather than guessing a route.
+            LaunchedEffect(splashFinished, startDestination) {
+                val destination = startDestination
+                if (splashFinished && destination != null) {
+                    navController.navigateAfterSplash(
+                        isOnboardingCompleted = destination == StartDestination.MAIN
+                    )
                 }
-            )
+            }
         }
 
         composable(OpenDroidRoutes.ONBOARDING) {

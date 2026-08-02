@@ -4,6 +4,8 @@ import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.ConversationRepository
+import com.opendroid.ai.core.security.ProfileStoreResult
+import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.data.repository.MemoryRepository
 import android.content.Context
 import android.util.Log
@@ -25,6 +27,7 @@ class MemoryManager @Inject constructor(
     private val conversationRepository: ConversationRepository,
     private val memoryRepository: MemoryRepository,
     private val notificationIntelligence: NotificationIntelligence,
+    private val userProfileStore: UserProfileStore,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json { prettyPrint = true }
@@ -69,10 +72,11 @@ class MemoryManager @Inject constructor(
             .filter { memoryExtractor.shouldStoreInSemanticMemory(it.key) && memoryExtractor.shouldStoreInSemanticMemory(it.value) }
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
-        // Read user info from EncryptedSharedPreferences
-        val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.getOrNull(context)
-        val userName = sharedPrefs?.getString("user_name", "") ?: ""
-        val userDob = sharedPrefs?.getString("user_dob", "") ?: ""
+        // Read user info from the direct-Keystore profile store. An unreadable profile
+        // contributes nothing to the prompt rather than falling back to a plaintext copy.
+        val profile = (userProfileStore.read() as? ProfileStoreResult.Success)?.value
+        val userName = profile?.name.orEmpty()
+        val userDob = profile?.dateOfBirth.orEmpty()
 
         val userFactsList = mutableListOf<String>()
         if (userName.isNotEmpty()) {

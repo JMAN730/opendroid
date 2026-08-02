@@ -68,7 +68,7 @@ class SettingsRepository internal constructor(
 
     init {
         if (runStartupMigration) {
-            // Legacy EncryptedSharedPreferences credentials are imported before DataStore
+            // Legacy encrypted-preference credentials are imported before DataStore
             // secrets are stripped. If either store is unavailable, updateConfig still strips
             // plaintext rather than using it as a recovery fallback.
             CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {

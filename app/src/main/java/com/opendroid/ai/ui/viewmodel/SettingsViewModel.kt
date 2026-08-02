@@ -34,6 +34,7 @@ import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.settings.AppSettingsStore
 import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
@@ -55,7 +56,10 @@ class SettingsViewModel @Inject constructor(
     private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>,
     val modelRepository: com.opendroid.ai.data.repository.ModelRepository,
     private val okHttpClient: OkHttpClient,
-    private val providerCredentialStore: ProviderCredentialStore
+    private val providerCredentialStore: ProviderCredentialStore,
+    // The verification timestamp says when a token was last checked, never what the token is,
+    // so it lives with ordinary settings rather than in encrypted storage.
+    private val appSettingsStore: AppSettingsStore
 ) : ViewModel() {
 
     private val _huggingFaceToken = MutableStateFlow("")
@@ -94,11 +98,6 @@ class SettingsViewModel @Inject constructor(
     private var customEndpointJob: Job? = null
 
     private var isLoaded = false
-    // #79 owns migration of this non-provider verification metadata. A null legacy store keeps
-    // the provider-credential recovery UI reachable when its old keyset cannot be opened.
-    private val legacySecurePrefs by lazy {
-        com.opendroid.ai.core.security.SecurePrefs.getOrNull(context)
-    }
 
     val providerCredentialRecoveryState = providerCredentialStore.recoveryState
     val providerCredentialPersistenceState = settingsRepository.providerCredentialPersistenceState
@@ -114,7 +113,7 @@ class SettingsViewModel @Inject constructor(
                 CredentialStoreResult.StorageUnavailable -> ""
             }
             val lastVerified =
-                legacySecurePrefs?.getString(HUGGING_FACE_LAST_VERIFIED, "Never") ?: "Never"
+                appSettingsStore.huggingFaceLastVerified() ?: "Never"
             withContext(Dispatchers.Main.immediate) {
                 _huggingFaceToken.value = token
                 _huggingFaceLastVerified.value = lastVerified
@@ -219,9 +218,15 @@ class SettingsViewModel @Inject constructor(
                         val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
                         val dateStr = "Today " + sdf.format(java.util.Date())
                         _huggingFaceLastVerified.value = dateStr
-                        legacySecurePrefs?.edit()
-                            ?.putString(HUGGING_FACE_LAST_VERIFIED, dateStr)
-                            ?.apply()
+                        if (!appSettingsStore.setHuggingFaceLastVerified(dateStr)) {
+                            // The in-memory value still reflects this verification; only the
+                            // persisted timestamp is stale, so surface it in the log rather than
+                            // interrupting a successful token check.
+                            android.util.Log.w(
+                                "SettingsViewModel",
+                                "Failed to persist Hugging Face verification timestamp"
+                            )
+                        }
                     } else if (response.code == 401) {
                         _huggingFaceValidationStatus.value = "Invalid"
                     } else {
@@ -714,13 +719,14 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun clearHuggingFaceVerificationMetadata() {
-        // Invoked only from the IO dispatcher because legacy encrypted preferences can block.
-        legacySecurePrefs?.edit()
-            ?.remove(HUGGING_FACE_LAST_VERIFIED)
-            ?.apply()
-    }
-
-    private companion object {
-        const val HUGGING_FACE_LAST_VERIFIED = "huggingface_last_verified"
+        // Invoked only from the IO dispatcher because the commit is synchronous.
+        if (!appSettingsStore.setHuggingFaceLastVerified(null)) {
+            // The in-memory value is already reset to "Never"; only the persisted timestamp
+            // survives, so surface it in the log rather than failing the token removal.
+            android.util.Log.w(
+                "SettingsViewModel",
+                "Failed to clear persisted Hugging Face verification timestamp"
+            )
+        }
     }
 }
