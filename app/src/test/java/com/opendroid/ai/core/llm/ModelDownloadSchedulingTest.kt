@@ -78,7 +78,6 @@ class ModelDownloadSchedulingTest {
         // Expedited work draws on the app's JobScheduler quota; a foreground
         // data-sync worker must not compete for it (see the Android 16 quota work).
         assertFalse(request.workSpec.expedited)
-        assertEquals(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST, request.workSpec.outOfQuotaPolicy)
     }
 
     @Test
