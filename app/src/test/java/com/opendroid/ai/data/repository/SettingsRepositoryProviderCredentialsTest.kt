@@ -65,7 +65,7 @@ class SettingsRepositoryProviderCredentialsTest {
     }
 
     @Test
-    fun `unavailable credential storage never uses persisted DataStore secrets as a fallback`() = runBlocking {
+    fun `unavailable credential storage retains prior DataStore source but never exposes it as a fallback`() = runBlocking {
         val dataStore = newDataStore()
         val credentials = InMemoryProviderCredentialStore(unavailable = true)
         val plaintextSecret = "sk-must-not-survive-keystore-failure"
@@ -79,10 +79,13 @@ class SettingsRepositoryProviderCredentialsTest {
         }
         val repository = SettingsRepository(dataStore, credentials, runStartupMigration = false)
 
-        repository.updateConfig { it }
+        assertEquals(
+            ProviderCredentialPersistenceState.CredentialsMustBeReentered,
+            repository.updateConfig { it }
+        )
 
         val persistedJson = dataStore.data.first()[LLM_CONFIG_KEY].orEmpty()
-        assertFalse(persistedJson.contains(plaintextSecret))
+        assertTrue(persistedJson.contains(plaintextSecret))
         assertTrue(repository.llmConfig.first().apiKeys.isEmpty())
         assertEquals("", repository.llmConfig.first().elevenLabsApiKey)
         assertEquals(
@@ -103,12 +106,68 @@ class SettingsRepositoryProviderCredentialsTest {
         }
         val repository = SettingsRepository(dataStore, credentials, runStartupMigration = false)
 
-        repository.updateConfig { it }
+        assertEquals(
+            ProviderCredentialPersistenceState.CredentialsMustBeReentered,
+            repository.updateConfig { it }
+        )
 
         val persistedJson = dataStore.data.first()[LLM_CONFIG_KEY].orEmpty()
-        assertFalse(persistedJson.contains(plaintextSecret))
+        assertTrue(persistedJson.contains(plaintextSecret))
         assertTrue(credentials.values.isEmpty())
         assertTrue(repository.llmConfig.first().apiKeys.isEmpty())
+    }
+
+    @Test
+    fun `storage unavailable keeps the prior DataStore credential source unchanged`() = runBlocking {
+        val dataStore = newDataStore()
+        val credentials = InMemoryProviderCredentialStore(failMutationAt = 1)
+        val previousSecret = "sk-existing-source-must-not-be-lost"
+        val previousJson = Json.encodeToString(
+            LLMConfig(apiKeys = mapOf("OpenAI" to previousSecret), elevenLabsVoiceId = "voice-id")
+        )
+        dataStore.edit { preferences -> preferences[LLM_CONFIG_KEY] = previousJson }
+        val repository = SettingsRepository(dataStore, credentials, runStartupMigration = false)
+
+        assertEquals(
+            ProviderCredentialPersistenceState.StorageUnavailable,
+            repository.updateConfig { it }
+        )
+
+        assertEquals(previousJson, dataStore.data.first()[LLM_CONFIG_KEY])
+        assertEquals(
+            ProviderCredentialPersistenceState.StorageUnavailable,
+            repository.providerCredentialPersistenceState.value
+        )
+        assertTrue(credentials.values.isEmpty())
+        assertTrue(repository.llmConfig.first().apiKeys.isEmpty())
+    }
+
+    @Test
+    fun `partial direct-store failure rolls back prior mutations and leaves DataStore unchanged`() = runBlocking {
+        val dataStore = newDataStore()
+        val openAi = ProviderCredentialId.ApiKey("OpenAI")
+        val credentials = InMemoryProviderCredentialStore(
+            initialValues = mapOf(openAi to "old-openai-secret"),
+            failMutationAt = 2
+        )
+        val previousJson = Json.encodeToString(LLMConfig(elevenLabsVoiceId = "voice-id"))
+        dataStore.edit { preferences -> preferences[LLM_CONFIG_KEY] = previousJson }
+        val repository = SettingsRepository(dataStore, credentials, runStartupMigration = false)
+
+        assertEquals(
+            ProviderCredentialPersistenceState.StorageUnavailable,
+            repository.updateConfig {
+                it.copy(
+                    apiKeys = mapOf("OpenAI" to "new-openai-secret"),
+                    elevenLabsApiKey = "new-elevenlabs-secret"
+                )
+            }
+        )
+
+        assertEquals(previousJson, dataStore.data.first()[LLM_CONFIG_KEY])
+        assertEquals("old-openai-secret", credentials.values[openAi])
+        assertFalse(credentials.values.containsKey(ProviderCredentialId.ElevenLabsApiKey))
+        assertTrue(repository.llmConfig.first().apiKeys["OpenAI"] == "old-openai-secret")
     }
 
     private fun newDataStore() = PreferenceDataStoreFactory.create(
@@ -122,9 +181,12 @@ class SettingsRepositoryProviderCredentialsTest {
 
     private class InMemoryProviderCredentialStore(
         private val unavailable: Boolean = false,
-        recoveryRequired: Boolean = false
+        recoveryRequired: Boolean = false,
+        initialValues: Map<ProviderCredentialId, String> = emptyMap(),
+        private val failMutationAt: Int? = null
     ) : ProviderCredentialStore {
-        val values = mutableMapOf<ProviderCredentialId, String>()
+        val values = initialValues.toMutableMap()
+        private var mutationCount = 0
         private val mutableRecoveryState = MutableStateFlow<ProviderCredentialRecoveryState>(
             if (recoveryRequired) {
                 ProviderCredentialRecoveryState.CredentialsMustBeReentered
@@ -148,7 +210,7 @@ class SettingsRepositoryProviderCredentialsTest {
             credential: ProviderCredentialId,
             value: String
         ): CredentialStoreResult<Unit> {
-            unavailableResult<Unit>()?.let { return it }
+            mutationFailureResult()?.let { return it }
             if (value.isBlank()) {
                 values.remove(credential)
             } else {
@@ -158,7 +220,7 @@ class SettingsRepositoryProviderCredentialsTest {
         }
 
         override fun remove(credential: ProviderCredentialId): CredentialStoreResult<Unit> {
-            unavailableResult<Unit>()?.let { return it }
+            mutationFailureResult()?.let { return it }
             values.remove(credential)
             return CredentialStoreResult.Success(Unit)
         }
@@ -175,6 +237,13 @@ class SettingsRepositoryProviderCredentialsTest {
             if (!unavailable) return null
             mutableRecoveryState.value = ProviderCredentialRecoveryState.CredentialsMustBeReentered
             return CredentialStoreResult.CredentialsMustBeReentered
+        }
+
+        private fun mutationFailureResult(): CredentialStoreResult<Unit>? {
+            unavailableResult<Unit>()?.let { return it }
+            mutationCount += 1
+            if (mutationCount == failMutationAt) return CredentialStoreResult.StorageUnavailable
+            return null
         }
     }
 

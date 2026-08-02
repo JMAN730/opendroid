@@ -42,6 +42,7 @@ import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
+import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
@@ -83,6 +84,7 @@ fun SettingsScreen(
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
     val providerCredentialRecoveryState by viewModel.providerCredentialRecoveryState.collectAsState()
+    val providerCredentialPersistenceState by viewModel.providerCredentialPersistenceState.collectAsState()
 
     val providers = listOf(
         "Google Gemini",
@@ -175,6 +177,36 @@ fun SettingsScreen(
                             ) {
                                 Text("Clear unavailable credentials", color = DarkBackground)
                             }
+                        }
+                    }
+                }
+            }
+
+            if (providerCredentialPersistenceState ==
+                ProviderCredentialPersistenceState.StorageUnavailable
+            ) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "CREDENTIALS WERE NOT SAVED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Secure credential storage is unavailable. Existing settings " +
+                                    "were preserved; check device storage and try again.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
                         }
                     }
                 }

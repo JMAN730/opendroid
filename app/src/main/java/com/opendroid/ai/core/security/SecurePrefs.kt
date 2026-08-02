@@ -31,16 +31,8 @@ object SecurePrefs {
      * The encrypted file is not modified; provider credential recovery is exposed separately by
      * [ProviderCredentialStore].
      */
-    fun getOrNull(context: Context): SharedPreferences? = try {
+    fun getOrNull(context: Context): SharedPreferences? = legacyPreferenceAccessOrNull {
         get(context)
-    } catch (_: java.security.GeneralSecurityException) {
-        null
-    } catch (_: java.io.IOException) {
-        null
-    } catch (_: SecurityException) {
-        null
-    } catch (_: IllegalStateException) {
-        null
     }
 
     private fun buildEncryptedPrefs(context: Context): SharedPreferences {
@@ -58,6 +50,26 @@ object SecurePrefs {
     }
 
     /**
+     * Centralizes the narrow recovery boundary for callers whose legacy data is optional.
+     * This deliberately does not recreate, delete, or downgrade the encrypted preference file.
+     */
+    internal fun <T> legacyPreferenceAccessOrNull(access: () -> T): T? = try {
+        access()
+    } catch (_: java.security.GeneralSecurityException) {
+        null
+    } catch (_: java.io.IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    } catch (_: IllegalStateException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: ClassCastException) {
+        null
+    }
+
+    /**
      * One-time migration from old plaintext "opendroid_prefs" to legacy encrypted storage.
      *
      * This remains for non-provider data. Provider credential migration is performed exclusively
@@ -66,17 +78,7 @@ object SecurePrefs {
      */
     fun migrateFromPlaintext(context: Context) {
         val oldPrefs = context.getSharedPreferences("opendroid_prefs", Context.MODE_PRIVATE)
-        val securePrefs = try {
-            get(context)
-        } catch (_: java.security.GeneralSecurityException) {
-            return
-        } catch (_: java.io.IOException) {
-            return
-        } catch (_: SecurityException) {
-            return
-        } catch (_: IllegalStateException) {
-            return
-        }
+        val securePrefs = getOrNull(context) ?: return
 
         // Only migrate if old prefs have data and secure prefs don't yet
         if (oldPrefs.all.isNotEmpty() && !securePrefs.contains("migration_done")) {

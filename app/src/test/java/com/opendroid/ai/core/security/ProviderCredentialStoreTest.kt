@@ -1,6 +1,7 @@
 package com.opendroid.ai.core.security
 
 import java.security.SecureRandom
+import java.security.GeneralSecurityException
 import java.util.Base64
 import java.io.File
 import javax.crypto.Cipher
@@ -78,6 +79,20 @@ class ProviderCredentialStoreTest {
 
         records.records[credential.storageKey] = "v1.not-base64"
         assertEquals(CredentialStoreResult.CredentialsMustBeReentered, store.read(credential))
+    }
+
+    @Test
+    fun `non string direct record requires credential reentry so recovery UI is reachable`() {
+        val records = InMemoryCredentialRecords()
+        val credential = ProviderCredentialId.HuggingFaceToken
+        records.malformedKeys += credential.storageKey
+        val store = newStore(records = records)
+
+        assertEquals(CredentialStoreResult.CredentialsMustBeReentered, store.read(credential))
+        assertEquals(
+            ProviderCredentialRecoveryState.CredentialsMustBeReentered,
+            store.recoveryState.value
+        )
     }
 
     @Test
@@ -187,7 +202,10 @@ class ProviderCredentialStoreTest {
     fun `backup rules exclude the shared preference domain used by provider credential envelopes`() {
         val backupRules = File("src/main/res/xml/backup_rules.xml").readText()
         val dataExtractionRules = File("src/main/res/xml/data_extraction_rules.xml").readText()
+        val manifest = File("src/main/AndroidManifest.xml").readText()
 
+        assertTrue(manifest.contains("android:fullBackupContent=\"@xml/backup_rules\""))
+        assertTrue(manifest.contains("android:dataExtractionRules=\"@xml/data_extraction_rules\""))
         assertTrue(backupRules.contains("<exclude domain=\"sharedpref\" path=\".\"/>"))
         assertTrue(dataExtractionRules.contains("<cloud-backup>"))
         assertTrue(dataExtractionRules.contains("<device-transfer>"))
@@ -196,6 +214,15 @@ class ProviderCredentialStoreTest {
             "<exclude domain=\"sharedpref\" path=\".\"/>".toRegex()
                 .findAll(dataExtractionRules)
                 .count()
+        )
+    }
+
+    @Test
+    fun `unreadable legacy preferences resolve to a safe null without a plaintext fallback`() {
+        assertNull(
+            SecurePrefs.legacyPreferenceAccessOrNull<Any> {
+                throw GeneralSecurityException("legacy keyset unavailable")
+            }
         )
     }
 
@@ -210,8 +237,12 @@ class ProviderCredentialStoreTest {
         val events: MutableList<String> = mutableListOf()
     ) : CredentialRecordStorage {
         val records = linkedMapOf<String, String>()
+        val malformedKeys = mutableSetOf<String>()
 
-        override fun read(key: String): String? = records[key]
+        override fun read(key: String): String? {
+            if (key in malformedKeys) throw CredentialRecordMalformedException()
+            return records[key]
+        }
 
         override fun write(key: String, value: String): Boolean {
             events += "destination-write"

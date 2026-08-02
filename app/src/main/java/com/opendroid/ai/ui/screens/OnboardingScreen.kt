@@ -35,10 +35,11 @@ enum class OnboardingStage {
 @Composable
 fun OnboardingScreen(onFinished: () -> Unit) {
     val context = LocalContext.current
-    val sharedPrefs = remember { com.opendroid.ai.core.security.SecurePrefs.get(context) }
+    // An unreadable legacy keyset must not crash the recovery path or cause a plaintext write.
+    val sharedPrefs = remember { com.opendroid.ai.core.security.SecurePrefs.getOrNull(context) }
 
-    var name by remember { mutableStateOf(sharedPrefs.getString("user_name", "") ?: "") }
-    var dob by remember { mutableStateOf(sharedPrefs.getString("user_dob", "") ?: "") }
+    var name by remember { mutableStateOf(sharedPrefs?.getString("user_name", "") ?: "") }
+    var dob by remember { mutableStateOf(sharedPrefs?.getString("user_dob", "") ?: "") }
     var stage by remember {
         mutableStateOf(
             if (name.isNotBlank() && dob.isNotBlank()) {
@@ -78,10 +79,10 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                         if (name.isBlank() || dob.isBlank()) {
                             showError = true
                         } else {
-                            sharedPrefs.edit()
-                                .putString("user_name", name)
-                                .putString("user_dob", dob)
-                                .apply()
+                            sharedPrefs?.edit()
+                                ?.putString("user_name", name)
+                                ?.putString("user_dob", dob)
+                                ?.apply()
                             stage = OnboardingStage.PERMISSION_PROMPT
                         }
                     },
@@ -100,7 +101,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                 PermissionsPanel(
                     padding = padding,
                     onFinished = {
-                        sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
+                        sharedPrefs?.edit()?.putBoolean("onboarding_completed", true)?.apply()
                         onFinished()
                     }
                 )

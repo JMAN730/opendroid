@@ -34,6 +34,7 @@ import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -41,6 +42,8 @@ import dagger.Lazy
 import com.opendroid.ai.data.models.ChatMessage
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 @HiltViewModel
@@ -98,20 +101,27 @@ class SettingsViewModel @Inject constructor(
     }
 
     val providerCredentialRecoveryState = providerCredentialStore.recoveryState
+    val providerCredentialPersistenceState = settingsRepository.providerCredentialPersistenceState
 
     init {
-        providerCredentialStore.migrateLegacyCredentials()
-        _huggingFaceToken.value = when (
-            val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
-        ) {
-            is CredentialStoreResult.Success -> result.value.orEmpty()
-            CredentialStoreResult.CredentialsMustBeReentered,
-            CredentialStoreResult.StorageUnavailable -> ""
-        }
-        _huggingFaceLastVerified.value =
-            legacySecurePrefs?.getString(HUGGING_FACE_LAST_VERIFIED, "Never") ?: "Never"
-        if (_huggingFaceToken.value.isNotBlank()) {
-            _huggingFaceValidationStatus.value = "Token Required"
+        viewModelScope.launch(Dispatchers.IO) {
+            providerCredentialStore.migrateLegacyCredentials()
+            val token = when (
+                val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+            ) {
+                is CredentialStoreResult.Success -> result.value.orEmpty()
+                CredentialStoreResult.CredentialsMustBeReentered,
+                CredentialStoreResult.StorageUnavailable -> ""
+            }
+            val lastVerified =
+                legacySecurePrefs?.getString(HUGGING_FACE_LAST_VERIFIED, "Never") ?: "Never"
+            withContext(Dispatchers.Main.immediate) {
+                _huggingFaceToken.value = token
+                _huggingFaceLastVerified.value = lastVerified
+                if (token.isNotBlank()) {
+                    _huggingFaceValidationStatus.value = "Token Required"
+                }
+            }
         }
         viewModelScope.launch {
             settingsRepository.llmConfig.collect { config ->
@@ -153,10 +163,12 @@ class SettingsViewModel @Inject constructor(
     fun updateHuggingFaceToken(token: String) {
         _huggingFaceToken.value = token
         _huggingFaceValidationStatus.value = "Token Required"
-        if (token.isBlank()) {
-            providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
-        } else {
-            providerCredentialStore.write(ProviderCredentialId.HuggingFaceToken, token)
+        viewModelScope.launch(Dispatchers.IO) {
+            if (token.isBlank()) {
+                providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+            } else {
+                providerCredentialStore.write(ProviderCredentialId.HuggingFaceToken, token)
+            }
         }
     }
 
@@ -164,19 +176,25 @@ class SettingsViewModel @Inject constructor(
         _huggingFaceToken.value = ""
         _huggingFaceValidationStatus.value = "Token Required"
         _huggingFaceLastVerified.value = "Never"
-        providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
-        clearHuggingFaceVerificationMetadata()
+        viewModelScope.launch(Dispatchers.IO) {
+            providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+            clearHuggingFaceVerificationMetadata()
+        }
     }
 
     /** Removes only unavailable provider credential records so the user can enter new values. */
     fun resetProviderCredentialsForReentry() {
-        if (settingsRepository.resetProviderCredentialsForReentry() is CredentialStoreResult.Success) {
-            _huggingFaceToken.value = ""
-            _huggingFaceValidationStatus.value = "Token Required"
-            _llmConfig.value = _llmConfig.value.copy(
-                apiKeys = emptyMap(),
-                elevenLabsApiKey = ""
-            )
+        viewModelScope.launch(Dispatchers.IO) {
+            if (settingsRepository.resetProviderCredentialsForReentry() is CredentialStoreResult.Success) {
+                withContext(Dispatchers.Main.immediate) {
+                    _huggingFaceToken.value = ""
+                    _huggingFaceValidationStatus.value = "Token Required"
+                    _llmConfig.value = _llmConfig.value.copy(
+                        apiKeys = emptyMap(),
+                        elevenLabsApiKey = ""
+                    )
+                }
+            }
         }
     }
 
@@ -696,6 +714,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun clearHuggingFaceVerificationMetadata() {
+        // Invoked only from the IO dispatcher because legacy encrypted preferences can block.
         legacySecurePrefs?.edit()
             ?.remove(HUGGING_FACE_LAST_VERIFIED)
             ?.apply()
