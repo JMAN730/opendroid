@@ -7,14 +7,14 @@ Welcome to the OpenDroid development guide. This document serves as the technica
 ## 1. Prerequisites & Environment Setup
 
 To build and compile OpenDroid, ensure your workstation meets the following requirements:
-* **JDK:** Version 21 exactly (Java SE Development Kit) — Gradle 8.10.2 cannot run on
-  JDK 24 or newer, and the build targets Java 21 (`jvmToolchain(21)`). The daemon is
+* **JDK:** Version 21 exactly (Java SE Development Kit) — the build targets Java 21
+  (`jvmToolchain(21)`), so a newer JDK is not a substitute. The daemon is
   pinned to 21 via `gradle/gradle-daemon-jvm.properties`, so `./gradlew` picks an
   installed JDK 21 regardless of `JAVA_HOME`; Gradle will not download one for you.
 * **Android SDK:** API Level 35 (Android 15) installed
-* **Gradle Tooling:** Gradle 8.10.2 (wrapped in project)
+* **Gradle Tooling:** Gradle 9.6.1 (wrapped in project), AGP 9.3.1
 * **Kotlin Compiler:** Version 2.4.0
-* **Dagger-Hilt:** Version 2.58
+* **Dagger-Hilt:** Version 2.60.1
 
 ### Import to Android Studio
 1. Open Android Studio (Iguana / Jellyfish or newer).

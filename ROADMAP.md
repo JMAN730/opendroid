@@ -14,7 +14,7 @@ names the file or ticket it touches so it can be picked up without re-deriving t
 |---|---|
 | **App** | 171 Kotlin sources under `app/src/main/java/com/opendroid/ai` |
 | **SDK** | `minSdk 26`, `compileSdk`/`targetSdk 35` |
-| **Toolchain** | Gradle 8.10.2, AGP 8.8.2, Kotlin 2.4.0, JDK 21 (pinned) |
+| **Toolchain** | Gradle 9.6.1, AGP 9.3.1, Kotlin 2.4.0 (AGP built-in Kotlin), JDK 21 (pinned) |
 | **Tests** | 26 JVM unit-test classes; **no instrumentation source set** (`app/src/` has only `main` and `test`) |
 | **CI** | 3 jobs — unit tests + `assembleDebug`, `lintDebug`, unsigned `assembleRelease` (R8) |
 | **Lint** | 49 findings frozen in `app/lint-baseline.xml`; new findings fail the build |

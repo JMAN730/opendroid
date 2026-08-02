@@ -136,6 +136,11 @@ also asserts a schema JSON exists for the version declared on `@Database`.
 
 ## Still to do (out of scope here)
 
-Stages 4-6 of the plan: Gradle 9.5 / AGP 9.3 wrapper and plugin bump, AGP built-in
+Stages 4-6 of the plan: Gradle 9.x / AGP 9.x wrapper and plugin bump, AGP built-in
 Kotlin, and removal of the `com.android.tools:r8:9.1.31` override once the embedded
 R8 passes release-equivalence checks.
+
+Those landed for [issue #74](https://github.com/JMAN730/opendroid/issues/74) — see
+[agp9-migration.md](agp9-migration.md). Everything above describes the state of the
+build *before* that migration; the `kotlin-metadata-jvm` pin in particular is gone
+again, because Dagger 2.60.1 no longer needs it.

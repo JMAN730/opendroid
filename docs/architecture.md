@@ -99,7 +99,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Language & SDK** | Kotlin / Android SDK | Kotlin 2.4.0 / SDK 35 (Min SDK 26) | Core application runtime and language standard |
 | **UI Framework** | Jetpack Compose BOM | 2026.06.01 | Declarative reactive UI with Cyberpunk Design System |
 | **Architecture** | Clean Architecture + MVVM | - | Strict separation of UI, Domain, Data, and System Layers |
-| **Dependency Injection** | Dagger-Hilt | 2.58 | Centralized dependency graph and scope management |
+| **Dependency Injection** | Dagger-Hilt | 2.60.1 | Centralized dependency graph and scope management |
 | **Local Database** | Room DB (SQLite) | 2.8.4 | Multi-tier persistent memory storage |
 | **Key-Value Storage** | DataStore Preferences | 1.1.1 | Reactive user settings management |
 | **Provider credential encryption** | Android Keystore | Platform API | AES-256-GCM versioned envelopes ([`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt) and [`UserProfileStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt)); `security-crypto` remains only as a deprecated one-time import source |
@@ -110,7 +110,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Serialization** | Kotlinx Serialization | 2.4.0 | Fast, type-safe JSON serialization/deserialization |
 | **Voice & Speech Engine** | Android SpeechRecognizer / ElevenLabs API | System Native / REST | Speech-to-Text parsing and natural Text-to-Speech audio synthesis |
 | **Image & Animation** | Coil / Lottie Compose | 2.5.0 / 6.3.0 | Image caching and dynamic vector UI micro-animations |
-| **Build & Optimization** | Gradle / AGP / R8 Optimizer | 8.10.2 / 8.8.2 / 9.1.31 | Build toolchain, bytecode shrinking, and optimization |
+| **Build & Optimization** | Gradle / AGP / R8 Optimizer | 9.6.1 / 9.3.1 / 9.3.16 (bundled with AGP) | Build toolchain, bytecode shrinking, and optimization |
 
 ---
 

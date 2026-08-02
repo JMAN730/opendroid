@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
     id 'com.google.devtools.ksp'
     id 'dagger.hilt.android.plugin'
     id 'kotlinx-serialization'
@@ -135,10 +134,10 @@ android {
     }
 }
 
-// AGP 9 removes `android { kotlinOptions { ... } }`. The Kotlin Gradle plugin's
-// own `kotlin { compilerOptions { ... } }` block is the supported replacement and
-// is already honoured by the current AGP/KGP pair, so the settings below are
-// byte-for-byte the same compiler flags the old block produced.
+// AGP 9 removed `android { kotlinOptions { ... } }`. Under built-in Kotlin the
+// `kotlin { ... }` extension is registered by AGP itself (there is no
+// `org.jetbrains.kotlin.android` plugin any more) and carries the same compiler
+// flags this block set before the migration.
 kotlin {
     jvmToolchain(21)
     compilerOptions {
@@ -159,10 +158,9 @@ room {
 dependencies {
     // AndroidX Core & Lifecycle
     // Core 1.19.0 merges the Kotlin extensions into androidx.core:core (making
-    // core-ktx an empty compatibility artifact), but it also requires compileSdk 37
-    // and AGP 9.1+. 1.18.0 is the newest Core this AGP 8.13.2 / compileSdk 36 build
-    // accepts; swap the coordinate to androidx.core:core:1.19.0 with the AGP 9
-    // migration (#74).
+    // core-ktx an empty compatibility artifact). The AGP 9.1+ half of that
+    // requirement is now met, but it also needs compileSdk 37, which is an SDK
+    // bump this build has not taken; 1.18.0 stays until compileSdk moves to 37.
     implementation 'androidx.core:core-ktx:1.18.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
@@ -198,19 +196,8 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     // Hilt Dependency Injection
-    implementation 'com.google.dagger:hilt-android:2.58'
-    ksp 'com.google.dagger:hilt-compiler:2.58'
-    // Hilt's aggregating step still runs its processor under javac, and Dagger 2.58
-    // resolves an older kotlin-metadata-jvm that rejects Kotlin 2.4.0 metadata
-    // ("maximum supported version is 2.3.0"). Forcing the matching metadata library
-    // onto that processor classpath is the same pin the kapt configuration carried.
-    // This reaches the aggregating step by design, not by accident: the Hilt Gradle
-    // plugin builds `hiltAnnotationProcessor<Variant>` - the annotationProcessorPath
-    // of `hiltJavaCompile<Variant>` - by extending the variant's own
-    // annotationProcessor configuration (HiltGradlePlugin.kt,
-    // configureHiltAnnotationProcessorConfiguration). Gradle's conflict resolution
-    // then picks 2.4.0 over Dagger's older transitive metadata library.
-    annotationProcessor 'org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.0'
+    implementation 'com.google.dagger:hilt-android:2.60.1'
+    ksp 'com.google.dagger:hilt-compiler:2.60.1'
     implementation 'androidx.hilt:hilt-navigation-compose:1.1.0'
 
     // Networking
