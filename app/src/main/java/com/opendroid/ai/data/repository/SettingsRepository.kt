@@ -15,12 +15,18 @@ import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.models.LLMConfig
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -28,6 +34,13 @@ import javax.inject.Singleton
 import dagger.hilt.android.qualifiers.ApplicationContext
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+/** Outcome for a configuration save that needs direct credential-store persistence. */
+sealed interface ProviderCredentialPersistenceState {
+    data object Ready : ProviderCredentialPersistenceState
+    data object StorageUnavailable : ProviderCredentialPersistenceState
+    data object CredentialsMustBeReentered : ProviderCredentialPersistenceState
+}
 
 @Singleton
 class SettingsRepository internal constructor(
@@ -46,6 +59,12 @@ class SettingsRepository internal constructor(
 
     /** A UI-safe recovery signal; it never contains credential or ciphertext data. */
     val providerCredentialRecoveryState = providerCredentialStore.recoveryState
+
+    private val mutableProviderCredentialPersistenceState =
+        MutableStateFlow<ProviderCredentialPersistenceState>(ProviderCredentialPersistenceState.Ready)
+    /** Observable save result for callers that need to retry a transient storage failure. */
+    val providerCredentialPersistenceState: StateFlow<ProviderCredentialPersistenceState> =
+        mutableProviderCredentialPersistenceState.asStateFlow()
 
     init {
         if (runStartupMigration) {
@@ -68,7 +87,7 @@ class SettingsRepository internal constructor(
      * input, never a runtime credential fallback.
      */
     private fun mergeSecretsForRead(persisted: LLMConfig): LLMConfig {
-        val snapshot = readCredentialSnapshot()
+        val snapshot = (readCredentialSnapshot() as? CredentialSnapshotResult.Success)?.snapshot
             ?: return persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
         return persisted.copy(
             apiKeys = snapshot.providerApiKeys,
@@ -81,7 +100,7 @@ class SettingsRepository internal constructor(
      * This gives the one-time DataStore migration a source without exposing it to callers.
      */
     private fun mergeSecretsForUpdate(persisted: LLMConfig): LLMConfig {
-        val snapshot = readCredentialSnapshot()
+        val snapshot = (readCredentialSnapshot() as? CredentialSnapshotResult.Success)?.snapshot
             ?: return persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
         return persisted.copy(
             apiKeys = persisted.apiKeys + snapshot.providerApiKeys,
@@ -89,47 +108,99 @@ class SettingsRepository internal constructor(
         )
     }
 
-    /** Write direct credentials first and always return a plaintext-free DataStore configuration. */
-    private fun storeSecretsAndStrip(config: LLMConfig): LLMConfig {
-        if (providerCredentialStore.recoveryState.value ==
-            ProviderCredentialRecoveryState.CredentialsMustBeReentered
-        ) {
-            return config.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
+    /**
+     * Commits direct credentials before returning a stripped DataStore configuration.
+     * Any failed direct-store mutation rolls back successful earlier mutations and aborts the
+     * DataStore transaction, preserving the previously persisted configuration as retry input.
+     */
+    private fun storeSecretsAndStrip(config: LLMConfig): CredentialStripResult {
+        val snapshot = when (val snapshotResult = readCredentialSnapshot()) {
+            is CredentialSnapshotResult.Success -> snapshotResult.snapshot
+            is CredentialSnapshotResult.Failure -> return CredentialStripResult.Failure(snapshotResult.state)
         }
-        val storedProviderNames = when (val result = providerCredentialStore.readProviderApiKeys()) {
-            is CredentialStoreResult.Success -> result.value.keys
-            CredentialStoreResult.CredentialsMustBeReentered,
-            CredentialStoreResult.StorageUnavailable -> emptySet()
-        }
-        storedProviderNames
-            .filterNot(config.apiKeys::containsKey)
-            .forEach { providerCredentialStore.remove(ProviderCredentialId.ApiKey(it)) }
+        val desiredProviderApiKeys = linkedMapOf<String, String>()
         config.apiKeys.forEach { (provider, key) ->
-            // A corrupt legacy JSON key must not prevent the JSON from being stripped.
+            // Invalid historical JSON keys are deliberately stripped, never materialized as
+            // direct records, and cannot block a safe migration.
             val credential = runCatching { ProviderCredentialId.ApiKey(provider) }.getOrNull()
                 ?: return@forEach
-            if (key.isBlank()) {
-                providerCredentialStore.remove(credential)
-            } else {
-                providerCredentialStore.write(credential, key)
+            if (key.isNotBlank()) desiredProviderApiKeys[credential.providerName] = key
+        }
+        val attemptedCredentials = linkedSetOf<ProviderCredentialId>()
+        val providerNames = linkedSetOf<String>().apply {
+            addAll(snapshot.providerApiKeys.keys)
+            addAll(desiredProviderApiKeys.keys)
+        }
+
+        for (providerName in providerNames) {
+            val previousValue = snapshot.providerApiKeys[providerName]
+            val desiredValue = desiredProviderApiKeys[providerName]
+            if (previousValue == desiredValue) continue
+            val credential = ProviderCredentialId.ApiKey(providerName)
+            attemptedCredentials += credential
+            val result = persistCredential(credential, desiredValue)
+            if (result !is CredentialStoreResult.Success) {
+                return CredentialStripResult.Failure(
+                    restoreSnapshot(snapshot, attemptedCredentials) ?: result.toPersistenceState()
+                )
             }
         }
-        if (config.elevenLabsApiKey.isBlank()) {
-            providerCredentialStore.remove(ProviderCredentialId.ElevenLabsApiKey)
-        } else {
-            providerCredentialStore.write(
-                ProviderCredentialId.ElevenLabsApiKey,
-                config.elevenLabsApiKey
-            )
+
+        val desiredElevenLabsKey = config.elevenLabsApiKey.takeUnless(String::isBlank)
+        if (snapshot.elevenLabsApiKey != desiredElevenLabsKey) {
+            val credential = ProviderCredentialId.ElevenLabsApiKey
+            attemptedCredentials += credential
+            val result = persistCredential(credential, desiredElevenLabsKey)
+            if (result !is CredentialStoreResult.Success) {
+                return CredentialStripResult.Failure(
+                    restoreSnapshot(snapshot, attemptedCredentials) ?: result.toPersistenceState()
+                )
+            }
         }
-        return config.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
+
+        return CredentialStripResult.Success(config.copy(apiKeys = emptyMap(), elevenLabsApiKey = ""))
     }
 
-    private fun readCredentialSnapshot(): CredentialSnapshot? {
+    private fun persistCredential(
+        credential: ProviderCredentialId,
+        value: String?
+    ): CredentialStoreResult<Unit> = if (value == null) {
+        providerCredentialStore.remove(credential)
+    } else {
+        providerCredentialStore.write(credential, value)
+    }
+
+    /** Restores the pre-update semantic credential snapshot after a partial direct-store write. */
+    private fun restoreSnapshot(
+        snapshot: CredentialSnapshot,
+        attemptedCredentials: Set<ProviderCredentialId>
+    ): ProviderCredentialPersistenceState? {
+        for (credential in attemptedCredentials) {
+            val previousValue = when (credential) {
+                is ProviderCredentialId.ApiKey -> snapshot.providerApiKeys[credential.providerName]
+                ProviderCredentialId.ElevenLabsApiKey -> snapshot.elevenLabsApiKey
+                ProviderCredentialId.HuggingFaceToken -> null
+            }
+            val result = persistCredential(credential, previousValue)
+            if (result !is CredentialStoreResult.Success) return result.toPersistenceState()
+        }
+        return null
+    }
+
+    private fun CredentialStoreResult<*>.toPersistenceState(): ProviderCredentialPersistenceState = when (this) {
+        CredentialStoreResult.CredentialsMustBeReentered ->
+            ProviderCredentialPersistenceState.CredentialsMustBeReentered
+        CredentialStoreResult.StorageUnavailable -> ProviderCredentialPersistenceState.StorageUnavailable
+        is CredentialStoreResult.Success -> ProviderCredentialPersistenceState.Ready
+    }
+
+    private fun readCredentialSnapshot(): CredentialSnapshotResult {
         if (providerCredentialStore.recoveryState.value ==
             ProviderCredentialRecoveryState.CredentialsMustBeReentered
         ) {
-            return null
+            return CredentialSnapshotResult.Failure(
+                ProviderCredentialPersistenceState.CredentialsMustBeReentered
+            )
         }
         val providerApiKeys = providerCredentialStore.readProviderApiKeys()
         val elevenLabsApiKey = providerCredentialStore.read(ProviderCredentialId.ElevenLabsApiKey)
@@ -138,18 +209,46 @@ class SettingsRepository internal constructor(
             providerCredentialStore.recoveryState.value ==
                 ProviderCredentialRecoveryState.CredentialsMustBeReentered
         ) {
-            return null
+            val failure = when {
+                providerCredentialStore.recoveryState.value ==
+                    ProviderCredentialRecoveryState.CredentialsMustBeReentered ->
+                    ProviderCredentialPersistenceState.CredentialsMustBeReentered
+                providerApiKeys !is CredentialStoreResult.Success ->
+                    providerApiKeys.toPersistenceState()
+                else -> elevenLabsApiKey.toPersistenceState()
+            }
+            return CredentialSnapshotResult.Failure(failure)
         }
-        return CredentialSnapshot(providerApiKeys.value, elevenLabsApiKey.value)
+        return CredentialSnapshotResult.Success(
+            CredentialSnapshot(providerApiKeys.value, elevenLabsApiKey.value)
+        )
     }
 
-    fun resetProviderCredentialsForReentry(): CredentialStoreResult<Unit> =
-        providerCredentialStore.resetForReentry()
+    suspend fun resetProviderCredentialsForReentry(): CredentialStoreResult<Unit> =
+        withContext(Dispatchers.IO) {
+            providerCredentialStore.resetForReentry().also { result ->
+                mutableProviderCredentialPersistenceState.value = result.toPersistenceState()
+            }
+        }
 
     private data class CredentialSnapshot(
         val providerApiKeys: Map<String, String>,
         val elevenLabsApiKey: String?
     )
+
+    private sealed interface CredentialSnapshotResult {
+        data class Success(val snapshot: CredentialSnapshot) : CredentialSnapshotResult
+        data class Failure(val state: ProviderCredentialPersistenceState) : CredentialSnapshotResult
+    }
+
+    private sealed interface CredentialStripResult {
+        data class Success(val strippedConfig: LLMConfig) : CredentialStripResult
+        data class Failure(val state: ProviderCredentialPersistenceState) : CredentialStripResult
+    }
+
+    private class CredentialPersistenceAborted(
+        val state: ProviderCredentialPersistenceState
+    ) : RuntimeException(null, null, false, false)
 
     // Auto-reply preference keys
     private val autoReplyGlobalKey = booleanPreferencesKey("auto_reply_global")
@@ -162,9 +261,9 @@ class SettingsRepository internal constructor(
     private val autoReplyCustomPromptKey = stringPreferencesKey("auto_reply_custom_prompt")
     private val autoReplyMaxPerHourKey = intPreferencesKey("auto_reply_max_per_hour")
 
-    val llmConfig: Flow<LLMConfig> = dataStore.data.map { preferences ->
-        mergeSecretsForRead(decodeConfig(preferences[llmConfigKey]))
-    }
+    val llmConfig: Flow<LLMConfig> = dataStore.data
+        .map { preferences -> mergeSecretsForRead(decodeConfig(preferences[llmConfigKey])) }
+        .flowOn(Dispatchers.IO)
 
     val autoReplyConfig: Flow<AutoReplyConfig> = dataStore.data.map { preferences ->
         AutoReplyConfig(
@@ -182,11 +281,33 @@ class SettingsRepository internal constructor(
         )
     }
 
-    suspend fun updateConfig(update: (LLMConfig) -> LLMConfig) {
-        dataStore.edit { preferences ->
-            val currentConfig = decodeConfig(preferences[llmConfigKey])
-            val newConfig = update(mergeSecretsForUpdate(currentConfig))
-            preferences[llmConfigKey] = json.encodeToString(storeSecretsAndStrip(newConfig))
+    suspend fun updateConfig(
+        update: (LLMConfig) -> LLMConfig
+    ): ProviderCredentialPersistenceState = withContext(Dispatchers.IO) {
+        try {
+            dataStore.edit { preferences ->
+                val currentConfig = decodeConfig(preferences[llmConfigKey])
+                val newConfig = update(mergeSecretsForUpdate(currentConfig))
+                when (val result = storeSecretsAndStrip(newConfig)) {
+                    is CredentialStripResult.Success -> {
+                        preferences[llmConfigKey] = json.encodeToString(result.strippedConfig)
+                    }
+                    is CredentialStripResult.Failure -> throw CredentialPersistenceAborted(result.state)
+                }
+            }
+            mutableProviderCredentialPersistenceState.value = ProviderCredentialPersistenceState.Ready
+            ProviderCredentialPersistenceState.Ready
+        } catch (aborted: CredentialPersistenceAborted) {
+            mutableProviderCredentialPersistenceState.value = aborted.state
+            aborted.state
+        } catch (_: IOException) {
+            mutableProviderCredentialPersistenceState.value =
+                ProviderCredentialPersistenceState.StorageUnavailable
+            ProviderCredentialPersistenceState.StorageUnavailable
+        } catch (_: SecurityException) {
+            mutableProviderCredentialPersistenceState.value =
+                ProviderCredentialPersistenceState.StorageUnavailable
+            ProviderCredentialPersistenceState.StorageUnavailable
         }
     }
 

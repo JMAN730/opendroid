@@ -76,6 +76,22 @@ class AndroidProviderCredentialStoreInstrumentationTest {
         assertFalse(keyInfo.isUserAuthenticationRequired)
     }
 
+    @Test
+    fun nonStringDirectPreferenceRecordSurfacesCredentialReentry() {
+        val store = AndroidProviderCredentialStore(context, preferencesName, keyAlias)
+        val credential = ProviderCredentialId.HuggingFaceToken
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(credential.storageKey, 7)
+            .commit()
+
+        assertEquals(CredentialStoreResult.CredentialsMustBeReentered, store.read(credential))
+        assertEquals(
+            ProviderCredentialRecoveryState.CredentialsMustBeReentered,
+            store.recoveryState.value
+        )
+    }
+
     private fun rawEnvelope(): String = context
         .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
         .all

@@ -70,9 +70,9 @@ class MemoryManager @Inject constructor(
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
         // Read user info from EncryptedSharedPreferences
-        val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
-        val userName = sharedPrefs.getString("user_name", "") ?: ""
-        val userDob = sharedPrefs.getString("user_dob", "") ?: ""
+        val sharedPrefs = com.opendroid.ai.core.security.SecurePrefs.getOrNull(context)
+        val userName = sharedPrefs?.getString("user_name", "") ?: ""
+        val userDob = sharedPrefs?.getString("user_dob", "") ?: ""
 
         val userFactsList = mutableListOf<String>()
         if (userName.isNotEmpty()) {

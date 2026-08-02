@@ -335,6 +335,8 @@ internal class ProviderCredentialStoreImpl(
     private fun readStored(credential: ProviderCredentialId): CredentialStoreResult<StoredCredential> {
         val rawRecord = try {
             records.read(credential.storageKey)
+        } catch (_: CredentialRecordMalformedException) {
+            return requireCredentialReentry()
         } catch (_: RuntimeException) {
             return CredentialStoreResult.StorageUnavailable
         } ?: return CredentialStoreResult.Success(StoredCredential(exists = false, value = null))
@@ -432,7 +434,13 @@ internal interface CredentialRecordStorage {
 private class SharedPreferencesCredentialRecordStorage(
     private val preferences: SharedPreferences
 ) : CredentialRecordStorage {
-    override fun read(key: String): String? = preferences.getString(key, null)
+    override fun read(key: String): String? = try {
+        preferences.getString(key, null)
+    } catch (_: ClassCastException) {
+        // A non-string record cannot be a valid versioned envelope. It is a recovery case, not a
+        // transient storage outage, so callers can reach the explicit re-entry flow.
+        throw CredentialRecordMalformedException()
+    }
 
     @Suppress("UseKtx") // The Boolean return from commit() is the durability boundary.
     override fun write(key: String, value: String): Boolean = preferences.edit().putString(key, value).commit()
@@ -505,6 +513,9 @@ private class LegacyEncryptedSharedPreferencesCredentialSource(
 }
 
 private class CredentialStorageCommitException : RuntimeException()
+
+/** A direct credential record exists but cannot be decoded as its required String envelope. */
+internal class CredentialRecordMalformedException : RuntimeException()
 
 internal data class EncryptedCredential(val iv: ByteArray, val ciphertext: ByteArray)
 
