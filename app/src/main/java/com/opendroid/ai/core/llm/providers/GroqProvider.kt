@@ -69,7 +69,8 @@ class GroqProvider @Inject constructor(
                     knownSecrets = listOf(apiKey)
                 )
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Groq")
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) throw IOException("Empty response body from Groq")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val choices = jsonResponse.getAsJsonArray("choices")
             val messageObj = choices[0].asJsonObject.getAsJsonObject("message")
