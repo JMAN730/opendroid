@@ -1,24 +1,29 @@
 package com.opendroid.ai.core.llm
 
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.Backend
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelStatus
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialStore
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
@@ -34,6 +39,7 @@ class ModelDownloadWorker(
     interface WorkerEntryPoint {
         fun modelDao(): ModelDao
         fun okHttpClient(): OkHttpClient
+        fun providerCredentialStore(): ProviderCredentialStore
     }
 
     private val entryPoint = EntryPointAccessors.fromApplication(
@@ -43,6 +49,10 @@ class ModelDownloadWorker(
 
     private val modelDao = entryPoint.modelDao()
     private val okHttpClient = entryPoint.okHttpClient()
+    private val providerCredentialStore = entryPoint.providerCredentialStore()
+
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        ModelDownloadForegroundInfoFactory.create(applicationContext, id)
 
     override suspend fun doWork(): Result {
         val modelId = inputData.getString("model_id") ?: return Result.failure()
@@ -52,32 +62,40 @@ class ModelDownloadWorker(
         val expectedSha = inputData.getString("sha256") ?: ""
         val simulate = inputData.getBoolean("simulate", false)
 
-        Log.i(tag, "Starting download task for model: $modelId, url=$downloadUrl, size=$size, simulate=$simulate")
-
-        val spec = OnDeviceModelRegistry.findById(modelId)
-        if (spec != null) {
-            try {
-                OnDeviceModelRegistry.checkDeviceMemoryCompatibility(applicationContext, spec)
-            } catch (e: IllegalStateException) {
-                Log.e(tag, "RAM check failed for model $modelId: ${e.message}")
-                modelDao.updateDownloadProgressDetails(
-                    modelId,
-                    0,
-                    0L,
-                    "",
-                    e.localizedMessage ?: "Insufficient device memory.",
-                    ModelStatus.FAILED
-                )
-                return Result.failure()
-            }
-        }
+        Log.i(tag, "Starting download task for model=$modelId, expectedSize=$size, simulate=$simulate")
 
         try {
+            // Multi-GB downloads need a visible, long-running WorkManager foreground service.
+            setForeground(getForegroundInfo())
+
+            val spec = OnDeviceModelRegistry.findById(modelId)
+            if (spec != null) {
+                try {
+                    OnDeviceModelRegistry.checkDeviceMemoryCompatibility(applicationContext, spec)
+                } catch (e: IllegalStateException) {
+                    Log.e(tag, "RAM check failed for model $modelId: ${e.message}")
+                    modelDao.updateDownloadProgressDetails(
+                        modelId,
+                        0,
+                        0L,
+                        "",
+                        e.localizedMessage ?: "Insufficient device memory.",
+                        ModelStatus.FAILED
+                    )
+                    return Result.failure()
+                }
+            }
+
             if (simulate) {
                 return performSimulation(modelId, targetPath, size)
             }
 
             return performDownload(modelId, downloadUrl, targetPath, size, expectedSha)
+        } catch (e: CancellationException) {
+            // WorkManager owns rescheduling after a stop. Do not turn a cancel/stop into failure
+            // or delete the temp file; the next run will issue a Range request from its byte offset.
+            logStopReason(modelId)
+            throw e
         } catch (e: Exception) {
             Log.e(tag, "Failed to download model $modelId", e)
             modelDao.updateModelStatus(modelId, ModelStatus.FAILED)
@@ -92,14 +110,16 @@ class ModelDownloadWorker(
 
         // Find existing progress to support resume
         val existingEntity = modelDao.getModelById(modelId)
-        val startProgress = if (existingEntity?.status == ModelStatus.PAUSED) existingEntity.downloadProgress else 0
-        val startBytes = (startProgress * totalSize) / 100
+        val startProgress = ModelDownloadRetryPolicy.simulationStartProgress(
+            existingEntity?.status,
+            existingEntity?.downloadProgress ?: 0
+        )
 
         modelDao.updateModelStatus(modelId, ModelStatus.DOWNLOADING)
 
         for (i in (startProgress / 5)..steps) {
             if (isStopped) {
-                modelDao.updateModelStatus(modelId, ModelStatus.PAUSED)
+                logStopReason(modelId)
                 return Result.retry()
             }
 
@@ -180,11 +200,18 @@ class ModelDownloadWorker(
         val isResume = tempFile.exists() && tempFile.length() > 0
         val startBytes = if (isResume) tempFile.length() else 0L
 
-        Log.i(tag, "[DOWNLOAD FLOW] Requesting HTTP Download from model URL: $downloadUrl")
+        // Download URLs may contain signed query parameters; keep them out of application logs.
+        Log.i(tag, "[DOWNLOAD FLOW] Requesting HTTP download for model=$modelId")
         Log.i(tag, "[DOWNLOAD FLOW] Resume status: $isResume, starting from $startBytes bytes")
 
-        val securePrefs = com.opendroid.ai.core.security.SecurePrefs.get(applicationContext)
-        val hfToken = securePrefs.getString("huggingface_token", null)
+        providerCredentialStore.migrateLegacyCredentials()
+        val hfToken = when (
+            val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+        ) {
+            is CredentialStoreResult.Success -> result.value
+            CredentialStoreResult.CredentialsMustBeReentered,
+            CredentialStoreResult.StorageUnavailable -> null
+        }
 
         val requestBuilder = Request.Builder().url(downloadUrl)
         if (!hfToken.isNullOrBlank()) {
@@ -199,11 +226,17 @@ class ModelDownloadWorker(
 
         val response = try {
             okHttpClient.newCall(request).execute()
-        } catch (e: java.net.UnknownHostException) {
-            Log.e(tag, "[FAILURE] Network connection failed: unknown host", e)
-            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Internet connection unavailable.", ModelStatus.FAILED)
-            return Result.failure()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            if (ModelDownloadRetryPolicy.isRetryableTransport(e)) {
+                Log.w(
+                    tag,
+                    "[RETRY] Transport failed for model=$modelId; retaining partial download " +
+                        "(${e.javaClass.simpleName})."
+                )
+                return Result.retry()
+            }
             Log.e(tag, "[FAILURE] Network connection error", e)
             modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Internet connection unavailable.", ModelStatus.FAILED)
             return Result.failure()
@@ -211,6 +244,14 @@ class ModelDownloadWorker(
 
         Log.i(tag, "[DOWNLOAD FLOW] Received Response. Code: ${response.code}, Msg: ${response.message}")
         if (!response.isSuccessful && response.code != 206) {
+            if (ModelDownloadRetryPolicy.isRetryableHttpStatus(response.code)) {
+                Log.w(
+                    tag,
+                    "[RETRY] HTTP ${response.code} for model=$modelId; retaining partial download."
+                )
+                response.close()
+                return Result.retry()
+            }
             val errorMsg = when (response.code) {
                 401 -> "The Hugging Face token is invalid."
                 403 -> "You don't have permission to access this model. You must accept the model license on Hugging Face before downloading."
@@ -229,20 +270,32 @@ class ModelDownloadWorker(
         Log.i(tag, "[DOWNLOAD FLOW] Content-Length of this response chunk: ${responseBody.contentLength()} bytes. Total expected model file size: $totalBytes bytes")
 
         val outputStream = FileOutputStream(tempFile, append)
-        val inputStream: InputStream = responseBody.byteStream()
+        val inputStream = responseBody.byteStream()
         val buffer = ByteArray(64 * 1024)
-        var bytesRead: Int
         var totalRead = if (append) startBytes else 0L
         var lastUpdate = System.currentTimeMillis()
         var bytesInLastSecond = 0L
 
         try {
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+            while (true) {
+                val bytesRead = try {
+                    inputStream.read(buffer)
+                } catch (e: Exception) {
+                    if (ModelDownloadRetryPolicy.isRetryableTransport(e)) {
+                        Log.w(
+                            tag,
+                            "[RETRY] Transport interrupted for model=$modelId; retaining partial download " +
+                                "(${e.javaClass.simpleName})."
+                        )
+                        return Result.retry()
+                    }
+                    throw e
+                }
+                if (bytesRead == -1) break
+
                 if (isStopped) {
-                    outputStream.close()
-                    responseBody.close()
                     Log.i(tag, "[DOWNLOAD FLOW] Worker stopped. Saving progress at $totalRead bytes.")
-                    modelDao.updateModelStatus(modelId, ModelStatus.PAUSED)
+                    logStopReason(modelId)
                     return Result.retry()
                 }
 
@@ -338,10 +391,12 @@ class ModelDownloadWorker(
         }
         val finalSize = finalModelFile.length()
         Log.i(tag, "[DOWNLOAD FLOW] Final model file verified. Path: ${finalModelFile.absolutePath}, Size: $finalSize bytes")
-        if (expectedSize > 0 && finalSize != expectedSize) {
-            Log.e(tag, "[FAILURE] Download failed: size mismatch. Expected $expectedSize bytes, got $finalSize bytes")
+        if (expectedSize > 0L && finalSize != expectedSize) {
+            Log.e(tag, "[FAILURE] Model size verification failed for $modelId. Expected $expectedSize, got $finalSize")
             finalModelFile.delete()
-            modelDao.updateDownloadProgressDetails(modelId, 0, 0L, "", "Downloaded model is corrupted.", ModelStatus.FAILED)
+            modelDao.updateDownloadProgressDetails(
+                modelId, 0, 0L, "", "Downloaded model size does not match the published artifact.", ModelStatus.FAILED
+            )
             return Result.failure()
         }
 
@@ -382,6 +437,24 @@ class ModelDownloadWorker(
         tempFile.delete()
         Log.i(tag, "[DOWNLOAD FLOW] Model task completed successfully.")
         return Result.success()
+    }
+
+    private fun logStopReason(modelId: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            Log.w(
+                tag,
+                "Model download stopped for model=$modelId; stop reason is unavailable before API 31. " +
+                    "Partial data is retained for retry."
+            )
+            return
+        }
+
+        val reason = stopReason
+        Log.w(
+            tag,
+            "Model download stopped for model=$modelId; stopReason=${ModelDownloadStopReason.label(reason)} ($reason), " +
+                "attempt=$runAttemptCount. Partial data is retained for retry."
+        )
     }
 
     private fun isZipFile(file: File): Boolean {

@@ -39,6 +39,9 @@ import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
+import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.error.LLMError
+import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
@@ -75,9 +78,11 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
+    val connectionResults by viewModel.connectionResults.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
+    val providerCredentialRecoveryState by viewModel.providerCredentialRecoveryState.collectAsState()
 
     val providers = listOf(
         "Google Gemini",
@@ -136,10 +141,47 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
+            if (providerCredentialRecoveryState == ProviderCredentialRecoveryState.CredentialsMustBeReentered) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "CREDENTIALS MUST BE RE-ENTERED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Saved provider credentials cannot be read on this device. " +
+                                    "Clear unavailable records, then enter your API keys again.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = viewModel::resetProviderCredentialsForReentry,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                            ) {
+                                Text("Clear unavailable credentials", color = DarkBackground)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Active LLM Provider Selection Card
             item {
                 Card(
@@ -892,7 +934,11 @@ fun SettingsScreen(
                                                     }
                                                 }
                                                 Text(
-                                                    text = "Backend: LiteRT-LM · Context: 32K · RAM: 6GB+",
+                                                    text = if (spec.sha256.isBlank()) {
+                                                        "Backend: LiteRT-LM · Integrity: unverified · RAM: 6GB+"
+                                                    } else {
+                                                        "Backend: LiteRT-LM · SHA-256 digest available · RAM: 6GB+"
+                                                    },
                                                     fontSize = 10.sp,
                                                     color = TextSecondary
                                                 )
@@ -1294,10 +1340,34 @@ fun SettingsScreen(
                                 val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
+                                    val connectionState = connectionResults[providerName]
                                     SecureApiKeyField(
                                         value = keyVal,
                                         onValueChange = { viewModel.updateApiKey(providerName, it) },
                                         label = "$providerName API Key"
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = connectionStatusLabel(connectionState),
+                                            fontSize = 10.sp,
+                                            color = TextSecondary,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { viewModel.testConnection(providerName) }
+                                        ) {
+                                            Text("Test connection", fontSize = 11.sp)
+                                        }
+                                    }
+                                    Text(
+                                        text = "Sends one minimal request to $providerName; provider charges may apply.",
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
                                     )
                                 }
                             }
@@ -2118,6 +2188,25 @@ fun SettingsScreen(
             textContentColor = TextSecondary
         )
     }
+}
+
+private fun connectionStatusLabel(state: ConnectionTestState?): String = when (state) {
+    is ConnectionTestState.Testing -> "Testing…"
+    is ConnectionTestState.Connected ->
+        "Connected with ${state.model} · ${state.latencyMs} ms"
+    is ConnectionTestState.Failed -> when (state.error) {
+        LLMError.AuthInvalid -> "Key rejected"
+        LLMError.AuthMissing -> "Key required"
+        LLMError.QuotaExhausted -> "Quota exhausted"
+        LLMError.RateLimited -> "Rate limited"
+        LLMError.Network -> "Network error"
+        else -> "Connection failed"
+    }
+    is ConnectionTestState.ConfigMissing -> when (state.reason) {
+        LLMError.AuthMissing -> "Key required"
+        else -> "Configuration required"
+    }
+    else -> "Not tested"
 }
 
 private fun formatBytes(bytes: Long): String {

@@ -1,6 +1,8 @@
 package com.opendroid.ai.di
 
 import android.content.Context
+import com.opendroid.ai.core.security.AndroidProviderCredentialStore
+import com.opendroid.ai.core.security.ProviderCredentialStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,11 +24,17 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideProviderCredentialStore(@ApplicationContext context: Context): ProviderCredentialStore {
+        return AndroidProviderCredentialStore(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
             .build()
     }
 }

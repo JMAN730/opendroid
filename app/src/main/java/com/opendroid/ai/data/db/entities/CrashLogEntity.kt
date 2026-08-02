@@ -1,8 +1,10 @@
 package com.opendroid.ai.data.db.entities
 
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.opendroid.ai.core.crash.DeviceMetadata
 
 @Entity(
     tableName = "crash_logs",
@@ -15,10 +17,5 @@ data class CrashLogEntity(
     val message: String?,
     val threadName: String,
     val stackTrace: String,
-    val appVersionName: String,
-    val appVersionCode: Long,
-    val androidRelease: String,
-    val androidSdkInt: Int,
-    val deviceManufacturer: String,
-    val deviceModel: String
+    @Embedded val device: DeviceMetadata
 )

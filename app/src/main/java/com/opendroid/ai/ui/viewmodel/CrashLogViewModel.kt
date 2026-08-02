@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.core.crash.CrashLogRecord
 import com.opendroid.ai.core.crash.CrashReportExporter
 import com.opendroid.ai.data.crash.toRecord
-import com.opendroid.ai.data.db.dao.CrashLogDao
+import com.opendroid.ai.data.crash.CrashLogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,10 +25,10 @@ data class CrashLogItem(
 
 @HiltViewModel
 class CrashLogViewModel @Inject constructor(
-    private val crashLogDao: CrashLogDao
+    private val crashLogRepository: CrashLogRepository
 ) : ViewModel() {
 
-    val crashes: StateFlow<List<CrashLogItem>> = crashLogDao.getAllFlow()
+    val crashes: StateFlow<List<CrashLogItem>> = crashLogRepository.getAllFlow()
         .map { entities -> entities.map { CrashLogItem(it.id, it.toRecord()) } }
         .stateIn(
             scope = viewModelScope,
@@ -37,7 +37,7 @@ class CrashLogViewModel @Inject constructor(
         )
 
     fun clearAll() {
-        viewModelScope.launch { crashLogDao.clearAll() }
+        viewModelScope.launch { crashLogRepository.clearAll() }
     }
 
     /** Plain-text render of a single crash, for share and copy. */
@@ -50,7 +50,7 @@ class CrashLogViewModel @Inject constructor(
      */
     fun exportAll(onReady: (String) -> Unit) {
         viewModelScope.launch {
-            val records = crashLogDao.getAll().map { it.toRecord() }
+            val records = crashLogRepository.getAll().map { it.toRecord() }
             onReady(CrashReportExporter.export(records))
         }
     }

@@ -593,37 +593,37 @@
             "notNull": true
           },
           {
-            "fieldPath": "appVersionName",
+            "fieldPath": "device.appVersionName",
             "columnName": "appVersionName",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "appVersionCode",
+            "fieldPath": "device.appVersionCode",
             "columnName": "appVersionCode",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "androidRelease",
+            "fieldPath": "device.androidRelease",
             "columnName": "androidRelease",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "androidSdkInt",
+            "fieldPath": "device.androidSdkInt",
             "columnName": "androidSdkInt",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "deviceManufacturer",
+            "fieldPath": "device.deviceManufacturer",
             "columnName": "deviceManufacturer",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "deviceModel",
+            "fieldPath": "device.deviceModel",
             "columnName": "deviceModel",
             "affinity": "TEXT",
             "notNull": true

@@ -3,6 +3,7 @@ package com.opendroid.ai.core.llm
 import com.opendroid.ai.data.models.ChatMessage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class ToolDefinition(
@@ -51,18 +52,42 @@ interface LLMProvider : AIProvider {
     }
 }
 
+/**
+ * Ephemeral provider configuration captured with a resolved request. It is
+ * deliberately excluded from serialization and renders only as redacted text.
+ */
+class ProviderRequestConfig(
+    val apiKey: String,
+    val endpoint: String
+) {
+    override fun toString(): String = "<redacted provider configuration>"
+}
+
 @Serializable
 data class LLMRequest(
     val systemPrompt: String,
     val messages: List<ChatMessage>,
+    /**
+     * Resolved by [WrappedLLMProvider] from the provider/model pairing. Direct
+     * provider callers may leave it null and receive the catalog default.
+     */
+    val model: String? = null,
     val temperature: Float = 0.7f,
     val maxTokens: Int = 2000,
     val responseFormat: ResponseFormat = ResponseFormat.JSON,
-    val tools: List<Tool>? = null
+    val tools: List<Tool>? = null,
+    val retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
+    @Transient
+    val providerConfig: ProviderRequestConfig? = null
 )
 
 enum class ResponseFormat {
     JSON, TEXT
+}
+
+enum class RetryPolicy {
+    DEFAULT,
+    NONE
 }
 
 @Serializable

@@ -5,8 +5,11 @@ buildscript {
         mavenCentral()
     }
     dependencies {
+        // R8 pin needed until AGP >= 9.1 — AGP 8.13.x bundles R8 8.13.19, which only
+        // supports Kotlin 2.3 metadata; this project is on Kotlin 2.4.0.
         classpath 'com.android.tools:r8:9.1.31'
-        classpath 'com.android.tools.build:gradle:8.8.2'
+        classpath 'com.android.tools.build:gradle:8.13.2'
+        classpath 'androidx.room:room-gradle-plugin:2.8.4'
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0'
         classpath 'com.google.dagger:hilt-android-gradle-plugin:2.58'
         classpath 'org.jetbrains.kotlin:kotlin-serialization:2.4.0'

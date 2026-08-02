@@ -6,6 +6,7 @@ import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.DownloadStatus
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -50,8 +51,7 @@ class GemmaProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val startTime = System.currentTimeMillis()
-        val config = settingsRepository.llmConfig.first()
-        val selectedModel = config.activeModel
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
         val systemPrompt = request.systemPrompt
         val messages = request.messages
         val prompt = buildPrompt(systemPrompt, messages, request.tools?.map { ToolDefinition(it.name, it.description, it.parameters) } ?: emptyList())
@@ -89,8 +89,7 @@ class GemmaProvider @Inject constructor(
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
         try {
-            val config = settingsRepository.llmConfig.first()
-            val selectedModel = config.activeModel
+            val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
             val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             
@@ -127,8 +126,7 @@ class GemmaProvider @Inject constructor(
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
         try {
-            val config = settingsRepository.llmConfig.first()
-            val selectedModel = config.activeModel
+            val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(name)
             val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             

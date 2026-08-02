@@ -2,17 +2,6 @@
 <issues format="6" by="lint 8.8.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.8.2)" variant="all" version="8.8.2">
 
     <issue
-        id="MissingPermission"
-        message="Call requires permission which may be rejected by user: code should explicitly check to see if permission is available (with `checkPermission`) or explicitly handle a potential `SecurityException`"
-        errorLine1="                cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {"
-        errorLine2="                ^">
-        <location
-            file="src/main/java/com/opendroid/ai/actions/AdvancedControlActions.kt"
-            line="399"
-            column="17"/>
-    </issue>
-
-    <issue
         id="InlinedApi"
         message="Field requires API level 30 (current min is 29): `android.content.pm.ServiceInfo#FOREGROUND_SERVICE_TYPE_MICROPHONE`"
         errorLine1="                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE"
@@ -25,13 +14,24 @@
 
     <issue
         id="InlinedApi"
-        message="Field requires API level 33 (current min is 26): `android.Manifest.permission#POST_NOTIFICATIONS`"
-        errorLine1="        onNotificationsGrant = { notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },"
-        errorLine2="                                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        message="Field requires API level 30 (current min is 26): `android.provider.Settings#ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`"
+        errorLine1="                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/opendroid/ai/ui/screens/PermissionsScreen.kt"
-            line="196"
-            column="63"/>
+            line="559"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 30 (current min is 26): `android.provider.Settings#ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION`"
+        errorLine1="                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/opendroid/ai/ui/screens/PermissionsScreen.kt"
+            line="566"
+            column="28"/>
     </issue>
 
     <issue
@@ -74,7 +74,7 @@
         errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/com/opendroid/ai/ui/screens/ChatScreen.kt"
-            line="754"
+            line="780"
             column="62"/>
     </issue>
 
@@ -96,7 +96,7 @@
         errorLine2="    ~~~~~~~~">
         <location
             file="src/main/java/com/opendroid/ai/ui/screens/SettingsScreen.kt"
-            line="75"
+            line="77"
             column="5"/>
     </issue>
 
@@ -107,7 +107,7 @@
         errorLine2="     ~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="12"
+            line="11"
             column="6"/>
     </issue>
 
@@ -118,7 +118,7 @@
         errorLine2="     ~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="14"
+            line="12"
             column="6"/>
     </issue>
 
@@ -129,7 +129,7 @@
         errorLine2="     ~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="15"
+            line="13"
             column="6"/>
     </issue>
 
@@ -140,7 +140,7 @@
         errorLine2="     ~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="16"
+            line="14"
             column="6"/>
     </issue>
 
@@ -151,74 +151,8 @@
         errorLine2="     ~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="17"
+            line="15"
             column="6"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `Cursor` should be freed up after use with `#close()`"
-        errorLine1="                context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->"
-        errorLine2="                                        ~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/core/agent/ContactResolver.kt"
-            line="119"
-            column="41"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `Cursor` should be freed up after use with `#close()`"
-        errorLine1="            context.contentResolver.query("
-        errorLine2="                                    ~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/core/agent/ContactResolver.kt"
-            line="354"
-            column="37"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `InputStream` should be freed up after use with `#close()`"
-        errorLine1="                val input = context.contentResolver.openInputStream(uri)"
-        errorLine2="                                                    ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/data/repository/ModelRepository.kt"
-            line="177"
-            column="53"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `Cursor` should be freed up after use with `#close()`"
-        errorLine1="            contentResolver.query(uri, projection, selectionExact, arrayOf(contact.trim()), null)?.use { cursor ->"
-        errorLine2="                            ~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/core/agent/PlanValidator.kt"
-            line="164"
-            column="29"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `Cursor` should be freed up after use with `#close()`"
-        errorLine1="            contentResolver.query(uri, projection, selectionLike, arrayOf(&quot;%${contact.trim()}%&quot;), null)?.use { cursor ->"
-        errorLine2="                            ~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/core/agent/PlanValidator.kt"
-            line="174"
-            column="29"/>
-    </issue>
-
-    <issue
-        id="Recycle"
-        message="This `Cursor` should be freed up after use with `#close()`"
-        errorLine1="                context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->"
-        errorLine2="                                        ~~~~~">
-        <location
-            file="src/main/java/com/opendroid/ai/actions/SystemActions.kt"
-            line="777"
-            column="41"/>
     </issue>
 
     <issue
@@ -358,28 +292,6 @@
         message="Launcher icon used as round icon did not have a circular shape">
         <location
             file="src/main/res/mipmap-mdpi/ic_launcher_round.png"/>
-    </issue>
-
-    <issue
-        id="MonochromeLauncherIcon"
-        message="The application adaptive icon is missing a monochrome tag"
-        errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
-            line="2"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="MonochromeLauncherIcon"
-        message="The application adaptive roundIcon is missing a monochrome tag"
-        errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
-            line="2"
-            column="1"/>
     </issue>
 
     <issue

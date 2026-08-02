@@ -47,6 +47,11 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.agent.AutoApprovalPolicy
+import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
+import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.agent.guidance
+import com.opendroid.ai.core.agent.primaryAction
+import com.opendroid.ai.core.agent.title
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
@@ -56,6 +61,7 @@ import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.ui.components.ContactPickerCard
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.ChatViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
@@ -76,6 +82,7 @@ fun ChatScreen(
     // not wherever the user has navigated to) must never be displayed as if it were
     // happening here. See ChatViewModel.visibleAgentState.
     val visibleAgentState by viewModel.visibleAgentState.collectAsState()
+    val chatError by viewModel.chatError.collectAsState()
     // Id of whichever chat (if any) has a task actively running, regardless of which
     // chat is currently displayed - drives the chat-picker's "still running" indicator.
     val runningSessionId by viewModel.runningSessionId.collectAsState()
@@ -344,6 +351,8 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
         ) {
             Column(
                 modifier = Modifier
@@ -374,6 +383,35 @@ fun ChatScreen(
                     if (visibleAgentState is AgentState.Thinking) {
                         item {
                             ThinkingBubble()
+                        }
+                    }
+
+                    chatError?.let { error ->
+                        item(key = "chat-error-${error.requestId}-${error.runId}") {
+                            ChatErrorRecoveryCard(
+                                error = error,
+                                onPrimary = {
+                                    when (error.primaryAction()) {
+                                        ChatErrorPrimaryAction.RETRY ->
+                                            viewModel.retryAfterChatError(context)
+                                        ChatErrorPrimaryAction.EDIT_MESSAGE -> {
+                                            // Edit the exact message the error is about;
+                                            // fall back to the last user message only if
+                                            // the requestId no longer resolves to one.
+                                            val target = history.firstOrNull {
+                                                it.id == error.requestId &&
+                                                    it.sender == ChatMessage.Sender.USER
+                                            } ?: history.lastOrNull {
+                                                it.sender == ChatMessage.Sender.USER
+                                            }
+                                            target?.let { startEditingMessage(it) }
+                                            viewModel.dismissChatError()
+                                        }
+                                        else -> viewModel.dismissChatError()
+                                    }
+                                },
+                                onDismiss = { viewModel.dismissChatError() }
+                            )
                         }
                     }
                 }
@@ -697,7 +735,7 @@ fun ChatBubble(
         }
 
         if (matches.isNotEmpty()) {
-            // Extract query from text ("Which 'dad' do you mean?" → "dad")
+            // Extract query from text ("Which 'dad' do you mean?" ? "dad")
             val query = Regex("Which '(.*?)'").find(message.text)?.groupValues?.getOrNull(1) ?: "contact"
 
             ContactPickerCard(
@@ -1076,5 +1114,124 @@ fun VoiceWaveform(text: String, modifier: Modifier = Modifier) {
             lineHeight = 18.sp,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+@Composable
+private fun ChatErrorRecoveryCard(
+    error: ChatErrorUiState,
+    onPrimary: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var detailsExpanded by remember { mutableStateOf(false) }
+    // Countdown for rate-limited errors: while the provider's retry-after window is
+    // open, the Retry button is disabled and the remaining seconds tick down here.
+    val phase = error.phase
+    var waitSecondsLeft by remember(phase) {
+        mutableStateOf(
+            if (phase is ChatErrorUiState.Phase.WaitingUntil) {
+                ((phase.epochMillis - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+        )
+    }
+    if (phase is ChatErrorUiState.Phase.WaitingUntil) {
+        LaunchedEffect(phase) {
+            while (true) {
+                val remainingMillis = phase.epochMillis - System.currentTimeMillis()
+                waitSecondsLeft = (remainingMillis / 1000L).coerceAtLeast(0L)
+                if (remainingMillis <= 0L) break
+                delay(1000L)
+            }
+        }
+    }
+    val retryHeld = phase is ChatErrorUiState.Phase.Retrying ||
+        (phase is ChatErrorUiState.Phase.WaitingUntil && waitSecondsLeft > 0L)
+    val actionLabel = when (error.primaryAction()) {
+        ChatErrorPrimaryAction.OPEN_SETTINGS -> "Open Settings"
+        ChatErrorPrimaryAction.CHOOSE_PROVIDER -> "Choose provider"
+        ChatErrorPrimaryAction.CHOOSE_MODEL -> "Choose model"
+        ChatErrorPrimaryAction.EDIT_MESSAGE -> "Edit message"
+        ChatErrorPrimaryAction.RETRY -> "Retry"
+        ChatErrorPrimaryAction.NONE -> null
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AccentRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = AccentRed)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = error.title(),
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+            if (error.partialMessageId != null) {
+                Text(
+                    text = "Incomplete response",
+                    color = AccentCyan,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Text(text = error.guidance(), color = TextSecondary, fontSize = 13.sp)
+            if (phase is ChatErrorUiState.Phase.WaitingUntil && waitSecondsLeft > 0L) {
+                Text(
+                    text = "Retry available in ${waitSecondsLeft}s",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (actionLabel != null) {
+                    Button(
+                        onClick = onPrimary,
+                        enabled = !(retryHeld && error.primaryAction() == ChatErrorPrimaryAction.RETRY),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentNeonGreen,
+                            contentColor = DarkBackground
+                        ),
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(actionLabel)
+                    }
+                }
+                TextButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                    Text(if (detailsExpanded) "Hide details" else "Technical details")
+                }
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+            }
+            if (detailsExpanded) {
+                val detail = buildString {
+                    append(error.category.code)
+                    append(" · ")
+                    append(error.provider)
+                    error.httpStatus?.let { append(" · HTTP "); append(it) }
+                    error.model.takeIf { it.isNotBlank() }?.let { append(" · "); append(it) }
+                    error.redactedDetail?.toString()?.takeIf { it.isNotBlank() }?.let {
+                        append(" · ")
+                        append(it)
+                    }
+                }
+                Text(
+                    text = detail,
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
     }
 }

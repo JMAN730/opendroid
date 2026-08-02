@@ -2,214 +2,175 @@ package com.opendroid.ai.data.db
 
 import android.app.Application
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
-import com.opendroid.ai.data.db.entities.CrashLogEntity
-import kotlinx.coroutines.runBlocking
-import org.junit.After
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Migration tests for [OpenDroidDatabase], on the JVM via Robolectric.
- *
- * The dangerous failure mode these exist to catch: a migration that runs
- * without error but produces a schema that differs from what Room's generated
- * code expects. Room detects the mismatch when the database is opened and
- * throws - which in production is a crash on first launch after an upgrade,
- * for every existing user.
- *
- * Schema export (`room.schemaLocation`) only began at version 7, so there is
- * no exported 6.json for `MigrationTestHelper` to build a version-6 database
- * from. Instead the v6 schema is derived from the current Room-generated v7
- * schema: version 7 is exactly version 6 plus the `crash_logs` table and its
- * index, because MIGRATION_6_7 touches nothing else. Future migrations (7 ->
- * 8 onwards) should use `MigrationTestHelper` against the committed schema
- * JSONs instead.
+ * Avoids [com.opendroid.ai.OpenDroidApp] so Robolectric does not need the
+ * Android Keystore used by SecurePrefs during Application.onCreate.
  */
-// A plain Application, not OpenDroidApp: the real app's startup touches the
-// Android Keystore (SecurePrefs/EncryptedSharedPreferences), which does not
-// exist on the Robolectric JVM - and none of it is needed to open a database.
+class MigrationTestApplication : Application()
+
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class)
+@Config(sdk = [35], application = MigrationTestApplication::class)
 class OpenDroidDatabaseMigrationTest {
 
-    private val context: Context = ApplicationProvider.getApplicationContext()
-
-    @After
-    fun tearDown() {
-        context.deleteDatabase(TEST_DB)
-        context.deleteDatabase(REFERENCE_DB)
-        context.deleteDatabase(IDEMPOTENCY_DB)
-    }
-
-    @Test
-    fun migration6To7_preservesDataAndPassesRoomSchemaValidation() {
-        createVersion6Database()
-
-        // No fallbackToDestructiveMigration here, unlike DatabaseModule: a
-        // broken migration must fail this test, not silently wipe and rebuild.
-        val db = Room.databaseBuilder(context, OpenDroidDatabase::class.java, TEST_DB)
-            .addMigrations(
-                OpenDroidDatabase.MIGRATION_1_2,
-                OpenDroidDatabase.MIGRATION_2_3,
-                OpenDroidDatabase.MIGRATION_3_4,
-                OpenDroidDatabase.MIGRATION_4_5,
-                OpenDroidDatabase.MIGRATION_5_6,
-                OpenDroidDatabase.MIGRATION_6_7
-            )
-            .build()
-        try {
-            // Opening the database runs MIGRATION_6_7 and then Room's own
-            // schema validation across every table. A schema mismatch throws
-            // here.
-            val support = db.openHelper.writableDatabase
-            assertEquals(7, support.version)
-
-            support.query(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_crash_logs_timestamp'"
-            ).use { cursor ->
-                assertTrue("index_crash_logs_timestamp missing after migration", cursor.moveToFirst())
-            }
-
-            // Rows that existed before the upgrade are still there.
-            support.query("SELECT text, sessionId FROM conversations WHERE id = 'msg-1'").use { cursor ->
-                assertTrue("pre-upgrade conversation row lost by migration", cursor.moveToFirst())
-                assertEquals("hello", cursor.getString(0))
-                assertEquals("default_session", cursor.getString(1))
-            }
-
-            // The migrated table round-trips through the real DAO.
-            runBlocking {
-                db.crashLogDao().insert(sampleCrash())
-                val logs = db.crashLogDao().getAll()
-                assertEquals(1, logs.size)
-                assertEquals("boom", logs[0].message)
-                assertEquals("java.lang.RuntimeException", logs[0].exceptionClass)
-            }
-        } finally {
-            db.close()
-        }
-    }
-
-    @Test
-    fun migration6To7_isSafeToRunAgainstAnExistingCrashLogTable() {
-        // Room wraps each migration in a transaction, so a crash mid-migration
-        // rolls back cleanly and the whole migration re-runs against the
-        // original schema - crash recovery does NOT need these guards. The
-        // IF NOT EXISTS statements instead promise something narrower: running
-        // the migration against a database where crash_logs already exists and
-        // holds data must neither throw nor clobber the table. Hold it to that.
-        val db = Room.databaseBuilder(context, OpenDroidDatabase::class.java, IDEMPOTENCY_DB).build()
-        try {
-            val support = db.openHelper.writableDatabase
-            runBlocking { db.crashLogDao().insert(sampleCrash()) }
-
-            OpenDroidDatabase.MIGRATION_6_7.migrate(support)
-
-            runBlocking {
-                val logs = db.crashLogDao().getAll()
-                assertEquals(1, logs.size)
-                assertEquals("boom", logs[0].message)
-            }
-        } finally {
-            db.close()
-        }
-    }
-
-    /**
-     * Builds a populated database exactly as a v6 install would have left it:
-     * the Room-generated v7 schema minus `crash_logs` and its index (the only
-     * things MIGRATION_6_7 adds), stamped `user_version = 6`.
-     */
-    private fun createVersion6Database() {
-        val version6Ddl = mutableListOf<String>()
-        val derivedTables = mutableSetOf<String>()
-        val reference = Room.databaseBuilder(context, OpenDroidDatabase::class.java, REFERENCE_DB).build()
-        try {
-            assertEquals(
-                "Derived v6 schema is stale - the schema has moved past v7. " +
-                    "Test migrations 7 -> 8 onward with MigrationTestHelper against app/schemas/.",
-                7,
-                reference.openHelper.writableDatabase.version
-            )
-            reference.openHelper.writableDatabase.query(
-                "SELECT sql, type, name FROM sqlite_master WHERE sql IS NOT NULL " +
-                    "AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata' " +
-                    "AND name != 'room_master_table' AND tbl_name != 'crash_logs'"
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    version6Ddl += cursor.getString(0)
-                    if (cursor.getString(1) == "table") {
-                        derivedTables += cursor.getString(2)
-                    }
-                }
-            }
-        } finally {
-            reference.close()
-        }
-        // Companion to the version guard above: the filtered sqlite_master
-        // dump must contain exactly the v6 tables. Anything extra or missing
-        // means the derivation is wrong, and letting it through would surface
-        // later as a cryptic Room identity-hash mismatch instead of this.
-        assertEquals(
-            "Derived v6 table set does not match a version-6 database.",
-            VERSION_6_TABLES,
-            derivedTables
-        )
-
-        context.deleteDatabase(TEST_DB)
-        val file = context.getDatabasePath(TEST_DB)
-        file.parentFile?.mkdirs()
-        SQLiteDatabase.openOrCreateDatabase(file, null).use { v6 ->
-            version6Ddl.forEach(v6::execSQL)
-            v6.execSQL(
-                "INSERT INTO chat_sessions (id, title, createdAt, updatedAt, isCurrent) " +
-                    "VALUES ('default_session', 'Chat', 100, 100, 1)"
-            )
-            v6.execSQL(
-                "INSERT INTO conversations (id, text, sender, timestamp, modelBadge, contactPickerData, sessionId) " +
-                    "VALUES ('msg-1', 'hello', 'USER', 123, NULL, NULL, 'default_session')"
-            )
-            v6.version = 6
-        }
-    }
-
-    private fun sampleCrash() = CrashLogEntity(
-        timestamp = 1L,
-        exceptionClass = "java.lang.RuntimeException",
-        message = "boom",
-        threadName = "main",
-        stackTrace = "java.lang.RuntimeException: boom\n\tat com.opendroid.ai.Somewhere.kt:1",
-        appVersionName = "1.0.2",
-        appVersionCode = 3L,
-        androidRelease = "15",
-        androidSdkInt = 35,
-        deviceManufacturer = "Robolectric",
-        deviceModel = "JVM"
+    // Consumes the exported schemas in app/schemas (wired into test assets in
+    // app/build.gradle) and validates migrated databases against them.
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        OpenDroidDatabase::class.java
     )
 
-    private companion object {
-        const val TEST_DB = "migration-test.db"
-        const val REFERENCE_DB = "migration-reference.db"
-        const val IDEMPOTENCY_DB = "migration-idempotency.db"
+    // Room 2.7+ compares the open helper's configured name against the fully
+    // resolved database path, so the helper must be addressed by absolute path.
+    private val databasePath: String
+        get() = ApplicationProvider.getApplicationContext<Context>()
+            .getDatabasePath(TEST_DATABASE).absolutePath
 
-        // Every table a version-6 database contained, i.e. v7 minus crash_logs.
-        val VERSION_6_TABLES = setOf(
-            "conversations",
-            "chat_sessions",
-            "plans",
-            "memories",
-            "task_history",
-            "macros",
-            "unknown_actions",
-            "notifications",
-            "models"
+    @Test
+    fun `migration 6 to 7 preserves existing data and creates the exact crash log schema`() {
+        // Creates a real version-6 database from the exported 6.json schema.
+        helper.createDatabase(databasePath, 6).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO memories (`key`, `value`, `type`, `timestamp`, `ttlHours`, `category`)
+                VALUES ('preferred-model', 'claude-sonnet', 'PREFERENCE', 1234, -1, 'FACT')
+                """.trimIndent()
+            )
+        }
+
+        // Validates the migrated schema (crash_logs columns and index included)
+        // against the exported 7.json, table by table.
+        val migrated = helper.runMigrationsAndValidate(
+            databasePath, 7, true, OpenDroidDatabase.MIGRATION_6_7
+        )
+
+        migrated.query(
+            "SELECT `value`, `timestamp` FROM memories WHERE `key` = 'preferred-model'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("claude-sonnet", cursor.getString(0))
+            assertEquals(1234L, cursor.getLong(1))
+        }
+    }
+
+    @Test
+    fun `migration 6 to 7 is safe to run against an existing crash_logs table`() {
+        // Room wraps each migration in a transaction, so crash recovery does
+        // not need the IF NOT EXISTS guards. They promise something narrower:
+        // running the migration when crash_logs already exists and holds data
+        // must neither throw nor clobber the table.
+        val db = helper.createDatabase(databasePath, 7)
+        db.execSQL(
+            """
+            INSERT INTO crash_logs (`timestamp`, `exceptionClass`, `message`, `threadName`, `stackTrace`,
+                `appVersionName`, `appVersionCode`, `androidRelease`, `androidSdkInt`,
+                `deviceManufacturer`, `deviceModel`)
+            VALUES (1, 'java.lang.RuntimeException', 'boom', 'main', 'trace', '1.0.2', 3, '15', 35, 'Robolectric', 'JVM')
+            """.trimIndent()
+        )
+
+        OpenDroidDatabase.MIGRATION_6_7.migrate(db)
+
+        db.query("SELECT `message` FROM crash_logs").use { cursor ->
+            assertEquals(1, cursor.count)
+            assertTrue(cursor.moveToFirst())
+            assertEquals("boom", cursor.getString(0))
+        }
+    }
+
+    @Test
+    fun `full migration chain from 1 to 7 produces the current schema and keeps data`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(TEST_DATABASE)
+
+        // Version 1 predates schema export (app/schemas only contains 6.json and
+        // 7.json), so the v1 database is created by hand: every table that no
+        // MIGRATION_* creates must already have existed at version 1.
+        FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(databasePath)
+                .callback(V1SchemaCallback())
+                .build()
+        ).writableDatabase.use { db ->
+            db.execSQL(
+                """
+                INSERT INTO conversations (`id`, `text`, `sender`, `timestamp`, `modelBadge`)
+                VALUES ('msg-1', 'hello', 'USER', 42, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO memories (`key`, `value`, `type`, `timestamp`, `ttlHours`, `category`)
+                VALUES ('preferred-model', 'claude-sonnet', 'PREFERENCE', 1234, -1, 'FACT')
+                """.trimIndent()
+            )
+        }
+
+        // Runs every migration in sequence and validates the final schema
+        // against the exported 7.json.
+        val migrated = helper.runMigrationsAndValidate(
+            databasePath, 7, true,
+            OpenDroidDatabase.MIGRATION_1_2,
+            OpenDroidDatabase.MIGRATION_2_3,
+            OpenDroidDatabase.MIGRATION_3_4,
+            OpenDroidDatabase.MIGRATION_4_5,
+            OpenDroidDatabase.MIGRATION_5_6,
+            OpenDroidDatabase.MIGRATION_6_7
+        )
+
+        // Pre-existing chat history survives and is attached to the session
+        // backfilled by MIGRATION_5_6.
+        migrated.query(
+            "SELECT `text`, `sessionId` FROM conversations WHERE `id` = 'msg-1'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("hello", cursor.getString(0))
+            assertEquals("default_session", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT `value` FROM memories WHERE `key` = 'preferred-model'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("claude-sonnet", cursor.getString(0))
+        }
+    }
+
+    private class V1SchemaCallback : SupportSQLiteOpenHelper.Callback(1) {
+        override fun onCreate(db: SupportSQLiteDatabase) {
+            V1_CREATE_STATEMENTS.forEach(db::execSQL)
+        }
+
+        override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    }
+
+    private companion object {
+        const val TEST_DATABASE = "migration-test"
+
+        // The version-1 schema: the current schema minus everything the
+        // migrations add (contactPickerData 1->2, notifications 2->3 with
+        // senderEmail 3->4, models 4->5, chat_sessions + sessionId 5->6,
+        // crash_logs 6->7).
+        val V1_CREATE_STATEMENTS = listOf(
+            "CREATE TABLE IF NOT EXISTS `conversations` (`id` TEXT NOT NULL, `text` TEXT NOT NULL, `sender` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `modelBadge` TEXT, PRIMARY KEY(`id`))",
+            "CREATE TABLE IF NOT EXISTS `plans` (`planId` TEXT NOT NULL, `goal` TEXT NOT NULL, `estimatedDuration` TEXT NOT NULL, `estimatedSteps` INTEGER NOT NULL, `stepsJson` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`planId`))",
+            "CREATE TABLE IF NOT EXISTS `memories` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, `type` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `ttlHours` INTEGER NOT NULL, `category` TEXT NOT NULL, PRIMARY KEY(`key`))",
+            "CREATE TABLE IF NOT EXISTS `task_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `stepId` TEXT NOT NULL, `planId` TEXT NOT NULL, `description` TEXT NOT NULL, `actionType` TEXT NOT NULL, `paramsJson` TEXT NOT NULL, `success` INTEGER NOT NULL, `resultData` TEXT, `errorMessage` TEXT, `timestamp` INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS `macros` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `trigger` TEXT NOT NULL, `stepsJson` TEXT NOT NULL, `isSystem` INTEGER NOT NULL, `isEnabled` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            "CREATE TABLE IF NOT EXISTS `unknown_actions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `attemptedAction` TEXT NOT NULL, `goal` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `fixStatus` TEXT NOT NULL, `wasAutoFixed` INTEGER NOT NULL, `fixedWith` TEXT)"
         )
     }
 }
