@@ -146,9 +146,7 @@ class ModelDownloadWorker(
                         return fail(modelId, "Server returned an invalid download range.")
                     }
 
-                    val body = httpResponse.body
-                        ?: return fail(modelId, "Download response was empty.")
-                    body.byteStream().use { input ->
+                    httpResponse.body.byteStream().use { input ->
                         FileOutputStream(temporaryFile, append).use { output ->
                             copyResponse(
                                 input = input,

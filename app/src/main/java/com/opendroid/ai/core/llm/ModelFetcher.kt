@@ -53,7 +53,7 @@ class ModelFetcher @Inject constructor(
                         // Parse failures must not carry the raw Anthropic body into the
                         // exception message, which is logged by the handler below.
                         val dataArray = try {
-                            JSONObject(response.body?.string() ?: "").getJSONArray("data")
+                            JSONObject(response.body.string()).getJSONArray("data")
                         } catch (e: org.json.JSONException) {
                             throw java.io.IOException("Unexpected response shape from the Anthropic models endpoint.")
                         }
@@ -88,7 +88,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -120,7 +120,7 @@ class ModelFetcher @Inject constructor(
                     }
                     httpClient.newCall(requestBuilder.build()).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -153,7 +153,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -182,7 +182,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -210,7 +210,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -238,7 +238,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("data")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -266,7 +266,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val dataArray = json.getJSONArray("models")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until dataArray.length()) {
@@ -294,7 +294,7 @@ class ModelFetcher @Inject constructor(
 
                     httpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        val json = JSONObject(response.body?.string() ?: "")
+                        val json = JSONObject(response.body.string())
                         val models = json.getJSONArray("models")
                         val list = mutableListOf<AIModel>()
                         for (i in 0 until models.length()) {
@@ -342,7 +342,7 @@ class ModelFetcher @Inject constructor(
                     try {
                         httpClient.newCall(requestBuilder.build()).execute().use { response ->
                             if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                            val json = JSONObject(response.body?.string() ?: "")
+                            val json = JSONObject(response.body.string())
                             val dataArray = json.getJSONArray("data")
                             val list = mutableListOf<AIModel>()
                             for (i in 0 until dataArray.length()) {
@@ -376,7 +376,7 @@ class ModelFetcher @Inject constructor(
                     try {
                         httpClient.newCall(requestBuilder.build()).execute().use { response ->
                             if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                            val json = JSONObject(response.body?.string() ?: "")
+                            val json = JSONObject(response.body.string())
                             val dataArray = json.getJSONArray("data")
                             val list = mutableListOf<AIModel>()
                             for (i in 0 until dataArray.length()) {

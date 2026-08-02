@@ -79,7 +79,8 @@ class OllamaProvider @Inject constructor(
                     knownSecrets = listOfNotNull(apiKey)
                 )
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Ollama")
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) throw IOException("Empty response body from Ollama")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val messageObj = jsonResponse.getAsJsonObject("message")
             val content = messageObj.get("content").asString

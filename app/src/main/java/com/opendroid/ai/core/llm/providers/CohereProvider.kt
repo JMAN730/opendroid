@@ -65,7 +65,8 @@ class CohereProvider @Inject constructor(
                     knownSecrets = listOf(apiKey)
                 )
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Cohere")
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) throw IOException("Empty response body from Cohere")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val messageObj = jsonResponse.getAsJsonObject("message")
             val contentArray = messageObj.getAsJsonArray("content")

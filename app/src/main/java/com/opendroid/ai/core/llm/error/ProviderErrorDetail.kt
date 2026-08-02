@@ -188,7 +188,7 @@ internal fun Response.toSafeProviderException(
  * attacker-sized body before any post-read length check could run.
  */
 internal fun Response.consumeBoundedErrorBody(): String? {
-    val responseBody = body ?: return null
+    val responseBody = body
     val declaredLength = responseBody.contentLength()
     if (declaredLength > MAX_PROVIDER_ERROR_BODY_CHARS) return null
 
