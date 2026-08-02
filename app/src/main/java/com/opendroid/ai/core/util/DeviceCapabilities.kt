@@ -28,11 +28,12 @@ object DeviceCapabilities {
 
     /**
      * The granular telephony features ([PackageManager.FEATURE_TELEPHONY_CALLING],
-     * [PackageManager.FEATURE_TELEPHONY_MESSAGING]) only exist from API 31; below
-     * that the coarse [PackageManager.FEATURE_TELEPHONY] is the best signal.
+     * [PackageManager.FEATURE_TELEPHONY_MESSAGING]) only exist from API 33; below
+     * that the OS never declares them, so the coarse [PackageManager.FEATURE_TELEPHONY]
+     * is the best available signal.
      */
     private fun hasFeature(context: Context, modernFeature: String, legacyFeature: String): Boolean {
-        val feature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) modernFeature else legacyFeature
+        val feature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) modernFeature else legacyFeature
         return context.packageManager.hasSystemFeature(feature)
     }
 }

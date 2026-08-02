@@ -45,14 +45,30 @@ class DeviceCapabilitiesTest {
 
     @Test
     @Config(sdk = [28])
-    fun `calling falls back to the telephony feature below API 31`() {
+    fun `calling falls back to the telephony feature below API 33`() {
         setFeature(PackageManager.FEATURE_TELEPHONY, true)
         assertTrue(DeviceCapabilities.canMakeCalls(context))
     }
 
     @Test
+    @Config(sdk = [32])
+    fun `calling falls back to telephony on API 32 where the calling feature does not exist`() {
+        setFeature(PackageManager.FEATURE_TELEPHONY, true)
+        setFeature(PackageManager.FEATURE_TELEPHONY_CALLING, false)
+        assertTrue(DeviceCapabilities.canMakeCalls(context))
+    }
+
+    @Test
+    @Config(sdk = [32])
+    fun `sms falls back to telephony on API 32 where the messaging feature does not exist`() {
+        setFeature(PackageManager.FEATURE_TELEPHONY, true)
+        setFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING, false)
+        assertTrue(DeviceCapabilities.canSendSms(context))
+    }
+
+    @Test
     @Config(sdk = [28])
-    fun `calling is unsupported below API 31 without telephony`() {
+    fun `calling is unsupported below API 33 without telephony`() {
         setFeature(PackageManager.FEATURE_TELEPHONY, false)
         assertFalse(DeviceCapabilities.canMakeCalls(context))
     }
@@ -76,7 +92,7 @@ class DeviceCapabilitiesTest {
 
     @Test
     @Config(sdk = [28])
-    fun `sms falls back to the telephony feature below API 31`() {
+    fun `sms falls back to the telephony feature below API 33`() {
         setFeature(PackageManager.FEATURE_TELEPHONY, true)
         assertTrue(DeviceCapabilities.canSendSms(context))
     }

@@ -166,15 +166,19 @@ class CommunicationActions @Inject constructor(
     // ── Execution helpers ────────────────────────────────────
 
     private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
-        // Telephony is optional (see AndroidManifest uses-feature): tablets, ChromeOS,
-        // and foldables without a radio have no dialer to fall back on.
-        if (!DeviceCapabilities.canMakeCalls(context)) {
-            return ActionResult(false, null, "This device can't make phone calls — it has no phone hardware. Try WhatsApp instead?")
-        }
         val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
+        val callUri = Uri.parse("tel:$cleanPhone")
+        // Telephony is optional (see AndroidManifest uses-feature). Without a radio,
+        // ACTION_CALL goes nowhere — but a VoIP dialer (Google Voice, Phone Hub) may
+        // still handle tel: on ChromeOS and tablets, so only fail when nothing can.
+        val hasTelephony = DeviceCapabilities.canMakeCalls(context)
+        if (!hasTelephony &&
+            Intent(Intent.ACTION_DIAL, callUri).resolveActivity(context.packageManager) == null) {
+            return ActionResult(false, null, "This device can't make phone calls — it has no phone hardware or dialer app. Try WhatsApp instead?")
+        }
         return try {
-            val callUri = Uri.parse("tel:$cleanPhone")
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            if (hasTelephony &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                 val intent = Intent(Intent.ACTION_CALL, callUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -427,12 +431,14 @@ class CommunicationActions @Inject constructor(
                         if (launchIntent != null) {
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
-                        } else if (!DeviceCapabilities.canMakeCalls(context)) {
-                            // No meeting app installed and no dialer to fall back on.
-                            return ActionResult(false, null, "No video call app is installed, and this device can't place phone calls. Try WhatsApp?")
                         } else {
                             val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            // Telephony is optional — a device with no radio and no
+                            // dialer app has nothing left to fall back to.
+                            if (dialIntent.resolveActivity(context.packageManager) == null) {
+                                return ActionResult(false, null, "No video call app is installed, and this device can't place phone calls. Try WhatsApp?")
                             }
                             context.startActivity(dialIntent)
                         }
