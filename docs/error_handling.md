@@ -162,6 +162,8 @@ If an active cloud provider fails after retries, `LLMProviderFactory` catches th
 In [`ModelDownloadWorker.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/llm/ModelDownloadWorker.kt):
 
 - **HTTP Range Resume:** Interrupted model downloads resume from the last saved byte offset without corrupting existing disk chunks.
+- **Long-running transfer safeguards:** User-initiated multi-GB downloads require an unmetered network and run through WorkManager's visible `dataSync` foreground service.
+- **Resumable retry diagnostics:** WorkManager stops, transient transport failures, and retryable `408`/`425`/`429`/`5xx` responses keep the partial `.tmp` file for the next Range request; API 31+ stops also record the WorkManager stop reason without converting the stop into a permanent failure.
 - **SHA-256 Checksum Validation:** Checksum mismatch deletes temporary `.tmp` files immediately and updates database state to `ModelStatus.FAILED`.
 - **LiteRT C++ JNI Load Test:** Models are tested via C++ JNI instantiation before being marked `READY`. JNI load failure deletes the invalid binary and marks status as `FAILED`.
 

@@ -6,7 +6,6 @@ import android.os.StatFs
 import android.util.Log
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.db.dao.ModelDao
@@ -136,10 +135,7 @@ class ModelRepository @Inject constructor(
             .putBoolean("simulate", simulate)
             .build()
 
-        val downloadRequest = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
-            .setInputData(inputData)
-            .addTag("download_${model.id}")
-            .build()
+        val downloadRequest = ModelDownloadWorkRequest.create(inputData, model.id)
 
         workManager.enqueueUniqueWork(
             "download_${model.id}",
