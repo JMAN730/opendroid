@@ -17,7 +17,7 @@ names the file or ticket it touches so it can be picked up without re-deriving t
 | **Toolchain** | Gradle 9.6.1, AGP 9.3.1, Kotlin 2.4.0 (AGP built-in Kotlin), JDK 21 (pinned) |
 | **Tests** | 26 JVM unit-test classes; **no instrumentation source set** (`app/src/` has only `main` and `test`) |
 | **CI** | 3 jobs — unit tests + `assembleDebug`, `lintDebug`, unsigned `assembleRelease` (R8) |
-| **Lint** | 49 findings frozen in `app/lint-baseline.xml`; new findings fail the build |
+| **Lint** | 29 findings frozen in `app/lint-baseline.xml`; policy (baseline / `error` / warning tiers) lives in the `lint {}` block of `app/build.gradle` |
 | **Distribution** | GitHub Releases; marketing site auto-deploys to Pages from `website/` |
 | **Open work** | Issue #15 (grant-all onboarding action), PR #50 (JDK 21 daemon pin) |
 
@@ -137,7 +137,7 @@ Current values so drift is visible later:
 
 | Metric | Today | Target |
 |---|---|---|
-| Lint baseline size | 49 | 0 |
+| Lint baseline size | 29 | 0 |
 | Unit-test classes | 26 | grows with each feature PR |
 | Instrumentation tests | 0 | ≥3 accessibility scenarios |
 | `targetSdk` gap to latest | 1 release behind | 0 |
