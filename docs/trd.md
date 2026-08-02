@@ -98,8 +98,8 @@ When initiating communication (calls/SMS), the agent executes the following casc
 
 ### 3.3. Secure Storage
 All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys, Hugging Face Access Tokens) are stored securely:
-* **Storage Backend:** `EncryptedSharedPreferences` (managed via `SecurePrefs.kt`)
-* **Encryption Scheme:** AES256-SIV-HMAC-SHA256 for data and AES128-ECB for keys, managed through Android's system `MasterKey`.
+* **Storage Backend:** Direct Android Keystore AES-256-GCM envelopes (`ProviderCredentialStore.kt` for secrets, `UserProfileStore.kt` for profile data, both over `KeystoreSecretStorage.kt`)
+* **Encryption Scheme:** `AES/GCM/NoPadding` with a 256-bit non-exportable AndroidKeyStore key, a random 96-bit IV per write, the value's logical ID as GCM AAD, and a versioned `v1.<iv>.<ciphertext>` envelope. Credentials and profile data use separate key aliases and separate app-private files.
 
 ### 3.4. Background Model Downloader (WorkManager)
 * **ModelDownloadWorker**: Implements background downloading via OkHttp. Features:
@@ -190,7 +190,7 @@ memories, and crash history.
   * **OkHttp & Logging Interceptor:** `4.12.0`
   * **Retrofit & Converter Gson:** `2.9.0`
 * **Security & Cryptography:**
-  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06`
+  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06` - retained only as the deprecated one-time import source for values written by earlier builds
 * **User Interface:**
   * **Jetpack Compose BOM:** `2026.06.01`
   * **Lifecycle & ViewModel Compose Extensions:** `2.8.7`

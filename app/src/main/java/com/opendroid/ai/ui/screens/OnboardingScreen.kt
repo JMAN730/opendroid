@@ -16,14 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.opendroid.ai.ui.theme.*
+import com.opendroid.ai.ui.viewmodel.OnboardingViewModel
 
 enum class OnboardingStage {
     INTRODUCTION,
@@ -33,23 +34,21 @@ enum class OnboardingStage {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OnboardingScreen(onFinished: () -> Unit) {
-    val context = LocalContext.current
-    // An unreadable legacy keyset must not crash the recovery path or cause a plaintext write.
-    val sharedPrefs = remember { com.opendroid.ai.core.security.SecurePrefs.getOrNull(context) }
+fun OnboardingScreen(
+    onFinished: () -> Unit,
+    viewModel: OnboardingViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
 
-    var name by remember { mutableStateOf(sharedPrefs?.getString("user_name", "") ?: "") }
-    var dob by remember { mutableStateOf(sharedPrefs?.getString("user_dob", "") ?: "") }
-    var stage by remember {
-        mutableStateOf(
-            if (name.isNotBlank() && dob.isNotBlank()) {
-                OnboardingStage.PERMISSION_PROMPT
-            } else {
-                OnboardingStage.INTRODUCTION
-            }
-        )
-    }
+    var stage by remember { mutableStateOf(OnboardingStage.INTRODUCTION) }
     var showError by remember { mutableStateOf(false) }
+
+    // A user returning to a stored profile skips straight past the introduction, as before.
+    LaunchedEffect(uiState.isLoading) {
+        if (!uiState.isLoading && uiState.name.isNotBlank() && uiState.dateOfBirth.isNotBlank()) {
+            stage = OnboardingStage.PERMISSION_PROMPT
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -70,20 +69,19 @@ fun OnboardingScreen(onFinished: () -> Unit) {
         when (stage) {
             OnboardingStage.INTRODUCTION -> {
                 IntroductionPanel(
-                    name = name,
-                    onNameChange = { name = it; showError = false },
-                    dob = dob,
-                    onDobChange = { dob = it; showError = false },
+                    name = uiState.name,
+                    onNameChange = { viewModel.onNameChange(it); showError = false },
+                    dob = uiState.dateOfBirth,
+                    onDobChange = { viewModel.onDateOfBirthChange(it); showError = false },
                     showError = showError,
+                    profileMustBeReentered = uiState.profileMustBeReentered,
+                    storageError = uiState.storageError,
                     onContinue = {
-                        if (name.isBlank() || dob.isBlank()) {
+                        if (uiState.name.isBlank() || uiState.dateOfBirth.isBlank()) {
                             showError = true
                         } else {
-                            sharedPrefs?.edit()
-                                ?.putString("user_name", name)
-                                ?.putString("user_dob", dob)
-                                ?.apply()
-                            stage = OnboardingStage.PERMISSION_PROMPT
+                            // The stage only advances once the profile is encrypted at rest.
+                            viewModel.saveProfile { stage = OnboardingStage.PERMISSION_PROMPT }
                         }
                     },
                     modifier = Modifier.padding(padding)
@@ -100,10 +98,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
             OnboardingStage.PERMISSIONS -> {
                 PermissionsPanel(
                     padding = padding,
-                    onFinished = {
-                        sharedPrefs?.edit()?.putBoolean("onboarding_completed", true)?.apply()
-                        onFinished()
-                    }
+                    onFinished = { viewModel.completeOnboarding(onFinished) }
                 )
             }
         }
@@ -119,7 +114,9 @@ fun IntroductionPanel(
     onDobChange: (String) -> Unit,
     showError: Boolean,
     onContinue: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    profileMustBeReentered: Boolean = false,
+    storageError: Boolean = false
 ) {
     Column(
         modifier = modifier
@@ -161,6 +158,18 @@ fun IntroductionPanel(
             color = TextSecondary,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+
+        if (profileMustBeReentered) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Your saved details could not be unlocked on this device, so they were " +
+                        "not kept. Nothing was stored unencrypted - please enter them again.",
+                color = AccentRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
 
         Spacer(modifier = Modifier.height(28.dp))
 
@@ -209,6 +218,16 @@ fun IntroductionPanel(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Please enter both your name and birth date.",
+                color = AccentRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (storageError) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Your details could not be saved securely. Please try again.",
                 color = AccentRed,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold

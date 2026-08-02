@@ -1,7 +1,6 @@
 package com.opendroid.ai.core.security
 
 import java.security.SecureRandom
-import java.security.GeneralSecurityException
 import java.util.Base64
 import java.io.File
 import javax.crypto.Cipher
@@ -151,8 +150,7 @@ class ProviderCredentialStoreTest {
     @Test
     fun `unavailable legacy credential source surfaces reentry without reading a plaintext fallback`() {
         val store = ProviderCredentialStoreImpl(
-            records = InMemoryCredentialRecords(),
-            cipher = TestAeadCipher(),
+            records = KeystoreSecretRecords(InMemoryCredentialRecords(), TestAeadCipher()),
             legacyCredentials = UnavailableLegacyCredentials()
         )
 
@@ -217,30 +215,22 @@ class ProviderCredentialStoreTest {
         )
     }
 
-    @Test
-    fun `unreadable legacy preferences resolve to a safe null without a plaintext fallback`() {
-        assertNull(
-            SecurePrefs.legacyPreferenceAccessOrNull<Any> {
-                throw GeneralSecurityException("legacy keyset unavailable")
-            }
-        )
-    }
-
     private fun newStore(
         records: InMemoryCredentialRecords = InMemoryCredentialRecords(),
         cipher: TestAeadCipher = TestAeadCipher(),
         legacy: InMemoryLegacyCredentials = InMemoryLegacyCredentials()
-    ): ProviderCredentialStoreImpl = ProviderCredentialStoreImpl(records, cipher, legacy)
+    ): ProviderCredentialStoreImpl =
+        ProviderCredentialStoreImpl(KeystoreSecretRecords(records, cipher), legacy)
 
     private class InMemoryCredentialRecords(
         private val writable: Boolean = true,
         val events: MutableList<String> = mutableListOf()
-    ) : CredentialRecordStorage {
+    ) : SecretRecordStorage {
         val records = linkedMapOf<String, String>()
         val malformedKeys = mutableSetOf<String>()
 
         override fun read(key: String): String? {
-            if (key in malformedKeys) throw CredentialRecordMalformedException()
+            if (key in malformedKeys) throw SecretRecordMalformedException()
             return records[key]
         }
 
@@ -262,43 +252,47 @@ class ProviderCredentialStoreTest {
     private class InMemoryLegacyCredentials(
         val credentials: MutableMap<String, String> = mutableMapOf(),
         val events: MutableList<String> = mutableListOf()
-    ) : LegacyCredentialSource {
-        override fun keys(): CredentialStoreResult<Set<String>> =
-            CredentialStoreResult.Success(credentials.keys.toSet())
+    ) : LegacySecretSource {
+        override fun keys(): SecretRecordResult<Set<String>> =
+            SecretRecordResult.Success(credentials.keys.toSet())
 
-        override fun read(key: String): CredentialStoreResult<String?> =
-            CredentialStoreResult.Success(credentials[key])
+        override fun readString(key: String): SecretRecordResult<String?> =
+            SecretRecordResult.Success(credentials[key])
 
-        override fun remove(key: String): CredentialStoreResult<Unit> {
+        override fun readBoolean(key: String): SecretRecordResult<Boolean?> =
+            SecretRecordResult.Success(null)
+
+        override fun remove(key: String): SecretRecordResult<Unit> {
             events += "legacy-remove"
             credentials.remove(key)
-            return CredentialStoreResult.Success(Unit)
+            return SecretRecordResult.Success(Unit)
         }
     }
 
-    private class UnavailableLegacyCredentials : LegacyCredentialSource {
-        override fun keys(): CredentialStoreResult<Set<String>> =
-            CredentialStoreResult.CredentialsMustBeReentered
+    private class UnavailableLegacyCredentials : LegacySecretSource {
+        override fun keys(): SecretRecordResult<Set<String>> = SecretRecordResult.Unrecoverable
 
-        override fun read(key: String): CredentialStoreResult<String?> =
-            CredentialStoreResult.CredentialsMustBeReentered
+        override fun readString(key: String): SecretRecordResult<String?> =
+            SecretRecordResult.Unrecoverable
 
-        override fun remove(key: String): CredentialStoreResult<Unit> =
-            CredentialStoreResult.CredentialsMustBeReentered
+        override fun readBoolean(key: String): SecretRecordResult<Boolean?> =
+            SecretRecordResult.Unrecoverable
+
+        override fun remove(key: String): SecretRecordResult<Unit> = SecretRecordResult.Unrecoverable
     }
 
-    private class TestAeadCipher : CredentialAeadCipher {
+    private class TestAeadCipher : SecretAeadCipher {
         private val key = SecretKeySpec(ByteArray(32) { it.toByte() }, "AES")
         private val random = SecureRandom()
         var keyAvailable = true
 
-        override fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedCredential {
+        override fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedSecret {
             checkKeyAvailable()
             val iv = ByteArray(12).also(random::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
             cipher.updateAAD(aad)
-            return EncryptedCredential(iv, cipher.doFinal(plaintext))
+            return EncryptedSecret(iv, cipher.doFinal(plaintext))
         }
 
         override fun decrypt(iv: ByteArray, ciphertext: ByteArray, aad: ByteArray): ByteArray {
@@ -314,7 +308,7 @@ class ProviderCredentialStoreTest {
         }
 
         private fun checkKeyAvailable() {
-            if (!keyAvailable) throw CredentialKeyUnavailableException()
+            if (!keyAvailable) throw SecretKeyUnavailableException()
         }
     }
 }

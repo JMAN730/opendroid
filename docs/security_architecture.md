@@ -36,41 +36,70 @@ OpenDroid is designed with a **Privacy-First, Defense-in-Depth** security philos
 
 ## 2. Encryption & Data Protection at Rest
 
-Provider API keys, the ElevenLabs key, and Hugging Face tokens use the direct Android Keystore
-[`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt).
-The legacy [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt)
-store remains only for non-provider callers and as the narrowly scoped migration source for those
-provider credentials.
+Every secret and every piece of profile data uses the direct Android Keystore. There is exactly one
+cipher, envelope format, and record boundary, declared in
+[`KeystoreSecretStorage.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/KeystoreSecretStorage.kt)
+and shared by both stores that build on it:
+
+* Provider API keys, the ElevenLabs key, and Hugging Face tokens —
+  [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt)
+* Profile name and date of birth —
+  [`UserProfileStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt)
+
+Each store owns a separate Keystore alias and a separate app-private file, so recovering one never
+destroys the other. Non-secret preferences (the onboarding flag and the Hugging Face verification
+timestamp) live in
+[`AppSettingsStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/settings/AppSettingsStore.kt);
+they carry no personal or credential data, and the classification of every legacy key is recorded
+in `LegacySecurePreferenceInventory`.
+
+`SecurePrefs` is gone. `androidx.security:security-crypto` survives in exactly one place — the
+deprecated `LegacyEncryptedPreferencesSource` used to import values written by builds that predate
+these stores. It is never a runtime store and never a fallback, and it is scheduled for removal
+once the migration has shipped for a release.
 
 ### 2.1. Cryptographic Schemes
 
 | Storage Scope | Key Store / Master Key | Key Encryption Scheme | Value Encryption Scheme |
 |:---|:---|:---|:---|
 | **Provider credentials** | Android KeyStore (`AES`, 256-bit, encrypt/decrypt only) | N/A | `AES/GCM/NoPadding`, random 96-bit IV, credential-ID AAD, versioned envelope |
-| **Legacy non-provider preferences** | Android KeyStore (`MasterKey` AES256_GCM) | `AES256_SIV` (Deterministic AEAD) | `AES256_GCM` (Authenticated Encryption) |
+| **User profile (name, DOB)** | Android KeyStore (`AES`, 256-bit, encrypt/decrypt only, separate alias) | N/A | `AES/GCM/NoPadding`, random 96-bit IV, `user-profile` AAD, versioned envelope |
+| **Non-secret app settings** | None (no personal or credential data) | N/A | App-private storage, excluded from backup and device transfer |
+| **Legacy import source (read-only, one-time)** | Android KeyStore (`MasterKey` AES256_GCM) | `AES256_SIV` (Deterministic AEAD) | `AES256_GCM` (Authenticated Encryption) |
 | **Room Database (SQLite)** | App Sandboxed Storage (`opendroid_database`) | System Scoped Permissions | System Scoped Permissions |
 | **Downloaded Models** | Sandboxed Files Dir (`.litertlm` / `.task`) | Integrity Validation via SHA-256 | Integrity Validation via SHA-256 |
 
+Keys are generated with `setUserAuthenticationRequired(false)`. The app makes provider requests
+from background work, so a key that demanded a foreground unlock would break those requests.
+
 ### 2.2. Zero Plaintext Fallback Policy
 
-`ProviderCredentialStore` strictly enforces a **Zero Plaintext Fallback** policy:
+Both direct-Keystore stores strictly enforce a **Zero Plaintext Fallback** policy:
 
-- The app-private credential file holds only versioned AES-GCM envelopes; plaintext provider
-  credentials are not written to the DataStore JSON.
-- Every envelope is bound to its logical credential ID using GCM AAD. Malformed envelopes,
-  unknown versions, authentication failures, and unavailable Keystore keys surface a
-  `CredentialsMustBeReentered` state without logging credential material.
-- Recovery clears only the dedicated provider credential records. It never uses message-string
-  heuristics or deletes the legacy encrypted preferences file, preserving non-provider settings.
+- The app-private files hold only versioned AES-GCM envelopes; plaintext credentials are not
+  written to the DataStore JSON, and profile details are never written to an unencrypted file.
+- Every envelope is bound to its logical value using GCM AAD - the credential ID for credentials,
+  `user-profile` for the profile record. Malformed envelopes, unknown versions, authentication
+  failures, and unavailable Keystore keys surface a `CredentialsMustBeReentered` or
+  `ProfileMustBeReentered` state without logging the protected material.
+- Recovery clears only the dedicated records. It never uses message-string heuristics and never
+  deletes a whole preferences file, so unrelated settings survive.
+- A lost profile is recoverable by re-onboarding: the splash routing sends the user back to the
+  onboarding screen, which explains that the saved details could not be unlocked.
 
-### 2.3. Automated Plaintext Migration Engine
+### 2.3. One-Time Legacy Import
 
-During application startup, `SecurePrefs.migrateFromPlaintext(context)` retains its legacy
-non-provider migration. Separately, `ProviderCredentialStore.migrateLegacyCredentials()` imports
-only `llm_api_key_*`, `elevenlabs_api_key`, and `huggingface_token` from legacy
-`EncryptedSharedPreferences`. It durably commits the direct-keystore envelope before removing the
-matching legacy credential, so retries are idempotent and destination failures leave the source
-intact.
+During application startup, `LegacyPreferenceMigration.run()` imports the non-provider values -
+`user_name` and `user_dob` into `UserProfileStore`, `onboarding_completed` and
+`huggingface_last_verified` into `AppSettingsStore` - and deletes the obsolete `migration_done`
+bookkeeping key. Separately, `ProviderCredentialStore.migrateLegacyCredentials()` imports only
+`llm_api_key_*`, `elevenlabs_api_key`, and `huggingface_token`.
+
+Both read through `ChainedLegacySecretSource`, which prefers the encrypted legacy file over the
+older plaintext `opendroid_prefs` file for the same key. Every import durably commits the
+destination envelope **before** removing the legacy value, so retries are idempotent, a crash in
+between leaves a duplicate the next run resolves in favour of the committed destination, and a
+destination failure leaves the source intact.
 
 ---
 
