@@ -1548,7 +1548,7 @@ fun SettingsScreen(
                                         "YOLO runs EVERY plan without asking — including actions that " +
                                         "spend money (UPI payments, food and cab orders) and irreversible " +
                                         "ones (installing apps, deleting files, restarting the device). " +
-                                        "Only per-action safety confirmations remain.",
+                                        "No approval gate remains.",
                                         color = TextPrimary
                                     )
                                 },

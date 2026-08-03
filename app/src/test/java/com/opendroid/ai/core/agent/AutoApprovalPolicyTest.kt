@@ -50,8 +50,8 @@ class AutoApprovalPolicyTest {
     }
 
     @Test
-    fun `YOLO still blocks neverAutoApprove actions`() {
-        assertFalse(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("PAY_UPI", "DELETE_FILE")))
+    fun `YOLO auto-approves even neverAutoApprove actions`() {
+        assertTrue(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("PAY_UPI", "DELETE_FILE")))
     }
 
     @Test

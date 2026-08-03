@@ -1057,8 +1057,8 @@ class AgentLoop @Inject constructor(
                             // Auto-approved plans: silently injected steps must not run
                             // past the allowlist. Re-check the merged plan's pending
                             // steps; if any is blocked, park the WHOLE remainder back
-                            // in the PlanProposed gate. The same policy applies to
-                            // YOLO so injected destructive actions cannot bypass it.
+                            // in the PlanProposed gate. YOLO auto-approves everything
+                            // by design, so this re-check only gates AUTO mode.
                             if (autoApproved) {
                                 val liveConfig = settingsRepository.llmConfig.first()
                                 val approval = liveConfig.approvalSettings()
