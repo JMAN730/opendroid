@@ -106,6 +106,7 @@ fun SettingsScreen(
     var providerDropdownExpanded by remember { mutableStateOf(false) }
     var keysSectionExpanded by remember { mutableStateOf(false) }
     var voiceSectionExpanded by remember { mutableStateOf(false) }
+    var planningSectionExpanded by remember { mutableStateOf(false) }
 
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
@@ -1486,14 +1487,29 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = CardBackground)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "PLANNING & AUTOMATION",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = AccentCyan
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { planningSectionExpanded = !planningSectionExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "PLANNING & AUTOMATION",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Icon(
+                                imageVector = if (planningSectionExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Toggle Planning Section",
+                                tint = AccentCyan
+                            )
+                        }
+
+                        AnimatedVisibility(visible = planningSectionExpanded) {
+                        Column(modifier = Modifier.padding(top = 16.dp)) {
 
                         var showYoloWarning by remember { mutableStateOf(false) }
                         val autoMode = config.resolvedAutoMode()
@@ -1707,6 +1723,8 @@ fun SettingsScreen(
                                     checkedTrackColor = AccentNeonGreen.copy(alpha = 0.5f)
                                 )
                             )
+                        }
+                        }
                         }
                     }
                 }
