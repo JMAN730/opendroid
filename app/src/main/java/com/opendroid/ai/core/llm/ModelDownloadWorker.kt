@@ -6,9 +6,6 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialStore
@@ -62,6 +59,8 @@ class ModelDownloadWorker(
 
     override suspend fun doWork(): Result {
         val modelId = inputData.getString("model_id") ?: return Result.failure()
+        // Legacy plaintext credentials must be migrated before any token read below.
+        providerCredentialStore.migrateLegacyCredentials()
         val spec = OnDeviceModelRegistry.findById(modelId)
             ?: return fail(modelId, "Unknown model.")
         if (!spec.isManagedDownloadAvailable) {
@@ -87,7 +86,8 @@ class ModelDownloadWorker(
             // or delete the partial file; the next run resumes it with a Range request.
             logStopReason(modelId)
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.e(tag, "Model download failed for model=$modelId", error)
             fail(modelId, "Could not download and verify this model.")
         }
     }
@@ -182,7 +182,7 @@ class ModelDownloadWorker(
                 target = ModelStoragePaths.targetFile(targetDir, spec),
                 manifestFile = ModelStoragePaths.manifestFile(targetDir),
                 spec = spec,
-                verifyFormat = ::verifyLiteRtCompatibility
+                verifyFormat = { LiteRtCompatibility.verify(it, applicationContext.cacheDir) }
             )
             if (!install.isSuccess) {
                 return fail(modelId, verificationFailureMessage(install.failure))
@@ -244,7 +244,6 @@ class ModelDownloadWorker(
     }
 
     private fun huggingFaceToken(): String? {
-        providerCredentialStore.migrateLegacyCredentials()
         return when (
             val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
         ) {
@@ -330,17 +329,6 @@ class ModelDownloadWorker(
                 "stopReason=${ModelDownloadStopReason.label(reason)} ($reason), " +
                 "attempt=$runAttemptCount. Partial data is retained for retry."
         )
-    }
-
-    private fun verifyLiteRtCompatibility(file: File) {
-        val config = EngineConfig(
-            modelPath = file.absolutePath,
-            backend = Backend.CPU(),
-            cacheDir = applicationContext.cacheDir.absolutePath
-        )
-        Engine(config).use { engine ->
-            engine.initialize()
-        }
     }
 
     private fun modelDirectory(spec: OnDeviceModelSpec): File {
