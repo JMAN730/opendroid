@@ -96,7 +96,7 @@ OpenDroid organizes memory across four distinct tiers:
 
 | Category | Technology / Library | Version | Role in Architecture |
 |:---|:---|:---|:---|
-| **Language & SDK** | Kotlin / Android SDK | Kotlin 2.4.0 / SDK 35 (Min SDK 26) | Core application runtime and language standard |
+| **Language & SDK** | Kotlin / Android SDK | Kotlin 2.4.0 / SDK 36 (Min SDK 26) | Core application runtime and language standard |
 | **UI Framework** | Jetpack Compose BOM | 2026.06.01 | Declarative reactive UI with Cyberpunk Design System |
 | **Architecture** | Clean Architecture + MVVM | - | Strict separation of UI, Domain, Data, and System Layers |
 | **Dependency Injection** | Dagger-Hilt | 2.60.1 | Centralized dependency graph and scope management |
