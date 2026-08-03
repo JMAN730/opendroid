@@ -107,7 +107,9 @@ class LiteRTLMProvider @Inject constructor(
     fun deleteModel(modelId: String): Boolean {
         val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
-        return if (modelFile.exists()) modelFile.delete() else true
+        val deleted = if (modelFile.exists()) modelFile.delete() else true
+        modelFile.parentFile?.let(ModelStoragePaths::manifestFile)?.delete()
+        return deleted
     }
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
