@@ -132,7 +132,9 @@ android {
         //
         // 1. Baseline (lint-baseline.xml) - frozen legacy findings. Shrink-only:
         //    delete entries as they are fixed, never regenerate it to absorb
-        //    new findings.
+        //    new findings. Shrink by hand-deleting the fixed <issue> blocks, not
+        //    via `updateLintBaseline` - regeneration churns line numbers on every
+        //    unrelated entry (see #116 vs #90) and makes the diff unreviewable.
         // 2. `error` list below - checks burned down to zero. Hard-gated: any
         //    recurrence fails the build. A check joins this list in the exact
         //    PR that drives its count to zero, so a burned-down check cannot
@@ -147,10 +149,9 @@ android {
         // hints (e.g. AutoboxingStateCreation), which warningsAsErrors does not
         // touch.
         //
-        // Note the baseline still masks whatever it lists, at any tier. Findings
-        // frozen there - the InlinedApi global-actions cluster, an
-        // AutoboxingStateCreation in LogsScreen - are invisible to this gate.
-        // Retiring those means shrinking the baseline, not adding a check here.
+        // Note the baseline still masks whatever it lists, at any tier - a
+        // baselined finding is invisible to this gate. Retiring one means fixing
+        // it in source and shrinking the baseline, not adding a check here.
         abortOnError = true
         checkReleaseBuilds = true
         warningsAsErrors = true

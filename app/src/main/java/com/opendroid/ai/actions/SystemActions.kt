@@ -309,6 +309,9 @@ class SystemActions @Inject constructor(
     private class LockScreenAction : Action {
         override val name: String = "LOCK_SCREEN"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+                return ActionResult(false, null, "Locking the screen requires Android 9 or newer.")
+            }
             val service = OpenDroidAccessibilityService.getInstance()
             return if (service != null) {
                 val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
@@ -439,6 +442,9 @@ class SystemActions @Inject constructor(
     private class TakeScreenshotAction : Action {
         override val name: String = "TAKE_SCREENSHOT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+                return ActionResult(false, null, "Taking a screenshot requires Android 9 or newer.")
+            }
             val service = OpenDroidAccessibilityService.getInstance()
             return if (service != null) {
                 val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT)

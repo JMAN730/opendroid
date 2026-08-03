@@ -143,7 +143,9 @@ class OpenDroidService : Service() {
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             }
-        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // FOREGROUND_SERVICE_TYPE_MICROPHONE is an API 30 constant; API 29 devices
+            // fall through to plain startForeground, which uses the manifest-declared types.
             androidx.core.app.ServiceCompat.startForeground(
                 this, NOTIFICATION_ID, notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
