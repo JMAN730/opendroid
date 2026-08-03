@@ -52,12 +52,16 @@ class PlanManager @Inject constructor(
      */
     private val scope = CoroutineScope(Dispatchers.Default)
 
-    suspend fun startNewPlan(plan: Plan, context: Context) {
+    suspend fun startNewPlan(
+        plan: Plan,
+        context: Context,
+        initialStatus: PlanStatus = PlanStatus.RUNNING
+    ) {
         val validatedPlan = planValidator.get().validateAndFix(plan, context)
         mutex.withLock {
-            val runningPlan = validatedPlan.copy(status = PlanStatus.RUNNING)
-            _currentPlan.value = runningPlan
-            workingMemory.activePlan = runningPlan
+            val initialPlan = validatedPlan.copy(status = initialStatus)
+            _currentPlan.value = initialPlan
+            workingMemory.activePlan = initialPlan
             saveCurrentPlanLocked()
         }
     }

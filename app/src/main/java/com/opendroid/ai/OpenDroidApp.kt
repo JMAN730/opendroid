@@ -6,9 +6,8 @@ import com.opendroid.ai.core.crash.CrashLogRecorder
 import com.opendroid.ai.core.crash.DeviceMetadata
 import com.opendroid.ai.core.crash.OpenDroidCrashHandler
 import com.opendroid.ai.core.memory.MemoryManager
-import com.opendroid.ai.core.security.SecurePrefs
-import com.opendroid.ai.data.crash.RoomCrashLogSink
-import com.opendroid.ai.data.db.dao.CrashLogDao
+import com.opendroid.ai.core.security.LegacyPreferenceMigration
+import com.opendroid.ai.data.crash.CrashLogRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +22,10 @@ class OpenDroidApp : Application() {
     lateinit var memoryManager: MemoryManager
 
     @Inject
-    lateinit var crashLogDao: CrashLogDao
+    lateinit var crashLogRepository: CrashLogRepository
+
+    @Inject
+    lateinit var legacyPreferenceMigration: LegacyPreferenceMigration
 
     private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -33,8 +35,10 @@ class OpenDroidApp : Application() {
         // Installed first so that a crash in any later startup step is captured.
         installCrashHandler()
 
-        // Migrate plaintext prefs to encrypted storage (runs once)
-        SecurePrefs.migrateFromPlaintext(this)
+        // Retire the legacy preference files into the direct-Keystore stores. This opens the
+        // Keystore and the legacy keyset, so it runs off the main thread; splash routing and
+        // onboarding await it before reading. It is a no-op once every value has been imported.
+        legacyPreferenceMigration.start()
 
         // One-time startup cleanup: remove any poisoned memory entries
         // that may have been stored by previous versions of the app
@@ -50,7 +54,7 @@ class OpenDroidApp : Application() {
     private fun installCrashHandler() {
         try {
             val recorder = CrashLogRecorder(
-                sink = RoomCrashLogSink(crashLogDao),
+                sink = crashLogRepository,
                 // Read here, at startup, rather than at crash time - a dying
                 // process is the wrong place to be querying PackageManager.
                 metadata = DeviceMetadata.fromContext(this),

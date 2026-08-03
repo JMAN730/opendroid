@@ -28,7 +28,7 @@ If this ever becomes a multi-context repo, add `CONTEXT-MAP.md` at the root poin
 
 ## Not domain docs
 
-`docs/` already holds product and engineering prose predating this setup — `architecture.md`, `prd.md`, `trd.md`, `security.md`, `error_handling.md`, `development_guide.md`, `USAGE.md`, `prompts.md`. Useful background, but they are **not** the glossary and **not** ADRs. Don't treat them as authoritative on domain vocabulary, and don't extend them in place of `CONTEXT.md`.
+`docs/` already holds product and engineering prose predating this setup — `architecture.md`, `prd.md`, `trd.md`, `security_architecture.md`, `error_handling.md`, `development_guide.md`, `USAGE.md`, `prompts.md`. Useful background, but they are **not** the glossary and **not** ADRs. Don't treat them as authoritative on domain vocabulary, and don't extend them in place of `CONTEXT.md`.
 
 ## Use the glossary's vocabulary
 

@@ -2,11 +2,12 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,7 +30,7 @@ class FinanceActions @Inject constructor() {
             
             return try {
                 val encNote = URLEncoder.encode(note, "UTF-8")
-                val upiUri = Uri.parse("upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR")
+                val upiUri = "upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -115,7 +116,7 @@ class FinanceActions @Inject constructor() {
                 }
                 
                 val share = total / numPeople
-                val formattedShare = String.format("%.2f", share)
+                val formattedShare = String.format(Locale.getDefault(), "%.2f", share)
                 
                 val summary = if (peopleList.firstOrNull()?.startsWith("Person ") == true) {
                     "Total: $totalAmountStr divided among $numPeople people. " +

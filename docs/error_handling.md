@@ -162,17 +162,22 @@ If an active cloud provider fails after retries, `LLMProviderFactory` catches th
 In [`ModelDownloadWorker.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/llm/ModelDownloadWorker.kt):
 
 - **HTTP Range Resume:** Interrupted model downloads resume from the last saved byte offset without corrupting existing disk chunks.
-- **SHA-256 Checksum Validation:** Checksum mismatch deletes temporary `.tmp` files immediately and updates database state to `ModelStatus.FAILED`.
+- **Long-running transfer safeguards:** User-initiated multi-GB downloads require an unmetered network and run through WorkManager's visible `dataSync` foreground service.
+- **Resumable retry diagnostics:** WorkManager stops, transient transport failures, and retryable `408`/`425`/`429`/`5xx` responses keep the partial `.download` staging file for the next Range request; API 31+ stops also record the WorkManager stop reason without converting the stop into a permanent failure.
+- **SHA-256 Checksum Validation:** Checksum mismatch deletes the temporary `.download` staging file immediately and updates database state to `ModelStatus.FAILED`.
 - **LiteRT C++ JNI Load Test:** Models are tested via C++ JNI instantiation before being marked `READY`. JNI load failure deletes the invalid binary and marks status as `FAILED`.
 
 ---
 
 ## 9. Cryptographic & Security Fail-Safe Policy
 
-In [`SecurePrefs.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/SecurePrefs.kt):
+In [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt):
 
-- Unrecoverable KeyStore errors (e.g., master key invalidation post-device reset) trigger preference deletion and re-creation.
-- If re-creation fails, a `SecurityException` is thrown to halt execution rather than falling back to unencrypted plaintext storage.
+- Unreadable Android Keystore keys, malformed envelopes, and AES-GCM authentication failures
+  surface a recoverable `CredentialsMustBeReentered` state; provider operations never fall back
+  to plaintext DataStore values.
+- Recovery targets only the dedicated provider credential records. Legacy encrypted preferences
+  remain intact so non-provider settings are not deleted as a side effect.
 
 ---
 

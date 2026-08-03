@@ -136,3 +136,18 @@ The onboarding screen must implement a vertical scroll container that handles ro
 2. **Layout Adaptability:** The app must be fully functional and readable under both portrait and landscape screen configurations.
 3. **Execution Success Rate:** Over 90% of native system commands (Wi-Fi toggle, Brightness, Alarm set) must execute within 2.5 seconds of user input.
 4. **Fallback Resilience:** Phone calls and SMS must successfully trigger standard system Intent overlays if direct runtime permissions are missing.
+
+### 7.1 Approval modes and diagnostics
+
+The app supports three plan approval modes: OFF requires approval for every
+plan; AUTO runs only plans whose actions are in the user's explicit allowlist;
+and YOLO runs every plan without approval, including actions marked
+`neverAutoApprove` — that is the point of the mode. In OFF and AUTO, actions
+marked `neverAutoApprove` always require confirmation.
+Screen capture is not a first-run grant and must be explicitly enabled by the
+user. A declined plan remains proposed and can be approved later.
+
+The app also keeps a local crash log. Users can inspect, share, and clear
+redacted reports. Reports are retained locally with a bounded maximum count;
+sharing is user initiated and the UI must explain that redaction is best
+effort before export.

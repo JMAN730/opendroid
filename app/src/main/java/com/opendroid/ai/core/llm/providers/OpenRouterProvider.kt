@@ -71,7 +71,8 @@ class OpenRouterProvider @Inject constructor(
                     knownSecrets = listOf(apiKey)
                 )
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from OpenRouter")
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) throw IOException("Empty response body from OpenRouter")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val choices = jsonResponse.getAsJsonArray("choices")
             val messageObj = choices[0].asJsonObject.getAsJsonObject("message")

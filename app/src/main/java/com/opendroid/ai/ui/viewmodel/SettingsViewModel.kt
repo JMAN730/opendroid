@@ -30,6 +30,12 @@ import com.opendroid.ai.core.llm.RetryPolicy
 import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
+import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProviderCredentialId
+import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
+import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.settings.AppSettingsStore
+import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -37,6 +43,8 @@ import dagger.Lazy
 import com.opendroid.ai.data.models.ChatMessage
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 @HiltViewModel
@@ -47,7 +55,11 @@ class SettingsViewModel @Inject constructor(
     private val llmProviderFactory: Lazy<com.opendroid.ai.core.llm.LLMProviderFactory>,
     private val modelFetcher: Lazy<com.opendroid.ai.core.llm.ModelFetcher>,
     val modelRepository: com.opendroid.ai.data.repository.ModelRepository,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val providerCredentialStore: ProviderCredentialStore,
+    // The verification timestamp says when a token was last checked, never what the token is,
+    // so it lives with ordinary settings rather than in encrypted storage.
+    private val appSettingsStore: AppSettingsStore
 ) : ViewModel() {
 
     private val _huggingFaceToken = MutableStateFlow("")
@@ -87,12 +99,28 @@ class SettingsViewModel @Inject constructor(
 
     private var isLoaded = false
 
+    val providerCredentialRecoveryState = providerCredentialStore.recoveryState
+    val providerCredentialPersistenceState = settingsRepository.providerCredentialPersistenceState
+
     init {
-        val prefs = com.opendroid.ai.core.security.SecurePrefs.get(context)
-        _huggingFaceToken.value = prefs.getString("huggingface_token", "") ?: ""
-        _huggingFaceLastVerified.value = prefs.getString("huggingface_last_verified", "Never") ?: "Never"
-        if (_huggingFaceToken.value.isNotBlank()) {
-            _huggingFaceValidationStatus.value = "Token Required"
+        viewModelScope.launch(Dispatchers.IO) {
+            providerCredentialStore.migrateLegacyCredentials()
+            val token = when (
+                val result = providerCredentialStore.read(ProviderCredentialId.HuggingFaceToken)
+            ) {
+                is CredentialStoreResult.Success -> result.value.orEmpty()
+                CredentialStoreResult.CredentialsMustBeReentered,
+                CredentialStoreResult.StorageUnavailable -> ""
+            }
+            val lastVerified =
+                appSettingsStore.huggingFaceLastVerified() ?: "Never"
+            withContext(Dispatchers.Main.immediate) {
+                _huggingFaceToken.value = token
+                _huggingFaceLastVerified.value = lastVerified
+                if (token.isNotBlank()) {
+                    _huggingFaceValidationStatus.value = "Token Required"
+                }
+            }
         }
         viewModelScope.launch {
             settingsRepository.llmConfig.collect { config ->
@@ -112,6 +140,19 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            providerCredentialStore.recoveryState.collect { state ->
+                if (state == ProviderCredentialRecoveryState.CredentialsMustBeReentered) {
+                    // An already hydrated in-memory snapshot must not become a credential
+                    // fallback after direct-store recovery begins.
+                    _huggingFaceToken.value = ""
+                    _llmConfig.value = _llmConfig.value.copy(
+                        apiKeys = emptyMap(),
+                        elevenLabsApiKey = ""
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
             // Wait for initial config loading
             settingsRepository.llmConfig.first()
             refreshModels(force = false)
@@ -121,21 +162,39 @@ class SettingsViewModel @Inject constructor(
     fun updateHuggingFaceToken(token: String) {
         _huggingFaceToken.value = token
         _huggingFaceValidationStatus.value = "Token Required"
-        com.opendroid.ai.core.security.SecurePrefs.get(context)
-            .edit()
-            .putString("huggingface_token", token)
-            .apply()
+        viewModelScope.launch(Dispatchers.IO) {
+            if (token.isBlank()) {
+                providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+            } else {
+                providerCredentialStore.write(ProviderCredentialId.HuggingFaceToken, token)
+            }
+        }
     }
 
     fun removeHuggingFaceToken() {
         _huggingFaceToken.value = ""
         _huggingFaceValidationStatus.value = "Token Required"
         _huggingFaceLastVerified.value = "Never"
-        com.opendroid.ai.core.security.SecurePrefs.get(context)
-            .edit()
-            .remove("huggingface_token")
-            .remove("huggingface_last_verified")
-            .apply()
+        viewModelScope.launch(Dispatchers.IO) {
+            providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
+            clearHuggingFaceVerificationMetadata()
+        }
+    }
+
+    /** Removes only unavailable provider credential records so the user can enter new values. */
+    fun resetProviderCredentialsForReentry() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (settingsRepository.resetProviderCredentialsForReentry() is CredentialStoreResult.Success) {
+                withContext(Dispatchers.Main.immediate) {
+                    _huggingFaceToken.value = ""
+                    _huggingFaceValidationStatus.value = "Token Required"
+                    _llmConfig.value = _llmConfig.value.copy(
+                        apiKeys = emptyMap(),
+                        elevenLabsApiKey = ""
+                    )
+                }
+            }
+        }
     }
 
     fun validateHuggingFaceToken() {
@@ -159,10 +218,15 @@ class SettingsViewModel @Inject constructor(
                         val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
                         val dateStr = "Today " + sdf.format(java.util.Date())
                         _huggingFaceLastVerified.value = dateStr
-                        com.opendroid.ai.core.security.SecurePrefs.get(context)
-                            .edit()
-                            .putString("huggingface_last_verified", dateStr)
-                            .apply()
+                        if (!appSettingsStore.setHuggingFaceLastVerified(dateStr)) {
+                            // The in-memory value still reflects this verification; only the
+                            // persisted timestamp is stale, so surface it in the log rather than
+                            // interrupting a successful token check.
+                            android.util.Log.w(
+                                "SettingsViewModel",
+                                "Failed to persist Hugging Face verification timestamp"
+                            )
+                        }
                     } else if (response.code == 401) {
                         _huggingFaceValidationStatus.value = "Invalid"
                     } else {
@@ -280,7 +344,7 @@ class SettingsViewModel @Inject constructor(
         activeModelJob?.cancel()
         activeModelJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.withSelectedModel(current.activeProvider, model)
                 }
@@ -300,7 +364,7 @@ class SettingsViewModel @Inject constructor(
         apiKeyUpdateJobs[providerName]?.cancel()
         apiKeyUpdateJobs[providerName] = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     val currentKeys = current.apiKeys.toMutableMap()
                     currentKeys[providerName] = key
@@ -322,7 +386,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsApiKeyJob?.cancel()
         elevenLabsApiKeyJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsApiKey = key)
                 }
@@ -339,7 +403,7 @@ class SettingsViewModel @Inject constructor(
         elevenLabsVoiceIdJob?.cancel()
         elevenLabsVoiceIdJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(elevenLabsVoiceId = voiceId)
                 }
@@ -356,7 +420,7 @@ class SettingsViewModel @Inject constructor(
         ollamaUrlJob?.cancel()
         ollamaUrlJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(ollamaUrl = url)
                 }
@@ -373,7 +437,7 @@ class SettingsViewModel @Inject constructor(
         copilotUrlJob?.cancel()
         copilotUrlJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     current.copy(copilotUrl = url)
                 }
@@ -393,7 +457,7 @@ class SettingsViewModel @Inject constructor(
         customEndpointJob?.cancel()
         customEndpointJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(1000)
                 settingsRepository.updateConfig { current ->
                     val currentEndpoints = current.customEndpoints.toMutableMap()
                     currentEndpoints[providerName] = url
@@ -593,11 +657,11 @@ class SettingsViewModel @Inject constructor(
         initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
     )
 
-    fun downloadModel(modelId: String, simulate: Boolean = false) {
+    fun downloadModel(modelId: String) {
         viewModelScope.launch {
             val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
             spec?.let {
-                modelRepository.startDownload(it, simulate)
+                modelRepository.startDownload(it)
             }
         }
     }
@@ -651,6 +715,18 @@ class SettingsViewModel @Inject constructor(
     fun deleteUnusedModels() {
         viewModelScope.launch {
             modelRepository.deleteUnusedModels()
+        }
+    }
+
+    private fun clearHuggingFaceVerificationMetadata() {
+        // Invoked only from the IO dispatcher because the commit is synchronous.
+        if (!appSettingsStore.setHuggingFaceLastVerified(null)) {
+            // The in-memory value is already reset to "Never"; only the persisted timestamp
+            // survives, so surface it in the log rather than failing the token removal.
+            android.util.Log.w(
+                "SettingsViewModel",
+                "Failed to clear persisted Hugging Face verification timestamp"
+            )
         }
     }
 }

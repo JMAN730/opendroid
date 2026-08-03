@@ -35,7 +35,7 @@ fun LogsScreen(
     viewModel: HistoryViewModel,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Execution Logs", "Action Errors")
 
     val history by viewModel.taskHistory.collectAsState()

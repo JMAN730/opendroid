@@ -50,8 +50,13 @@ class AutoApprovalPolicyTest {
     }
 
     @Test
-    fun `YOLO approves everything including neverAutoApprove actions`() {
+    fun `YOLO auto-approves even neverAutoApprove actions`() {
         assertTrue(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("PAY_UPI", "DELETE_FILE")))
+    }
+
+    @Test
+    fun `YOLO approves safe actions without an allowlist grant`() {
+        assertTrue(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("WEB_SEARCH")))
     }
 
     @Test

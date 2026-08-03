@@ -2,8 +2,8 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -30,8 +30,8 @@ class FoodShoppingActions @Inject constructor() {
             return try {
                 val encItems = URLEncoder.encode(items, "UTF-8")
                 val (uri, packageName) = when (app.lowercase()) {
-                    "swiggy" -> Pair(Uri.parse("swiggy://search?query=$encItems"), "in.swiggy.android")
-                    else -> Pair(Uri.parse("zomato://search?query=$encItems"), "com.application.zomato")
+                    "swiggy" -> Pair("swiggy://search?query=$encItems".toUri(), "in.swiggy.android")
+                    else -> Pair("zomato://search?query=$encItems".toUri(), "com.application.zomato")
                 }
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -41,7 +41,7 @@ class FoodShoppingActions @Inject constructor() {
                     ActionResult(true, "Searching for $items on $app!", null)
                 } else {
                     // Fallback to web search or Play Store
-                    val playIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                    val playIntent = Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(playIntent)
@@ -62,9 +62,9 @@ class FoodShoppingActions @Inject constructor() {
             return try {
                 val encItems = URLEncoder.encode(items, "UTF-8")
                 val (uri, packageName) = when (app.lowercase()) {
-                    "zepto" -> Pair(Uri.parse("zepto://search?query=$encItems"), "com.zeptolab.zepto")
-                    "bigbasket" -> Pair(Uri.parse("bigbasket://search?query=$encItems"), "com.bigbasket.mobileapp")
-                    else -> Pair(Uri.parse("blinkit://search?query=$encItems"), "com.grofers.customerapp")
+                    "zepto" -> Pair("zepto://search?query=$encItems".toUri(), "com.zeptolab.zepto")
+                    "bigbasket" -> Pair("bigbasket://search?query=$encItems".toUri(), "com.bigbasket.mobileapp")
+                    else -> Pair("blinkit://search?query=$encItems".toUri(), "com.grofers.customerapp")
                 }
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -73,7 +73,7 @@ class FoodShoppingActions @Inject constructor() {
                     context.startActivity(intent)
                     ActionResult(true, "Looking up $items on $app!", null)
                 } else {
-                    val playIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                    val playIntent = Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(playIntent)
@@ -92,7 +92,7 @@ class FoodShoppingActions @Inject constructor() {
             val query = params["query"] ?: return ActionResult(false, null, "query parameter is missing")
             return try {
                 val encQuery = URLEncoder.encode(query, "UTF-8")
-                val webUri = Uri.parse("https://www.amazon.com/s?k=$encQuery")
+                val webUri = "https://www.amazon.com/s?k=$encQuery".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
                     setPackage("com.amazon.mShop.android.shopping")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -120,7 +120,7 @@ class FoodShoppingActions @Inject constructor() {
             val query = params["query"] ?: return ActionResult(false, null, "query parameter is missing")
             return try {
                 val encQuery = URLEncoder.encode(query, "UTF-8")
-                val webUri = Uri.parse("https://www.flipkart.com/search?q=$encQuery")
+                val webUri = "https://www.flipkart.com/search?q=$encQuery".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
                     setPackage("com.flipkart.android")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -153,7 +153,7 @@ class FoodShoppingActions @Inject constructor() {
                     "flipkart" -> "https://www.flipkart.com/search?q=$encQuery"
                     else -> "https://www.amazon.com/s?k=$encQuery"
                 }
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
+                val intent = Intent(Intent.ACTION_VIEW, searchUrl.toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)

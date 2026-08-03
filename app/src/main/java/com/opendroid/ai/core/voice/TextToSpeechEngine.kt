@@ -108,7 +108,7 @@ class TextToSpeechEngine(
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return false
-            val body = response.body ?: return false
+            val body = response.body
             
             val tempFile = File.createTempFile("elevenlabs_", ".mp3", context.cacheDir)
             tempFile.deleteOnExit()

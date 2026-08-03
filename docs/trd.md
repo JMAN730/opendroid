@@ -98,12 +98,14 @@ When initiating communication (calls/SMS), the agent executes the following casc
 
 ### 3.3. Secure Storage
 All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys, Hugging Face Access Tokens) are stored securely:
-* **Storage Backend:** `EncryptedSharedPreferences` (managed via `SecurePrefs.kt`)
-* **Encryption Scheme:** AES256-SIV-HMAC-SHA256 for data and AES128-ECB for keys, managed through Android's system `MasterKey`.
+* **Storage Backend:** Direct Android Keystore AES-256-GCM envelopes (`ProviderCredentialStore.kt` for secrets, `UserProfileStore.kt` for profile data, both over `KeystoreSecretStorage.kt`)
+* **Encryption Scheme:** `AES/GCM/NoPadding` with a 256-bit non-exportable AndroidKeyStore key, a random 96-bit IV per write, the value's logical ID as GCM AAD, and a versioned `v1.<iv>.<ciphertext>` envelope. Credentials and profile data use separate key aliases and separate app-private files.
 
 ### 3.4. Background Model Downloader (WorkManager)
 * **ModelDownloadWorker**: Implements background downloading via OkHttp. Features:
+  * Long-running `dataSync` foreground execution for user-initiated multi-GB transfers, gated on an unmetered network.
   * Chunk-based byte copying with active cancellation checks (mapping to worker stop signals).
+  * Partial-file preservation and stop-reason diagnostics for safe WorkManager retry with HTTP Range resumption.
   * Real-time transfer speed calculation and ETA estimation.
   * SHA-256 checksum validation.
   * LiteRT engine instantiation compatibility checks using JNI engine bindings to verify download integrity before marking READY.
@@ -140,18 +142,37 @@ Standardized REST endpoints used for integrations:
 * **Debouncing Input:** Auto-saving input fields (API keys, URLs) must debounce keystrokes by 1000ms.
 * **Exception Containment:** File system writes must use `try-catch` blocks to prevent crash propagation if the disk is full or database locks occur.
 
+### 5.3. Crash log and model integrity
+
+Crash records are stored locally in Room behind a crash-log repository. The
+record includes the exception, thread, stack, app version, and device metadata;
+credentials and token-like values are redacted before persistence and export.
+The log is pruned to the bounded retention count and can be cleared by the
+user. The uncaught-exception path may block for a bounded budget so the record
+write can complete before process termination; pruning is lower priority than
+the insert.
+
+On-device model registry entries publish a SHA-256 digest and artifact size
+when available. Downloads verify both values. Entries without a published
+digest are explicitly presented as unverified in Settings and skip only the
+digest check; a published size is still enforced.
+
+Room migrations are explicit for every schema version. Destructive migration
+fallback is prohibited because it can silently erase conversations, plans,
+memories, and crash history.
+
 ---
 
 ## 6. Project Dependencies & Toolchain Versions
 
 ### 6.1. Build Toolchain
-* **Gradle Version:** `8.10.2`
-* **Android Gradle Plugin (AGP):** `8.8.2`
+* **Gradle Version:** `9.6.1`
+* **Android Gradle Plugin (AGP):** `9.3.1`
 * **Kotlin Compiler / Gradle Plugin:** `2.4.0`
 * **Compose Compiler Plugin:** `2.4.0`
 * **Kotlin Serialization Plugin:** `2.4.0`
-* **Dagger / Hilt Gradle Plugin:** `2.58`
-* **R8 Optimizer:** `9.1.31`
+* **Dagger / Hilt Gradle Plugin:** `2.60.1`
+* **R8 Optimizer:** `9.3.16` (bundled with AGP; no standalone pin)
 * **Target Android SDK:** `35`
 * **Minimum Android SDK:** `26`
 
@@ -160,16 +181,16 @@ Standardized REST endpoints used for integrations:
   * **LiteRT-LM Android Library:** `com.google.ai.edge.litertlm:litertlm-android:0.14.0`
   * **Google ML Kit GenAI Prompt API (AI Core):** `com.google.mlkit:genai-prompt:1.0.0-beta2`
 * **Dependency Injection:**
-  * **Dagger-Hilt:** `2.58`
+  * **Dagger-Hilt:** `2.60.1`
 * **Local Database:**
-  * **Room DB:** `2.8.4` (utilizing Kapt annotation processing with `kotlin-metadata-jvm:2.4.0` metadata support)
+  * **Room DB:** `2.8.4` (annotation processing via KSP)
 * **Background Scheduling:**
-  * **WorkManager:** `2.9.0`
+  * **WorkManager:** `2.10.5`
 * **Networking Client:**
   * **OkHttp & Logging Interceptor:** `4.12.0`
   * **Retrofit & Converter Gson:** `2.9.0`
 * **Security & Cryptography:**
-  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06`
+  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06` - retained only as the deprecated one-time import source for values written by earlier builds
 * **User Interface:**
   * **Jetpack Compose BOM:** `2026.06.01`
   * **Lifecycle & ViewModel Compose Extensions:** `2.8.7`

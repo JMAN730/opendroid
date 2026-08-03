@@ -16,6 +16,7 @@ import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
+import com.opendroid.ai.data.models.approvalSettings
 import com.opendroid.ai.data.repository.ConversationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -442,8 +443,13 @@ class AgentLoop @Inject constructor(
             // Build a single-step plan from the alias
             val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
 
-            planManager.startNewPlan(plan, context)
-            executePlanLoop(plan, context, sessionId)
+            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
+            val approval = settingsRepository.llmConfig.first().approvalSettings()
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
+                executePlanLoop(plan, context, sessionId, autoApproved = true)
+            } else {
+                proposePlan(plan, sessionId)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -466,7 +472,7 @@ class AgentLoop @Inject constructor(
         try {
             val provider = llmProviderFactory.getActiveProvider()
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
-            val autoModeLabel = settingsRepository.llmConfig.first().resolvedAutoMode().name
+            val autoModeLabel = settingsRepository.llmConfig.first().approvalSettings().mode.name
 
             val systemPrompt = """
                 You are OpenDroid, a friendly and helpful Android AI assistant.
@@ -477,7 +483,7 @@ class AgentLoop @Inject constructor(
                 
                 Never dump raw error messages or technical details. If something goes wrong, say it simply and suggest what to do next.
 
-                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = all plans run automatically). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
+                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = plans run automatically except destructive actions, which still need confirmation). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
                 
                 Context about user and device state:
                 $relevantContext
@@ -669,17 +675,16 @@ class AgentLoop @Inject constructor(
                 parsePlanFromLlmResponse(response.content, userMsg.text)
             }
 
-            planManager.startNewPlan(plan, context)
+            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             // Re-read after LLM work: user may have flipped mode or revoked grants
             // while planning was in flight; stale pre-LLM config must not auto-run.
             val liveConfig = settingsRepository.llmConfig.first()
-            val autoMode = liveConfig.resolvedAutoMode()
-            if (AutoApprovalPolicy.shouldAutoApprove(autoMode, liveConfig.effectiveGrantedActions().keys, plan)) {
-                recordAutoApprovedTrace(plan, autoMode, sessionId)
+            val approval = liveConfig.approvalSettings()
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
+                recordAutoApprovedTrace(plan, approval.mode, sessionId)
                 executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {
-                proposedPlanSessionId = sessionId
-                _agentState.value = AgentState.PlanProposed(plan)
+                proposePlan(plan, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -895,6 +900,11 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    private fun proposePlan(plan: Plan, sessionId: String) {
+        proposedPlanSessionId = sessionId
+        _agentState.value = AgentState.PlanProposed(plan)
+    }
+
     private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String, autoApproved: Boolean = false) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
@@ -1047,22 +1057,27 @@ class AgentLoop @Inject constructor(
                             // Auto-approved plans: silently injected steps must not run
                             // past the allowlist. Re-check the merged plan's pending
                             // steps; if any is blocked, park the WHOLE remainder back
-                            // in the PlanProposed gate. YOLO skips like all other
-                            // checks; manually-approved plans keep today's behavior.
+                            // in the PlanProposed gate. YOLO auto-approves everything
+                            // by design, so this re-check only gates AUTO mode.
                             if (autoApproved) {
                                 val liveConfig = settingsRepository.llmConfig.first()
-                                val liveMode = liveConfig.resolvedAutoMode()
-                                if (liveMode != AutoMode.YOLO) {
-                                    val mergedPlan = planManager.currentPlan.value
-                                    val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
-                                    val blocked = AutoApprovalPolicy.blockedActions(
-                                        liveConfig.effectiveGrantedActions().keys, pending
+                                val approval = liveConfig.approvalSettings()
+                                val mergedPlan = planManager.currentPlan.value
+                                val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
+                                if (mergedPlan != null && !AutoApprovalPolicy.shouldAutoApprove(
+                                        approval.mode,
+                                        approval.grantedActions,
+                                        mergedPlan.copy(steps = pending)
+                                    )) {
+                                    // startNewPlan persisted the merged plan as RUNNING;
+                                    // reflect the approval gate in the stored status too so
+                                    // the Plan tab and history match the PlanProposed state.
+                                    planManager.updatePlanStatus(PlanStatus.PROPOSED)
+                                    proposePlan(
+                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED),
+                                        sessionId
                                     )
-                                    if (blocked.isNotEmpty() && mergedPlan != null) {
-                                        proposedPlanSessionId = sessionId
-                                        _agentState.value = AgentState.PlanProposed(mergedPlan)
-                                        return
-                                    }
+                                    return
                                 }
                             }
                         }

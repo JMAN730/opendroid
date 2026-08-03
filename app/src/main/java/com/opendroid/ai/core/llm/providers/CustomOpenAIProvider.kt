@@ -72,8 +72,8 @@ class CustomOpenAIProvider @Inject constructor(
                     knownSecrets = listOf(apiKey)
                 )
             }
-            val responseBody = response.body?.string()
-            if (responseBody == null) {
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) {
                 throw IOException("Empty response body from Custom OpenAI provider")
             }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
