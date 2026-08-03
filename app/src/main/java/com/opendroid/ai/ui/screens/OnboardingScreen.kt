@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -194,11 +196,22 @@ fun IntroductionPanel(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        var showDatePicker by remember { mutableStateOf(false) }
+
         OutlinedTextField(
             value = dob,
             onValueChange = onDobChange,
             label = { Text("When is your birthday?", color = TextSecondary) },
             placeholder = { Text("e.g. MM/DD/YYYY", color = TextSecondary.copy(alpha = 0.6f)) },
+            trailingIcon = {
+                IconButton(onClick = { showDatePicker = true }) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = "Pick your birthday",
+                        tint = AccentNeonGreen
+                    )
+                }
+            },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = AccentNeonGreen,
                 unfocusedBorderColor = BorderColor,
@@ -213,6 +226,34 @@ fun IntroductionPanel(
             keyboardActions = KeyboardActions(onDone = { onContinue() }),
             modifier = Modifier.fillMaxWidth()
         )
+
+        if (showDatePicker) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = parseDobToUtcMillis(dob),
+                yearRange = 1900..java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            )
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            datePickerState.selectedDateMillis?.let { millis ->
+                                onDobChange(formatUtcMillisAsDob(millis))
+                            }
+                            showDatePicker = false
+                        },
+                        enabled = datePickerState.selectedDateMillis != null
+                    ) { Text("OK", color = AccentNeonGreen, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
 
         if (showError) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -245,6 +286,23 @@ fun IntroductionPanel(
             Text("Let's Go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
+}
+
+/** Parses a typed MM/DD/YYYY value into UTC millis for the picker, or null if not parseable. */
+private fun parseDobToUtcMillis(dob: String): Long? = runCatching {
+    val format = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+        isLenient = false
+    }
+    format.parse(dob.trim())?.time
+}.getOrNull()
+
+/** Formats picker UTC millis as the MM/DD/YYYY string the rest of onboarding expects. */
+private fun formatUtcMillisAsDob(millis: Long): String {
+    val format = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+    }
+    return format.format(java.util.Date(millis))
 }
 
 @Composable
