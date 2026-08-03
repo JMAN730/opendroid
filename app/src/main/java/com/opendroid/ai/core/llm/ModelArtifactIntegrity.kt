@@ -519,6 +519,20 @@ class ModelArtifactInstaller(
             }
 
             manifestStore.writeStaged(stagedManifest, manifest)
+
+            // The artifact and manifest are committed with two separate atomic moves, and the
+            // pair can never be made atomic together. Rather than pick an order that leaves a
+            // window where a stale manifest describes a new artifact (or vice versa) — a silent
+            // mismatch that verification would wrongly reject *or*, worse, wrongly accept — we
+            // delete the old manifest first. Every interruption point below then leaves either no
+            // manifest at all, or a manifest that matches the artifact on disk. A missing manifest
+            // reads as "unverified, reinstall" on the verification path, which is unambiguous and
+            // already handled: see ModelArtifactVerifier.verify(), which treats a null read from
+            // ModelArtifactManifestStore.read() as MANIFEST_INVALID rather than crashing or
+            // treating the artifact as valid.
+            if (manifestFile.exists() && !manifestFile.delete()) {
+                return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+            }
             mover.replace(stagedArtifact, target)
             mover.replace(stagedManifest, manifestFile)
             return ModelArtifactInstallResult(isSuccess = true)

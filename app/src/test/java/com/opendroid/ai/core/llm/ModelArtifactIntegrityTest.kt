@@ -9,6 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 class ModelArtifactIntegrityTest {
 
@@ -249,6 +250,61 @@ class ModelArtifactIntegrityTest {
             ArtifactVerificationResult.Valid,
             ModelArtifactVerifier().verifyBeforeNativeLoad(target, manifestFile, spec)
         )
+    }
+
+    @Test
+    fun `local import failure committing the manifest leaves state reinstallable, not mismatched`() {
+        val spec = OnDeviceModelSpec(
+            id = "local-model",
+            displayName = "Local model",
+            family = "Test",
+            sizeLabel = "Test",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelFilename = "local.task"
+        )
+        val target = File(tempFolder.root, spec.modelFilename)
+        target.writeText("original")
+        val manifestFile = File(tempFolder.root, "manifest.json")
+        val verifier = ModelArtifactVerifier()
+        val originalManifest = verifier.createLocalImportManifest(spec, target)
+        ModelArtifactManifestStore().writeAtomically(manifestFile, originalManifest)
+
+        // A local import has no re-download source to self-repair from, unlike a managed
+        // download: this is the path where a mismatched artifact/manifest pair is unrecoverable
+        // without the user finding and re-importing the original file.
+        val source = File(tempFolder.root, "import.tmp")
+        source.writeText("replacement")
+
+        var calls = 0
+        val failsOnSecondMove = AtomicFileMover { from, to ->
+            calls += 1
+            if (calls == 2) throw IOException("simulated failure committing the manifest")
+            NioAtomicFileMover.replace(from, to)
+        }
+        val installer = ModelArtifactInstaller(mover = failsOnSecondMove)
+
+        val result = installer.installLocalImport(
+            source = source,
+            target = target,
+            manifestFile = manifestFile,
+            spec = spec,
+            verifyFormat = {}
+        )
+
+        assertFalse(result.isSuccess)
+        assertEquals(ArtifactVerificationFailure.UNREADABLE_FILE, result.failure)
+        // The artifact move (call 1) already committed before the manifest move (call 2) failed.
+        assertEquals("replacement", target.readText())
+        // The old manifest was deleted before either move was attempted, and the new one never
+        // landed: no manifest survives, which must read as "unverified, reinstall" rather than
+        // silently validating against the stale manifest or crashing.
+        assertFalse(manifestFile.exists())
+        assertNull(ModelArtifactManifestStore().read(manifestFile))
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.MANIFEST_INVALID),
+            verifier.verifyBeforeNativeLoad(target, manifestFile, spec)
+        )
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
     }
 
     @Test
