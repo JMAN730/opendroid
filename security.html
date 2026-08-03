@@ -182,7 +182,7 @@
       <h2>2. Key Security Features</h2>
       <h3>A. Local Key Storage</h3>
       <p>
-        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted using <code>EncryptedSharedPreferences</code> backed by the hardware-isolated Android KeyStore.
+        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted with direct Android KeyStore AES-GCM envelopes.
       </p>
 
       <h3>B. Intent &amp; Action Verification</h3>
