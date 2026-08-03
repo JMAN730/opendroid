@@ -11,9 +11,6 @@ import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelEntity
 import com.opendroid.ai.data.db.entities.ModelStatus
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -224,7 +221,7 @@ class ModelRepository @Inject constructor(
                     target = targetFile,
                     manifestFile = manifestFile,
                     spec = spec,
-                    verifyFormat = ::verifyLiteRtCompatibility
+                    verifyFormat = { LiteRtCompatibility.verify(it, context.cacheDir) }
                 )
                 if (!install.isSuccess) {
                     if (install.failure == ArtifactVerificationFailure.FORMAT_INVALID) {
@@ -252,24 +249,12 @@ class ModelRepository @Inject constructor(
 
                 ImportLocalModelResult.Success
             } catch (e: Exception) {
-                Log.e(tag, "Failed to import local model")
+                Log.e(tag, "Failed to import local model", e)
                 ImportLocalModelResult.Failure("Import failed. The existing installed model was left unchanged.")
             } finally {
                 temporaryImport.delete()
             }
         }
-
-    /** Runs the only structural validation permitted for explicitly untrusted local imports. */
-    private fun verifyLiteRtCompatibility(file: File) {
-        val config = EngineConfig(
-            modelPath = file.absolutePath,
-            backend = Backend.CPU(),
-            cacheDir = context.cacheDir.absolutePath
-        )
-        Engine(config).use { engine ->
-            engine.initialize()
-        }
-    }
 
     suspend fun pauseDownload(model: OnDeviceModel) {
         if (OnDeviceModelRegistry.findById(model.id) == null) return

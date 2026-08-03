@@ -11,7 +11,7 @@ To build and compile OpenDroid, ensure your workstation meets the following requ
   (`jvmToolchain(21)`), so a newer JDK is not a substitute. The daemon is
   pinned to 21 via `gradle/gradle-daemon-jvm.properties`, so `./gradlew` picks an
   installed JDK 21 regardless of `JAVA_HOME`; Gradle will not download one for you.
-* **Android SDK:** API Level 35 (Android 15) installed
+* **Android SDK:** API Level 36 (Android 16) installed
 * **Gradle Tooling:** Gradle 9.6.1 (wrapped in project), AGP 9.3.1
 * **Kotlin Compiler:** Version 2.4.0
 * **Dagger-Hilt:** Version 2.60.1
