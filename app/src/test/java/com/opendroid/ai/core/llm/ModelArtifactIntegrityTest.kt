@@ -60,13 +60,16 @@ class ModelArtifactIntegrityTest {
     }
 
     @Test
-    fun `Gemma managed downloads stay unavailable until their authenticated SHA pins exist`() {
-        val gemma = requireNotNull(
-            OnDeviceModelRegistry.findById("gemma-3n-e2b-it-litert")
-        )
+    fun `Gemma managed downloads are available with their recorded SHA pins`() {
+        listOf("gemma-3n-e2b-it-litert", "gemma-3n-e4b-it-litert").forEach { id ->
+            val gemma = requireNotNull(OnDeviceModelRegistry.findById(id))
+            val artifact = requireNotNull(gemma.managedArtifact)
 
-        assertFalse(gemma.isManagedDownloadAvailable)
-        assertNull(ModelArtifactManifest.forManagedDownload(gemma))
+            assertTrue(gemma.isManagedDownloadAvailable)
+            assertTrue(artifact.isComplete)
+            assertNotNull(ModelArtifactManifest.forManagedDownload(gemma))
+            assertTrue(requireNotNull(artifact.downloadUrl).contains("/${artifact.sourceRevision}/"))
+        }
     }
 
     @Test

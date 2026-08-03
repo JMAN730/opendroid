@@ -141,9 +141,10 @@ object OnDeviceModelRegistry {
             managedArtifact = ManagedModelArtifactMetadata(
                 downloadUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/ba9ca88da013b537b6ed38108be609b8db1c3a16/gemma-3n-E2B-it-int4.litertlm",
                 sourceRevision = "ba9ca88da013b537b6ed38108be609b8db1c3a16",
-                expectedSize = 3655827456L
-                // The official repository is gated. #82 must supply its authenticated LFS OID
-                // before this artifact becomes available for managed download.
+                expectedSize = 3655827456L,
+                // Publisher LFS sha256 recorded in #82 from the Hugging Face revision
+                // endpoint for the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6"
             ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
             authRequired = true,
@@ -161,9 +162,10 @@ object OnDeviceModelRegistry {
             managedArtifact = ManagedModelArtifactMetadata(
                 downloadUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
                 sourceRevision = "297ed75955702dec3503e00c2c2ecbbf475300bc",
-                expectedSize = 4919541760L
-                // The official repository is gated. #82 must supply its authenticated LFS OID
-                // before this artifact becomes available for managed download.
+                expectedSize = 4919541760L,
+                // Publisher LFS sha256 recorded in #82 from the Hugging Face revision
+                // endpoint for the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4"
             ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
             authRequired = true,
