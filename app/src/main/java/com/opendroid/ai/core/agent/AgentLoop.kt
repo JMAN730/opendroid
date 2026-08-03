@@ -448,8 +448,7 @@ class AgentLoop @Inject constructor(
             if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
                 executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {
-                proposedPlanSessionId = sessionId
-                _agentState.value = AgentState.PlanProposed(plan)
+                proposePlan(plan, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -685,8 +684,7 @@ class AgentLoop @Inject constructor(
                 recordAutoApprovedTrace(plan, approval.mode, sessionId)
                 executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {
-                proposedPlanSessionId = sessionId
-                _agentState.value = AgentState.PlanProposed(plan)
+                proposePlan(plan, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -902,6 +900,11 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    private fun proposePlan(plan: Plan, sessionId: String) {
+        proposedPlanSessionId = sessionId
+        _agentState.value = AgentState.PlanProposed(plan)
+    }
+
     private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String, autoApproved: Boolean = false) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
@@ -1070,9 +1073,9 @@ class AgentLoop @Inject constructor(
                                     // reflect the approval gate in the stored status too so
                                     // the Plan tab and history match the PlanProposed state.
                                     planManager.updatePlanStatus(PlanStatus.PROPOSED)
-                                    proposedPlanSessionId = sessionId
-                                    _agentState.value = AgentState.PlanProposed(
-                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED)
+                                    proposePlan(
+                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED),
+                                        sessionId
                                     )
                                     return
                                 }

@@ -379,6 +379,18 @@ class ModelArtifactVerifier(
         return if (verifyHash) compareHash(file, manifest.sha256) else ArtifactVerificationResult.Valid
     }
 
+    /** Size-then-hash check against an expected fingerprint, using the injected hash verifier. */
+    fun verifyFingerprint(
+        file: File,
+        expectedByteSize: Long,
+        expectedSha256: String
+    ): ArtifactVerificationResult {
+        if (file.length() != expectedByteSize) {
+            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.SIZE_MISMATCH)
+        }
+        return compareHash(file, expectedSha256)
+    }
+
     private fun basicFileCheck(file: File): ArtifactVerificationResult.Invalid? = when {
         !file.exists() || !file.isFile ->
             ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.MISSING_FILE)
@@ -422,11 +434,6 @@ object NioAtomicFileMover : AtomicFileMover {
     }
 }
 
-data class ModelArtifactInstallResult(
-    val isSuccess: Boolean,
-    val failure: ArtifactVerificationFailure? = null
-)
-
 /**
  * Stages a verified artifact beside its final destination before either final file is replaced.
  * A failed verification or format check can never overwrite a working installed model.
@@ -442,15 +449,14 @@ class ModelArtifactInstaller(
         manifestFile: File,
         spec: OnDeviceModelSpec,
         verifyFormat: (File) -> Unit
-    ): ModelArtifactInstallResult {
+    ): ArtifactVerificationResult {
         val manifest = ModelArtifactManifest.forManagedDownload(spec)
-            ?: return ModelArtifactInstallResult(
-                isSuccess = false,
-                failure = ArtifactVerificationFailure.METADATA_UNAVAILABLE
+            ?: return ArtifactVerificationResult.Invalid(
+                ArtifactVerificationFailure.METADATA_UNAVAILABLE
             )
         val sourceResult = verifier.verifyManagedPayload(source, spec)
         if (sourceResult is ArtifactVerificationResult.Invalid) {
-            return ModelArtifactInstallResult(false, sourceResult.failure)
+            return sourceResult
         }
 
         return stageAndCommit(source, target, manifestFile, manifest, verifyFormat) { staged ->
@@ -464,15 +470,15 @@ class ModelArtifactInstaller(
         manifestFile: File,
         spec: OnDeviceModelSpec,
         verifyFormat: (File) -> Unit
-    ): ModelArtifactInstallResult {
+    ): ArtifactVerificationResult {
         val manifest = try {
             verifier.createLocalImportManifest(spec, source)
         } catch (_: IOException) {
-            return ModelArtifactInstallResult(false, ArtifactVerificationFailure.HASH_UNAVAILABLE)
+            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.HASH_UNAVAILABLE)
         }
 
         return stageAndCommit(source, target, manifestFile, manifest, verifyFormat) { staged ->
-            verifyLocalFingerprint(staged, manifest)
+            verifier.verifyFingerprint(staged, manifest.byteSize, manifest.sha256)
         }
     }
 
@@ -483,16 +489,16 @@ class ModelArtifactInstaller(
         manifest: ModelArtifactManifest,
         verifyFormat: (File) -> Unit,
         verifyStagedPayload: (File) -> ArtifactVerificationResult
-    ): ModelArtifactInstallResult {
+    ): ArtifactVerificationResult {
         val targetDirectory = target.parentFile
-            ?: return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+            ?: return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
         val manifestDirectory = manifestFile.parentFile
-            ?: return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+            ?: return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
         if (targetDirectory.canonicalFile != manifestDirectory.canonicalFile) {
-            return ModelArtifactInstallResult(false, ArtifactVerificationFailure.MANIFEST_MISMATCH)
+            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.MANIFEST_MISMATCH)
         }
         if (!targetDirectory.exists() && !targetDirectory.mkdirs()) {
-            return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
         }
 
         val stagedArtifact = File.createTempFile(".artifact-", ".installing", targetDirectory)
@@ -507,15 +513,15 @@ class ModelArtifactInstaller(
 
             val stagedResult = verifyStagedPayload(stagedArtifact)
             if (stagedResult is ArtifactVerificationResult.Invalid) {
-                return ModelArtifactInstallResult(false, stagedResult.failure)
+                return stagedResult
             }
 
             try {
                 verifyFormat(stagedArtifact)
             } catch (_: Exception) {
-                return ModelArtifactInstallResult(false, ArtifactVerificationFailure.FORMAT_INVALID)
+                return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID)
             } catch (_: LinkageError) {
-                return ModelArtifactInstallResult(false, ArtifactVerificationFailure.FORMAT_INVALID)
+                return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID)
             }
 
             manifestStore.writeStaged(stagedManifest, manifest)
@@ -531,35 +537,16 @@ class ModelArtifactInstaller(
             // ModelArtifactManifestStore.read() as MANIFEST_INVALID rather than crashing or
             // treating the artifact as valid.
             if (manifestFile.exists() && !manifestFile.delete()) {
-                return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+                return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
             }
             mover.replace(stagedArtifact, target)
             mover.replace(stagedManifest, manifestFile)
-            return ModelArtifactInstallResult(isSuccess = true)
+            return ArtifactVerificationResult.Valid
         } catch (_: IOException) {
-            return ModelArtifactInstallResult(false, ArtifactVerificationFailure.UNREADABLE_FILE)
+            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
         } finally {
             stagedArtifact.delete()
             stagedManifest.delete()
-        }
-    }
-
-    private fun verifyLocalFingerprint(
-        file: File,
-        manifest: ModelArtifactManifest
-    ): ArtifactVerificationResult {
-        if (file.length() != manifest.byteSize) {
-            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.SIZE_MISMATCH)
-        }
-        val actualHash = try {
-            StreamingSha256FileHashVerifier.sha256(file)
-        } catch (_: IOException) {
-            return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.HASH_UNAVAILABLE)
-        }
-        return if (actualHash == manifest.sha256) {
-            ArtifactVerificationResult.Valid
-        } else {
-            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.HASH_MISMATCH)
         }
     }
 }

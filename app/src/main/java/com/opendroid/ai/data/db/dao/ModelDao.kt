@@ -37,3 +37,13 @@ interface ModelDao {
     @Query("SELECT * FROM models WHERE status = 'READY' ORDER BY lastUsed DESC LIMIT 1")
     suspend fun getRecentlyUsedModel(): ModelEntity?
 }
+
+/** The failure detail is surfaced through the etaString column the download UI renders. */
+suspend fun ModelDao.markDownloadFailed(id: String, message: String) =
+    updateDownloadProgressDetails(id, 0, 0L, "", message, ModelStatus.FAILED)
+
+suspend fun ModelDao.markDownloadReady(id: String, downloadedSize: Long) =
+    updateDownloadProgressDetails(id, 100, downloadedSize, "", "", ModelStatus.READY)
+
+suspend fun ModelDao.clearDownloadState(id: String) =
+    updateDownloadProgressDetails(id, 0, 0L, "", "", ModelStatus.NOT_DOWNLOADED)
