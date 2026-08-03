@@ -50,6 +50,8 @@ android {
                 storePassword project.findProperty('RELEASE_STORE_PASSWORD')
                 keyAlias project.findProperty('RELEASE_KEY_ALIAS')
                 keyPassword project.findProperty('RELEASE_KEY_PASSWORD')
+                enableV1Signing true
+                enableV2Signing true
             }
         }
     }
