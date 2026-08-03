@@ -11,6 +11,8 @@ import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelStatus
+import com.opendroid.ai.data.db.dao.markDownloadReady
+import com.opendroid.ai.data.db.dao.markDownloadFailed
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -184,7 +186,7 @@ class ModelDownloadWorker(
                 spec = spec,
                 verifyFormat = { LiteRtCompatibility.verify(it, applicationContext.cacheDir) }
             )
-            if (!install.isSuccess) {
+            if (install is ArtifactVerificationResult.Invalid) {
                 return fail(modelId, verificationFailureMessage(install.failure))
             }
 
@@ -195,14 +197,7 @@ class ModelDownloadWorker(
             }
             refFile.writeText(targetDir.absolutePath)
 
-            modelDao.updateDownloadProgressDetails(
-                modelId,
-                100,
-                expectedSize,
-                "",
-                "",
-                ModelStatus.READY
-            )
+            modelDao.markDownloadReady(modelId, expectedSize)
             return Result.success()
         } catch (interrupted: RetryableTransportInterruption) {
             Log.w(
@@ -337,14 +332,7 @@ class ModelDownloadWorker(
     }
 
     private suspend fun fail(modelId: String, message: String): Result {
-        modelDao.updateDownloadProgressDetails(
-            modelId,
-            0,
-            0L,
-            "",
-            message,
-            ModelStatus.FAILED
-        )
+        modelDao.markDownloadFailed(modelId, message)
         return Result.failure()
     }
 

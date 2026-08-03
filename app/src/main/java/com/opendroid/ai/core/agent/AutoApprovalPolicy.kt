@@ -5,21 +5,23 @@ import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
 
 /**
- * Pure decision logic for Auto mode (upstream issue 18 spec). Mixed plans are
- * all-or-nothing: a plan auto-runs only when EVERY step's action is granted
- * and none is neverAutoApprove; YOLO widens grants but never bypasses the
- * destructive-action guard. No mid-plan pause
+ * Pure decision logic for Auto mode (upstream issue 18 spec, YOLO semantics
+ * revised per #52 discussion). Mixed plans are all-or-nothing in AUTO: a plan
+ * auto-runs only when EVERY step's action is granted and none is
+ * neverAutoApprove. YOLO is all-in by owner decision — the user opted out of
+ * every approval gate, including the neverAutoApprove guard. No mid-plan pause
  * states — a blocked plan falls back to the normal PlanProposed gate whole.
  */
 object AutoApprovalPolicy {
 
-    fun shouldAutoApprove(mode: AutoMode, granted: Set<String>, plan: Plan): Boolean {
-        if (mode == AutoMode.OFF) return false
-        return plan.steps
+    fun shouldAutoApprove(mode: AutoMode, granted: Set<String>, plan: Plan): Boolean = when (mode) {
+        AutoMode.OFF -> false
+        AutoMode.YOLO -> true
+        AutoMode.AUTO -> plan.steps
             .flatMap {
                 step -> listOfNotNull(step.action.takeIf { it.isNotBlank() }, step.fallback.takeIf { it.isNotBlank() })
             }
-            .none { ActionSchema.isNeverAutoApprove(it) || (mode == AutoMode.AUTO && it !in granted) }
+            .none { ActionSchema.isNeverAutoApprove(it) || it !in granted }
     }
 
     /**

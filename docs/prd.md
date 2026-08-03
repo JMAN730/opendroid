@@ -141,8 +141,9 @@ The onboarding screen must implement a vertical scroll container that handles ro
 
 The app supports three plan approval modes: OFF requires approval for every
 plan; AUTO runs only plans whose actions are in the user's explicit allowlist;
-and YOLO runs allowlist-independent safe plans. Actions marked
-`neverAutoApprove` always require confirmation in every mode, including YOLO.
+and YOLO runs every plan without approval, including actions marked
+`neverAutoApprove` — that is the point of the mode. In OFF and AUTO, actions
+marked `neverAutoApprove` always require confirmation.
 Screen capture is not a first-run grant and must be explicitly enabled by the
 user. A declined plan remains proposed and can be approved later.
 

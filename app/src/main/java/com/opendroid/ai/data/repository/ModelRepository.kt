@@ -11,6 +11,9 @@ import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.db.dao.ModelDao
 import com.opendroid.ai.data.db.entities.ModelEntity
 import com.opendroid.ai.data.db.entities.ModelStatus
+import com.opendroid.ai.data.db.dao.markDownloadReady
+import com.opendroid.ai.data.db.dao.markDownloadFailed
+import com.opendroid.ai.data.db.dao.clearDownloadState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -136,13 +139,9 @@ class ModelRepository @Inject constructor(
         val spec = OnDeviceModelRegistry.findById(model.id) ?: return
         modelDao.getModelById(spec.id) ?: return
         if (!spec.isManagedDownloadAvailable) {
-            modelDao.updateDownloadProgressDetails(
+            modelDao.markDownloadFailed(
                 spec.id,
-                0,
-                0L,
-                "",
-                "In-app download is unavailable until publisher integrity metadata is recorded.",
-                ModelStatus.FAILED
+                "In-app download is unavailable until publisher integrity metadata is recorded."
             )
             return
         }
@@ -175,14 +174,7 @@ class ModelRepository @Inject constructor(
             } catch (e: IllegalStateException) {
                 val reason = e.localizedMessage ?: "Insufficient device memory."
                 Log.e(tag, "RAM check failed for import: ${e.message}")
-                modelDao.updateDownloadProgressDetails(
-                    modelId,
-                    0,
-                    0L,
-                    "",
-                    reason,
-                    ModelStatus.FAILED
-                )
+                modelDao.markDownloadFailed(modelId, reason)
                 return@withContext ImportLocalModelResult.Failure(reason)
             }
 
@@ -223,7 +215,7 @@ class ModelRepository @Inject constructor(
                     spec = spec,
                     verifyFormat = { LiteRtCompatibility.verify(it, context.cacheDir) }
                 )
-                if (!install.isSuccess) {
+                if (install is ArtifactVerificationResult.Invalid) {
                     if (install.failure == ArtifactVerificationFailure.FORMAT_INVALID) {
                         return@withContext ImportLocalModelResult.Failure(
                             "LiteRT could not open this file. Ensure it is a valid .litertlm or .task model."
@@ -238,14 +230,7 @@ class ModelRepository @Inject constructor(
                 refFile.parentFile?.mkdirs()
                 refFile.writeText(dir.absolutePath)
 
-                modelDao.updateDownloadProgressDetails(
-                    modelId,
-                    100,
-                    finalSize,
-                    "",
-                    "",
-                    ModelStatus.READY
-                )
+                modelDao.markDownloadReady(modelId, finalSize)
 
                 ImportLocalModelResult.Success
             } catch (e: Exception) {
@@ -265,14 +250,7 @@ class ModelRepository @Inject constructor(
     suspend fun cancelDownload(model: OnDeviceModel) {
         if (OnDeviceModelRegistry.findById(model.id) == null) return
         // Mark cancellation before stopping work so a stopping worker cannot restore PAUSED.
-        modelDao.updateDownloadProgressDetails(
-            model.id,
-            0,
-            0L,
-            "",
-            "",
-            ModelStatus.NOT_DOWNLOADED
-        )
+        modelDao.clearDownloadState(model.id)
         workManager.cancelUniqueWork("download_${model.id}")
         val dir = getModelDir(model.id)
         if (dir.exists()) {
@@ -387,14 +365,7 @@ class ModelRepository @Inject constructor(
                     refFile.delete()
                 }
 
-                modelDao.updateDownloadProgressDetails(
-                    spec.id,
-                    0,
-                    0L,
-                    "",
-                    "",
-                    ModelStatus.NOT_DOWNLOADED
-                )
+                modelDao.clearDownloadState(spec.id)
             }
         }
     }

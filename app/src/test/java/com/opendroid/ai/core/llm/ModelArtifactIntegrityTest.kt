@@ -199,7 +199,7 @@ class ModelArtifactIntegrityTest {
             verifyFormat = {}
         )
 
-        assertFalse(result.isSuccess)
+        assertTrue(result is ArtifactVerificationResult.Invalid)
         assertEquals("older", target.readText())
         assertFalse(manifestFile.exists())
         assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
@@ -222,8 +222,10 @@ class ModelArtifactIntegrityTest {
             verifyFormat = { throw IllegalArgumentException("not a LiteRT model") }
         )
 
-        assertFalse(result.isSuccess)
-        assertEquals(ArtifactVerificationFailure.FORMAT_INVALID, result.failure)
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID),
+            result
+        )
         assertEquals("older", target.readText())
         assertFalse(manifestFile.exists())
         assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
@@ -246,7 +248,7 @@ class ModelArtifactIntegrityTest {
             verifyFormat = {}
         )
 
-        assertTrue(result.isSuccess)
+        assertEquals(ArtifactVerificationResult.Valid, result)
         assertEquals("hello", target.readText())
         assertNotNull(ModelArtifactManifestStore().read(manifestFile))
         assertEquals(
@@ -294,8 +296,10 @@ class ModelArtifactIntegrityTest {
             verifyFormat = {}
         )
 
-        assertFalse(result.isSuccess)
-        assertEquals(ArtifactVerificationFailure.UNREADABLE_FILE, result.failure)
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE),
+            result
+        )
         // The artifact move (call 1) already committed before the manifest move (call 2) failed.
         assertEquals("replacement", target.readText())
         // The old manifest was deleted before either move was attempted, and the new one never
