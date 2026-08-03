@@ -609,6 +609,16 @@ private fun earnedAppInfoCards(
         }
     }
 
+// Settings.ACTION_MANAGE_(APP_)ALL_FILES_ACCESS_PERMISSION are API 30 constants; minSdk
+// here is 26. The STORAGE branch below guards their use behind `sdkInt < 30`, but that
+// check reads a snapshot parameter rather than Build.VERSION.SDK_INT, which lint's
+// InlinedApi detector does not recognize as a version check — so the constants are
+// inlined as string literals to avoid referencing API-30-only fields unconditionally.
+private const val ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION =
+    "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
+private const val ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION =
+    "android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION"
+
 private fun openManualSettings(
     context: Context,
     sdkInt: Int,
@@ -619,14 +629,14 @@ private fun openManualSettings(
             if (sdkInt < 30) return
             try {
                 context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    Intent(ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                         data = Uri.fromParts("package", context.packageName, null)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     },
                 )
             } catch (_: ActivityNotFoundException) {
                 context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                    Intent(ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     },
                 )
