@@ -4,13 +4,80 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.2 — Developer Pre-release (July 28, 2026)
+## v1.0.3 — Developer Pre-release (August 5, 2026)
 
 Developer-facing pre-release for sideload testing. Not a Play Store production upload.
 
-### Highlights since v1.0.1
-*   **Auto Mode & Safety Controls (#23)**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals (PR #23).
-*   **Android 14/15 Foreground Service Fix (#22)**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService` (PR #22).
+### Highlights since v1.0.2 (PR #30 by @JMAN730)
+
+#### 🔐 Security & Credential Hardening
+*   **Android Keystore Credential Storage**: Moved provider API credentials from `EncryptedSharedPreferences` to direct Android Keystore-backed encryption, with stale-credential recovery on decrypt failure and transactional (all-or-nothing) credential saves.
+*   **Keystore GCM IV Fix**: Stopped rejecting the Keystore-generated GCM IV on encrypt, which previously broke encryption on some devices.
+*   **SecurePrefs Retirement**: Retired `SecurePrefs` for non-provider callers and removed the deprecated `androidx.security:security-crypto` dependency after the direct Keystore migration.
+*   **Approval & Storage Safety Remediation**: Closed PRD/TRD remediation gaps in action approval and storage safety; YOLO mode now explicitly (and only via user opt-in) bypasses the `neverAutoApprove` guard.
+*   **Typed LLM Errors**: Preserved typed LLM error information through Claude streaming responses instead of collapsing them to generic failures.
+
+#### 📦 Model Download & Install Integrity
+*   **Publisher SHA-256 Pins**: Recorded publisher SHA-256 pins for the Gemma 3n models so downloads verify against known-good hashes.
+*   **Atomic Model Installs**: Made model artifact/manifest commits unambiguous on failure — a crashed install can no longer leave a model half-registered.
+*   **Download Resilience**: Hardened model downloads against WorkManager job quotas, improved retry feedback, logged previously swallowed download errors, and deduplicated the LiteRT compatibility probe.
+*   **Hugging Face Token Hygiene**: Log failed clears of the Hugging Face verification timestamp instead of ignoring them.
+
+#### 🛠️ Build & Toolchain
+*   **SDK 36**: Bumped `compileSdk`/`targetSdk` to 36 with AndroidX platform dependencies upgraded to match.
+*   **Gradle 9.6.1 / AGP 9.3.1**: Migrated to Gradle 9.6.1 and AGP 9.3.1 with built-in Kotlin and KSP; modern DSL throughout; Gradle daemon pinned to JDK 21 with the configuration cache enabled.
+*   **Network Stack**: Upgraded to Retrofit 3.0.0 and the OkHttp 5.4.0 BOM.
+*   **Lint Zero-Baseline Push**: Enabled `warningsAsErrors` across the lint tiers and cleared `DefaultLocale`, `InlinedApi`, `AutoboxingStateCreation`, `Recycle` (false positives suppressed at source), `UseKtx`, and `DuplicateUsesFeature` findings; deleted five unused drawables and their baseline entries.
+*   **Test Matrix Fixes**: Corrected three instrumentation tests surfaced by the expanded CI matrix and isolated the resource-cleanup test fixture.
+
+#### 📱 UI, Accessibility & Compatibility
+*   **Android 16 Edge-to-Edge**: Finalized edge-to-edge support with proper inset handling across screens.
+*   **Touch Fix**: Stopped the floating button's unused margin from swallowing taps around it.
+*   **Onboarding & Settings UX**: Added a date picker for the onboarding birthday field and made the Planning & Automation settings section collapsible.
+*   **Accessibility Node Traversal**: Extracted accessibility node traversal into a testable component and landed instrumentation tests for it.
+*   **Optional Hardware Declarations**: Declared telephony and camera as optional hardware, gated granular telephony features on API 33, and guarded remaining camera actions — the app now installs on tablets and WiFi-only devices.
+
+#### 📚 Documentation
+*   Consolidated root docs into `docs/`, folded `vibecoder.md` into `CONTRIBUTING.md`, and trimmed the README.
+*   Added a QA test plan for Qwen 2.5 LiteRT on-device inference; fixed stale SDK-level references and staging-file names.
+
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+*   **`app-debug.apk`**: `fc1a0726a2e236620c659f54cf8ff65303677b6d6d641cd509c4bac02a2b7c56`
+*   **`app-release.apk`**: `9c28e6b9c8f5414774856b59966939075d58facc82f6e8dd96d808c301409830`
+*   **`app-debug.aab`**: `d1b5029f871400010fdc7cd6528d0c29e3e55559856dd51306b84ee3cb9c59d7`
+*   **`app-release.aab`**: `064a51d8dfdf2bd977a85e64fe7ff49f68cb369a03272c78217b51d22add8bc9`
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 4
+*   **Version Name**: 1.0.3
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub pre-release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.3`.
+
+---
+
+## v1.0.2 — Developer Pre-release (July 30, 2026)
+
+Developer-facing pre-release for sideload testing. Not a Play Store production upload.
+
+### Highlights since v1.0.1 (Contributor Contributions #22, #23, #24, #25, #26)
+*   **Android 14/15 Foreground Service Fix (PR #22 by @JMAN730)**: Resolved `SecurityException` crashes on fresh installs by introducing `specialUse` fallback FGS service type and runtime permission handling in `OpenDroidService` (PR #22).
+*   **Auto Mode & Safety Controls (PR #23 by @JMAN730)**: Introduced `AutoMode` (`NEVER`, `SAFE_ONLY`, `ALWAYS`), `AutoApprovalPolicy` plan filtering, `isNeverAutoApprovable` safeguards on sensitive actions, and `VoiceApprovalParser` for spoken plan approvals (PR #23).
+*   **Website Redesign & Theme Accessibility (PR #24 by @sudomarc)**: Full visual redesign of the website, light/dark theme toggle, navigation accessibility fix, mobile responsive fixes, and maintenance (PR #24).
+*   **LLM Reliability, Crash Logging & CI Hardening (PR #25 by @JMAN730)**: Added LLM provider error handling, Claude model catalog updates, on-device crash logging (`CrashLogRecorder`, `CrashLogRedactor`, `RoomCrashLogSink`, `CrashLogScreen`), permissions onboarding screen (`PermissionsScreen`), and CI hardening with GitHub Actions workflow (`android-ci.yml`), lint baseline, and Room schemas (PR #25).
+*   **App Package Verification & Handling (PR #26 / PR #49 by @JMAN730)**: Fixed package verification and `APPLICATION_NOT_INSTALLED` fallback handling across action handlers (PR #26, PR #49).
 *   **GitHub Star History Chart (#19, #21)**: Added interactive GitHub Star History chart to `README.md` with theme-aware (light/dark mode) embeds, legend rendering, and direct link to interactive chart page (Closes #17, PR #19, PR #21).
 *   **LiteRT Prompt Context Overflow Prevention (#20)**: Added `PromptBudget` token calculations and expanded on-device model context windows (1280 for Qwen 2.5 0.5B, 4096 for Gemma) to eliminate native C++ `SIGABRT` crashes (Fixes #15, PR #20).
 *   **UI Redesign & Iconography**: Premium developer-tool palette, Auto Mode settings/UI, and iconography upgrades.
@@ -20,13 +87,15 @@ Developer-facing pre-release for sideload testing. Not a Play Store production u
 
 ### Release Assets
 *   **`app-debug.apk`** — Debug build APK for developer testing & logging.
-*   **`app-release.apk`** — Signed release APK (sideload for testing).
-*   **`app-release.aab`** — Signed Android App Bundle.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
 
 ### Checksums (SHA-256)
-*   **`app-debug.apk`**: `9b48ae12c0c10ec886140be34c9b29cf2b8fe74fe8832bde74d8af9ad7ce2a3c`
-*   **`app-release.apk`**: `c860bcb8241d3bd7eff0efc8ffda444a503d7633815f3af583b122d2c8748c67`
-*   **`app-release.aab`**: `9aa470d3ca6d365f1a4dab4fa020cbb3d5c86905a297053654e1be586540dac0`
+*   **`app-debug.apk`**: `cd1c02d696869960f561ec651072e538b721d87aa26220540c395b2ab5075b16`
+*   **`app-release.apk`**: `de455265ef6d9b301e2c5189ab046004026382e0f551108062ad2e5f3fc0d5e9`
+*   **`app-debug.aab`**: `77a7d0e8554c4f8e415ae63021a2c55dcd129b5dfc5e2964a153941c7fa6f555`
+*   **`app-release.aab`**: `e36c46ac399c6911540ed0c13ff3b868602381982aac310463a31c20860af3b4`
 
 ### Build Configuration
 *   **Package**: `com.opendroid.aiagent`
