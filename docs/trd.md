@@ -166,7 +166,7 @@ memories, and crash history.
 ## 6. Project Dependencies & Toolchain Versions
 
 ### 6.1. Build Toolchain
-* **Gradle Version:** `9.6.1`
+* **Gradle Version:** `9.7.0`
 * **Android Gradle Plugin (AGP):** `9.3.1`
 * **Kotlin Compiler / Gradle Plugin:** `2.4.0`
 * **Compose Compiler Plugin:** `2.4.0`

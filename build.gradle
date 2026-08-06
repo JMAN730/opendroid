@@ -6,7 +6,7 @@ buildscript {
     }
     dependencies {
         // AGP 9.3.1 requires Gradle >= 9.5.0 (VersionCheckPlugin); the wrapper is
-        // pinned to 9.6.1 with a checksum. No standalone com.android.tools:r8 pin:
+        // pinned to 9.7.0 with a checksum. No standalone com.android.tools:r8 pin:
         // the R8 bundled with this AGP handles Kotlin 2.4.0 metadata, and the
         // minified release was verified against the AGP 8.13.2 + R8 9.1.31 output
         // (see docs/build/agp9-migration.md).
