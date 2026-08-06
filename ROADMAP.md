@@ -1,7 +1,7 @@
 # OpenDroid Roadmap
 
 Living document. Reflects the state of `JMAN730/opendroid` as of **2026-08-05**, shipping
-version **1.0.2** (`versionCode 3`).
+version **1.0.3** (`versionCode 4`).
 
 Since the last revision of this document (2026-07-30), most of what was listed here as
 upcoming work has shipped, tracked through **[issue #55, "Map: execute the OpenDroid
