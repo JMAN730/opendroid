@@ -98,10 +98,14 @@ fun AboutScreen(
                                 .border(2.dp, AccentNeonGreen, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
+                            // bot.png is a 512x341 canvas whose glyph only covers the
+                            // middle ~160x172, so it draws tiny at the badge's own size.
+                            // requiredSize scales past the 80.dp parent constraint; the
+                            // transparent padding overflows into the Box's circle clip.
                             Image(
                                 painter = painterResource(id = R.drawable.bot),
                                 contentDescription = "OpenDroid app icon",
-                                modifier = Modifier.size(72.dp)
+                                modifier = Modifier.requiredSize(150.dp)
                             )
                         }
 
