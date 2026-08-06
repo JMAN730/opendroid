@@ -99,6 +99,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_NAME is the single source of the version string the
+        // About screen displays; AGP 9 does not generate BuildConfig unless asked.
+        buildConfig = true
     }
     testOptions {
         unitTests {
