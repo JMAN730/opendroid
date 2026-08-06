@@ -59,7 +59,7 @@ OpenDroid will **plan** this as 3 steps, **execute** each one, **verify** the re
 | **Background Downloader** | Real network downloads (via WorkManager) with Pause/Resume, speed tracking, and ETA |
 | **Secure Authentication** | Direct Android Keystore AES-GCM token storage to securely fetch gated Hugging Face models |
 | **Integrity Verification** | Computes SHA-256 hashes and verifies LiteRT engine loading compatibility before marking READY |
-| **Local Model Import** | Direct offline importing of custom `.task` or `.litertlm` files with JNI verification checks |
+| **Local Model Import** | Direct offline importing of catalog or freestanding custom `.task` / `.litertlm` files with JNI verification checks |
 
 ### 📱 Full Device Control
 | Action | Examples |

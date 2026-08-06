@@ -29,15 +29,17 @@ import com.google.ai.edge.litertlm.Contents
 /**
  * LLM provider backed by LiteRT-LM (com.google.ai.edge.litertlm).
  *
- * This provider runs Gemma models entirely on-device using the LiteRT runtime
+ * This provider runs LiteRT models entirely on-device using the LiteRT runtime
  * with GPU/NPU acceleration. It does NOT require Google AI Core / Play Services.
  *
- * Supported models are defined in [OnDeviceModelRegistry.liteRTOnly].
+ * Catalog models are defined in [OnDeviceModelRegistry.liteRTOnly]; freestanding
+ * custom imports are resolved through [ModelRepository.resolveLiteRTSpec].
  */
 @Singleton
 class LiteRTLMProvider @Inject constructor(
     private val context: Context,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val modelRepository: dagger.Lazy<com.opendroid.ai.data.repository.ModelRepository>
 ) : LLMProvider {
 
     private var cachedEngine: Engine? = null
@@ -51,16 +53,15 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     override val name: String = "LiteRT-LM (On-device)"
-    override val availableModels: List<String> =
-        OnDeviceModelRegistry.liteRTOnly.map { it.id }
+    override val availableModels: List<String>
+        get() = OnDeviceModelRegistry.liteRTOnly.map { it.id }
 
     /**
      * Resolves the model spec for the currently selected model.
      * Falls back to the recommended LiteRT model if the selection isn't a LiteRT model.
      */
     private fun resolveModelSpec(modelId: String): OnDeviceModelSpec {
-        return OnDeviceModelRegistry.findById(modelId)
-            ?.takeIf { it.backend == OnDeviceBackend.LITERT_LM }
+        return modelRepository.get().resolveLiteRTSpec(modelId)
             ?: OnDeviceModelRegistry.recommendedFor(OnDeviceBackend.LITERT_LM)
             ?: throw IllegalStateException("No LiteRT-LM models registered in OnDeviceModelRegistry")
     }
@@ -84,7 +85,7 @@ class LiteRTLMProvider @Inject constructor(
      * Checks whether a given model file has been downloaded and is ready.
      */
     fun isModelDownloaded(modelId: String): Boolean {
-        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
+        val spec = modelRepository.get().resolveLiteRTSpec(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
         val manifestFile = modelFile.parentFile?.let(ModelStoragePaths::manifestFile) ?: return false
         return artifactVerifier.verifyForStartup(modelFile, manifestFile, spec) ==
@@ -92,7 +93,7 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     /**
-     * Returns the download status for all LiteRT-LM models.
+     * Returns the download status for all LiteRT-LM catalog models.
      * Map of model ID → downloaded boolean.
      */
     fun getAllModelStatuses(): Map<String, Boolean> {
@@ -105,7 +106,7 @@ class LiteRTLMProvider @Inject constructor(
      * Deletes a downloaded model to free storage.
      */
     fun deleteModel(modelId: String): Boolean {
-        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
+        val spec = modelRepository.get().resolveLiteRTSpec(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
         val deleted = if (modelFile.exists()) modelFile.delete() else true
         modelFile.parentFile?.let(ModelStoragePaths::manifestFile)?.delete()
@@ -226,11 +227,16 @@ class LiteRTLMProvider @Inject constructor(
 
     override suspend fun isAvailable(): Boolean {
         return try {
-            // LiteRT-LM requires Android 12+ (API 31)
-            if (Build.VERSION.SDK_INT < 31) return false
-            // Check if at least one model is downloaded
+            // LiteRT-LM requires Android 12+ (API 31) for many catalog models; allow API 26+
+            // when a smaller model (including custom import) is present.
+            if (Build.VERSION.SDK_INT < 26) return false
+            // Check if at least one catalog or custom model is ready on disk
             OnDeviceModelRegistry.liteRTOnly.any { spec ->
                 isModelDownloaded(spec.id)
+            } || modelRepository.get().allModelsFlow.first().any { entity ->
+                OnDeviceModelRegistry.isCustomId(entity.id) &&
+                    entity.status == com.opendroid.ai.data.db.entities.ModelStatus.READY &&
+                    isModelDownloaded(entity.id)
             }
         } catch (e: Exception) {
             Log.w(TAG, "isAvailable check failed: ${e.message}")
