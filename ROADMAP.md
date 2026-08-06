@@ -19,7 +19,7 @@ this file is the periodic snapshot.
 |---|---|
 | **App** | 187 Kotlin sources under `app/src/main/java/com/opendroid/ai` |
 | **SDK** | `minSdk 26`, `compileSdk`/`targetSdk 36` |
-| **Toolchain** | Gradle 9.6.1, AGP 9.3.1, Kotlin 2.4.0 (AGP built-in Kotlin), JDK 21 (pinned) |
+| **Toolchain** | Gradle 9.7.0, AGP 9.3.1, Kotlin 2.4.0 (AGP built-in Kotlin), JDK 21 (pinned) |
 | **Tests** | 39 JVM unit-test files; **`androidTest` source set exists** — 5 files, including an accessibility-service harness and Keystore cipher instrumentation tests |
 | **CI** | 4 jobs — unit tests + `assembleDebug`, `lintDebug`, `connectedDebugAndroidTest` on an API 26/36 emulator matrix, unsigned `assembleRelease` (R8) |
 | **Lint** | 16 findings frozen in `app/lint-baseline.xml`; three-tier gate (baseline / `error` list / `warningsAsErrors true`) lives in the `lint {}` block of `app/build.gradle` |
