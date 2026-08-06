@@ -327,6 +327,7 @@ fun SettingsScreen(
                         }
 
                         val modelsLoading by viewModel.modelsLoading.collectAsState()
+                        val modelFetchNotice by viewModel.modelFetchNotice.collectAsState()
                         val fetchedModels = config.modelCache[config.activeProvider] ?: emptyList()
                         var modelDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -479,6 +480,19 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+
+                        // Model names are never bundled with the app, so when the
+                        // live list is unavailable the reason is shown rather than
+                        // a list that quietly went out of date.
+                        modelFetchNotice?.let { notice ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = notice,
+                                fontSize = 11.sp,
+                                color = AccentRed,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
