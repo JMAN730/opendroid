@@ -4,6 +4,66 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
+## v1.0.3 — Developer Pre-release (August 6, 2026)
+
+Developer-facing pre-release for sideload testing. Not a Play Store production upload.
+
+### Highlights since v1.0.2
+
+#### 🔐 Security & Credential Hardening
+*   **Android Keystore Credential Storage**: Moved provider API credentials from `EncryptedSharedPreferences` to direct Android Keystore-backed encryption, with stale-credential recovery on decrypt failure and transactional (all-or-nothing) credential saves.
+*   **Keystore GCM IV Fix**: Stopped rejecting the Keystore-generated GCM IV on encrypt, which previously broke encryption on some devices.
+*   **SecurePrefs Retirement**: Retired `SecurePrefs` for non-provider callers and removed the deprecated `androidx.security:security-crypto` dependency after the direct Keystore migration.
+*   **Approval & Storage Safety Remediation**: Closed PRD/TRD remediation gaps in action approval and storage safety; YOLO mode now explicitly (and only via user opt-in) bypasses the `neverAutoApprove` guard.
+*   **Typed LLM Errors**: Preserved typed LLM error information through Claude streaming responses instead of collapsing them to generic failures.
+
+#### 📦 Model Download & Install Integrity
+*   **Publisher SHA-256 Pins**: Recorded publisher SHA-256 pins for the Gemma 3n models so downloads verify against known-good hashes.
+*   **Atomic Model Installs**: Made model artifact/manifest commits unambiguous on failure — a crashed install can no longer leave a model half-registered.
+*   **Download Resilience**: Hardened model downloads against WorkManager job quotas, improved retry feedback, logged previously swallowed download errors, and deduplicated the LiteRT compatibility probe.
+*   **Hugging Face Token Hygiene**: Log failed clears of the Hugging Face verification timestamp instead of ignoring them.
+
+#### 🛠️ Build & Toolchain
+*   **SDK 36**: Bumped `compileSdk`/`targetSdk` to 36 with AndroidX platform dependencies upgraded to match.
+*   **Gradle 9.6.1 / AGP 9.3.1**: Migrated to Gradle 9.6.1 and AGP 9.3.1 with built-in Kotlin and KSP; modern DSL throughout; Gradle daemon pinned to JDK 21 with the configuration cache enabled.
+*   **Network Stack**: Upgraded to Retrofit 3.0.0 and the OkHttp 5.4.0 BOM.
+*   **Lint Zero-Baseline Push**: Enabled `warningsAsErrors` across the lint tiers and cleared `DefaultLocale`, `InlinedApi`, `AutoboxingStateCreation`, `Recycle` (false positives suppressed at source), `UseKtx`, and `DuplicateUsesFeature` findings; deleted five unused drawables and their baseline entries.
+*   **Test Matrix Fixes**: Corrected three instrumentation tests surfaced by the expanded CI matrix and isolated the resource-cleanup test fixture.
+
+#### 📱 UI, Accessibility & Compatibility
+*   **Android 16 Edge-to-Edge**: Finalized edge-to-edge support with proper inset handling across screens.
+*   **Touch Fix**: Stopped the floating button's unused margin from swallowing taps around it.
+*   **Onboarding & Settings UX**: Added a date picker for the onboarding birthday field and made the Planning & Automation settings section collapsible.
+*   **Accessibility Node Traversal**: Extracted accessibility node traversal into a testable component and landed instrumentation tests for it.
+*   **Optional Hardware Declarations**: Declared telephony and camera as optional hardware, gated granular telephony features on API 33, and guarded remaining camera actions — the app now installs on tablets and WiFi-only devices.
+
+#### 📚 Documentation
+*   Consolidated root docs into `docs/`, folded `vibecoder.md` into `CONTRIBUTING.md`, and trimmed the README.
+*   Added a QA test plan for Qwen 2.5 LiteRT on-device inference; fixed stale SDK-level references and staging-file names.
+
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Signed release APK (sideload for testing).
+*   **`app-release.aab`** — Signed Android App Bundle.
+
+### Checksums (SHA-256)
+Recorded when the release artifacts are published to the GitHub pre-release.
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 4
+*   **Version Name**: 1.0.3
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub pre-release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.3`.
+
+---
+
 ## v1.0.2 — Developer Pre-release (July 28, 2026)
 
 Developer-facing pre-release for sideload testing. Not a Play Store production upload.
