@@ -4,9 +4,9 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.3 — Developer Pre-release (August 5, 2026)
+## v1.0.3 — Latest Release (August 5, 2026)
 
-Developer-facing pre-release for sideload testing. Not a Play Store production upload.
+Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
 ### Highlights since v1.0.2
 
