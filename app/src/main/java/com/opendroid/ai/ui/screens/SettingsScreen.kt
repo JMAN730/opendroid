@@ -111,15 +111,20 @@ fun SettingsScreen(
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
+    var importAsCustomModel by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (uri != null && activeImportModelId != null) {
-            viewModel.importLocalModel(activeImportModelId!!, uri)
+        if (uri != null) {
+            when {
+                importAsCustomModel -> viewModel.importCustomLocalModel(uri)
+                activeImportModelId != null -> viewModel.importLocalModel(activeImportModelId!!, uri)
+            }
         }
         activeImportModelId = null
+        importAsCustomModel = false
     }
 
     Scaffold(
@@ -327,6 +332,7 @@ fun SettingsScreen(
                         }
 
                         val modelsLoading by viewModel.modelsLoading.collectAsState()
+                        val modelFetchNotice by viewModel.modelFetchNotice.collectAsState()
                         val fetchedModels = config.modelCache[config.activeProvider] ?: emptyList()
                         var modelDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -479,6 +485,19 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+
+                        // Model names are never bundled with the app, so when the
+                        // live list is unavailable the reason is shown rather than
+                        // a list that quietly went out of date.
+                        modelFetchNotice?.let { notice ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = notice,
+                                fontSize = 11.sp,
+                                color = AccentRed,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -751,7 +770,7 @@ fun SettingsScreen(
 
                             // ─── Hugging Face Section ───
                             Text(
-                                text = "HUGGING FACE AUTHENTICATION",
+                                text = "HUGGING FACE TOKEN (GATED MODELS ONLY)",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
@@ -759,7 +778,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Required only for downloading gated LiteRT models from Hugging Face. Cloud AI providers are NOT affected.",
+                                text = "Needed only for gated Hugging Face downloads (Google Gemma LiteRT builds). Public models such as Qwen 2.5 download without a token. Not used for cloud API providers.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -903,7 +922,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Runs without Google AI Core. Works on any Android 12+ device.",
+                                text = "Runs without Google AI Core. Public catalog models (e.g. Qwen) need no HF token; Gemma LiteRT builds are gated. Or import your own .task / .litertlm file.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -967,10 +986,31 @@ fun SettingsScreen(
                                                             )
                                                         }
                                                     }
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(
+                                                                if (spec.authRequired) Color(0xFFFF9800).copy(alpha = 0.12f)
+                                                                else AccentCyan.copy(alpha = 0.12f),
+                                                                RoundedCornerShape(4.dp)
+                                                            )
+                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = if (spec.authRequired) "GATED · HF TOKEN" else "PUBLIC · NO TOKEN",
+                                                            color = if (spec.authRequired) Color(0xFFFF9800) else AccentCyan,
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
                                                 }
                                                 Text(
                                                     text = if (managedDownloadAvailable) {
-                                                        "Backend: LiteRT-LM · Publisher integrity metadata available"
+                                                        if (spec.authRequired) {
+                                                            "Backend: LiteRT-LM · Gated Hugging Face download"
+                                                        } else {
+                                                            "Backend: LiteRT-LM · Public download (no token)"
+                                                        }
                                                     } else {
                                                         "Backend: LiteRT-LM · In-app download unavailable; local import only"
                                                     },
@@ -1135,6 +1175,7 @@ fun SettingsScreen(
 
                                                         Button(
                                                             onClick = {
+                                                                importAsCustomModel = false
                                                                 activeImportModelId = spec.id
                                                                 importLauncher.launch("*/*")
                                                             },
@@ -1184,6 +1225,135 @@ fun SettingsScreen(
                                                         contentPadding = PaddingValues(horizontal = 8.dp)
                                                     ) {
                                                         Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = TextSecondary)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ─── Custom LiteRT imports ───
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "CUSTOM LITERT MODELS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Import any .task or .litertlm file as its own model (not tied to a catalog slot). GGUF is not supported yet.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    importAsCustomModel = true
+                                    activeImportModelId = null
+                                    importLauncher.launch("*/*")
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                modifier = Modifier.fillMaxWidth().height(36.dp)
+                            ) {
+                                Text("Import custom LiteRT model", fontSize = 12.sp, color = DarkBackground)
+                            }
+
+                            val customModels = dbModels.filter {
+                                OnDeviceModelRegistry.isCustomId(it.id) &&
+                                    it.status == ModelStatus.READY
+                            }
+                            customModels.forEach { entity ->
+                                var expanded by remember(entity.id) { mutableStateOf(false) }
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp)
+                                        .border(
+                                            1.dp,
+                                            if (config.activeModel == entity.id) AccentNeonGreen.copy(alpha = 0.5f) else BorderColor,
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { expanded = !expanded },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (config.activeModel == entity.id) {
+                                            CardBackground.copy(alpha = 0.8f)
+                                        } else {
+                                            CardBackground.copy(alpha = 0.3f)
+                                        }
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = entity.name,
+                                                    fontSize = 13.sp,
+                                                    color = TextPrimary,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = "Custom LiteRT · ${formatBytes(entity.size)} · no token",
+                                                    fontSize = 10.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                            Text(
+                                                text = if (config.activeModel == entity.id) "Active" else "Ready",
+                                                fontSize = 10.sp,
+                                                color = AccentNeonGreen,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = expanded) {
+                                            Column {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = { viewModel.loadModel(entity.id) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = if (config.activeModel == entity.id) {
+                                                                AccentNeonGreen
+                                                            } else {
+                                                                AccentCyan
+                                                            }
+                                                        ),
+                                                        modifier = Modifier.weight(1f).height(32.dp),
+                                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                                    ) {
+                                                        Text(
+                                                            if (config.activeModel == entity.id) "Active" else "Load Model",
+                                                            fontSize = 11.sp,
+                                                            color = DarkBackground
+                                                        )
+                                                    }
+                                                    Button(
+                                                        onClick = { viewModel.deleteModel(entity.id) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = Color.Red.copy(alpha = 0.2f)
+                                                        ),
+                                                        modifier = Modifier.height(32.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Delete,
+                                                            contentDescription = "Delete",
+                                                            modifier = Modifier.size(14.dp),
+                                                            tint = Color.Red
+                                                        )
                                                     }
                                                 }
                                             }
@@ -2165,7 +2335,9 @@ fun SettingsScreen(
             title = { Text("Authentication Required", color = TextPrimary) },
             text = {
                 Text(
-                    text = "This model requires a Hugging Face Access Token to download.\n\nPlease add your token in the Hugging Face Authentication section of Settings.",
+                    text = "This model is gated on Hugging Face and needs an Access Token to download.\n\n" +
+                        "Public models (for example Qwen 2.5) do not need a token — only Gemma LiteRT builds do. " +
+                        "Add a read-only token in the Hugging Face section above, or pick a PUBLIC model.",
                     color = TextSecondary
                 )
             },
