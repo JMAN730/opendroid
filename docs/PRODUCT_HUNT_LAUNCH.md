@@ -29,7 +29,7 @@ Most mobile AI apps today are glorified chatbots — you type a question, and th
 OpenDroid breaks down complex multi-step tasks, executes them via accessibility-driven screen automation or direct system APIs, verifies results, and dynamically re-plans if a step fails.
 
 ### ✨ Key Highlights:
-- 📱 **On-Device LLM Support**: Download and run GGUF / LiteRT models locally for 100% offline privacy, zero API costs, and instant responses.
+- 📱 **On-Device LLM Support**: Download and run LiteRT models locally for 100% offline privacy, zero API costs, and instant responses.
 - 🌐 **11+ LLM Providers**: Connect OpenAI, Claude, Gemini, DeepSeek, Ollama, Groq, OpenRouter, and more.
 - 👁️ **Multimodal Vision & Fallback**: Scrapes UI element trees or captures real-time screenshots for intelligent GUI navigation.
 - 🛡️ **Privacy & Intent Safeguards**: Encrypted key storage, schema-enforced actions, and strict permission controls.
@@ -53,7 +53,7 @@ Thank you for your support! 🚀
 ```markdown
 OpenDroid is an open-source autonomous AI assistant for Android that plans and executes complex multi-step tasks across your apps and system settings. 
 
-Powered by local GGUF/LiteRT models or 11+ cloud LLM providers (DeepSeek, Claude, OpenAI, Ollama), OpenDroid combines accessibility automation, screen vision, voice control, and multi-tier memory to give you total control over your phone.
+Powered by local LiteRT models or 11+ cloud LLM providers (DeepSeek, Claude, OpenAI, Ollama), OpenDroid combines accessibility automation, screen vision, voice control, and multi-tier memory to give you total control over your phone.
 
 Key Features:
 - Autonomous Multi-Step Planning & Dynamic Re-evaluation
@@ -67,7 +67,7 @@ Key Features:
 1. **Is OpenDroid completely free and open-source?**
    - Yes! OpenDroid is 100% open-source (Apache 2.0). You can run local models for free or bring your own API keys.
 2. **Does OpenDroid send my personal data to external servers?**
-   - No. When using on-device models (LiteRT/GGUF), zero data leaves your phone. When using cloud providers, API calls go directly to the provider of your choice using your encrypted API keys.
+   - No. When using on-device models (LiteRT), zero data leaves your phone. When using cloud providers, API calls go directly to the provider of your choice using your encrypted API keys.
 3. **How does OpenDroid execute actions on my phone?**
    - It uses Android's Accessibility API, intent dispatchers, and system services with multi-tier error fallback.
 4. **What Android versions are supported?**

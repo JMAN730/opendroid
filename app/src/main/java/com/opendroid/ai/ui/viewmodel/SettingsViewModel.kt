@@ -24,6 +24,7 @@ import com.opendroid.ai.core.llm.ConnectionTestPlanner
 import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.ImportLocalModelResult
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.ModelFetchOutcome
 import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.RetryPolicy
@@ -79,6 +80,15 @@ class SettingsViewModel @Inject constructor(
 
     private val _modelsLoading = MutableStateFlow(false)
     val modelsLoading: StateFlow<Boolean> = _modelsLoading
+
+    /**
+     * Why the model list is not the provider's live catalog — a missing key, or
+     * a failed lookup. Null once a list has been fetched successfully. The app
+     * ships no hardcoded model names to fall back on, so this is what the user
+     * sees instead of a list that silently went stale.
+     */
+    private val _modelFetchNotice = MutableStateFlow<String?>(null)
+    val modelFetchNotice: StateFlow<String?> = _modelFetchNotice.asStateFlow()
 
     private val _connectionResults =
         MutableStateFlow<Map<String, ConnectionTestState>>(emptyMap())
@@ -252,6 +262,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun importCustomLocalModel(uri: android.net.Uri) {
+        _localImportStatus.value = "Importing..."
+        viewModelScope.launch {
+            when (val result = modelRepository.importCustomLocalModel(uri)) {
+                is ImportLocalModelResult.Success ->
+                    _localImportStatus.value = "Success"
+                is ImportLocalModelResult.Failure ->
+                    _localImportStatus.value = result.reason
+            }
+        }
+    }
+
     fun clearImportStatus() {
         _localImportStatus.value = null
     }
@@ -286,32 +308,44 @@ class SettingsViewModel @Inject constructor(
 
                 if (force || !cacheExists || cacheExpired || unsupportedClaudeModel) {
                     _modelsLoading.value = true
-                    val result = modelFetcher.get().fetchModels(provider)
-                    result.onSuccess { models ->
-                        try {
-                            settingsRepository.saveModelCache(provider, models)
-                        } catch (e: Exception) {
-                            android.util.Log.e("SettingsViewModel", "Failed to save model cache: ${e.message}", e)
-                        }
-                        
-                        // Auto-select recommended model if current model is blank or not in fetched list
-                        val modelExists = models.any { it.id == activeModel }
-                        if (!modelExists || activeModel.isBlank() || unsupportedClaudeModel) {
-                            val providerDefault = if (provider == "Anthropic Claude") {
-                                models.find { it.id == ClaudeModelCatalog.defaultModelId }
-                            } else {
-                                null
+                    when (val outcome = modelFetcher.get().fetchModels(provider)) {
+                        is ModelFetchOutcome.Success -> {
+                            _modelFetchNotice.value = null
+                            val models = outcome.models
+                            try {
+                                settingsRepository.saveModelCache(provider, models)
+                            } catch (e: Exception) {
+                                android.util.Log.e("SettingsViewModel", "Failed to save model cache: ${e.message}", e)
                             }
-                            val recommended = providerDefault
-                                ?: models.find { it.isRecommended }
-                                ?: models.firstOrNull()
-                            recommended?.let {
-                                updateActiveModel(it.id)
+
+                            // The live list is authoritative: a selection the provider
+                            // no longer serves is replaced rather than left to fail at
+                            // request time with a confusing error.
+                            val modelExists = models.any { it.id == activeModel }
+                            if (!modelExists || activeModel.isBlank() || unsupportedClaudeModel) {
+                                val providerDefault = if (provider == "Anthropic Claude") {
+                                    models.find { it.id == ClaudeModelCatalog.defaultModelId }
+                                } else {
+                                    null
+                                }
+                                val recommended = providerDefault
+                                    ?: models.find { it.isRecommended }
+                                    ?: models.firstOrNull()
+                                recommended?.let {
+                                    updateActiveModel(it.id)
+                                }
                             }
                         }
-                    }
-                    result.onFailure { error ->
-                        android.util.Log.e("SettingsViewModel", "Failed to fetch models for $provider: ${error.message}", error)
+                        // Neither non-success state writes the cache: no timestamp is
+                        // stamped, so the next visit retries instead of treating an
+                        // empty or unverified list as fresh.
+                        is ModelFetchOutcome.NeedsCredentials -> {
+                            _modelFetchNotice.value = outcome.message
+                        }
+                        is ModelFetchOutcome.Failed -> {
+                            android.util.Log.e("SettingsViewModel", "Failed to fetch models for $provider: ${outcome.message}")
+                            _modelFetchNotice.value = outcome.message
+                        }
                     }
                     _modelsLoading.value = false
                 }
@@ -686,28 +720,46 @@ class SettingsViewModel @Inject constructor(
 
     fun cancelDownload(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
-            spec?.let {
-                modelRepository.cancelDownload(it)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            if (catalog != null) {
+                modelRepository.cancelDownload(catalog)
+            } else if (com.opendroid.ai.core.llm.OnDeviceModelRegistry.isCustomId(modelId)) {
+                modelRepository.cancelDownload(
+                    com.opendroid.ai.core.llm.OnDeviceModelRegistry.customSpec(
+                        id = modelId,
+                        displayName = modelId,
+                        modelFilename = "model.litertlm"
+                    )
+                )
             }
         }
     }
 
     fun deleteModel(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
-            spec?.let {
-                modelRepository.delete(it)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            if (catalog != null) {
+                modelRepository.delete(catalog)
+            } else if (com.opendroid.ai.core.llm.OnDeviceModelRegistry.isCustomId(modelId)) {
+                modelRepository.delete(
+                    com.opendroid.ai.core.llm.OnDeviceModelRegistry.customSpec(
+                        id = modelId,
+                        displayName = modelId,
+                        modelFilename = "model.litertlm"
+                    )
+                )
             }
         }
     }
 
     fun loadModel(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            val spec = catalog
+                ?: modelRepository.resolveLiteRTSpec(modelId)
             spec?.let {
                 modelRepository.load(it)
-                updateActiveModel(it.id)
+                // load() already switches the active on-device provider + model
             }
         }
     }

@@ -107,6 +107,41 @@ class ModelStoragePathsTest {
     }
 
     @Test
+    fun `folderName preserves custom model ids`() {
+        assertEquals(
+            "custom-my-model-abcd1234",
+            ModelStoragePaths.folderName("custom-my-model-abcd1234")
+        )
+    }
+
+    @Test
+    fun `sanitizeImportFilename accepts litertlm and task`() {
+        assertEquals(
+            "gemma-4-E2B-it.litertlm",
+            ModelStoragePaths.sanitizeImportFilename("gemma-4-E2B-it.litertlm")
+        )
+        assertEquals(
+            "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+            ModelStoragePaths.sanitizeImportFilename("Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task")
+        )
+    }
+
+    @Test
+    fun `sanitizeImportFilename rejects gguf and other extensions`() {
+        assertNull(ModelStoragePaths.sanitizeImportFilename("model.gguf"))
+        assertNull(ModelStoragePaths.sanitizeImportFilename("weights.bin"))
+        assertTrue(ModelStoragePaths.isLikelyUnsupportedGguf("llama-7b-q4.gguf"))
+    }
+
+    @Test
+    fun `sanitizeImportFilename strips path and unsafe characters`() {
+        assertEquals(
+            "my_model.litertlm",
+            ModelStoragePaths.sanitizeImportFilename("Download/my model.litertlm")
+        )
+    }
+
+    @Test
     fun `ImportLocalModelResult Failure carries reason for UI`() {
         val failure: ImportLocalModelResult = ImportLocalModelResult.Failure("Could not open the selected file.")
         assertTrue(failure is ImportLocalModelResult.Failure)

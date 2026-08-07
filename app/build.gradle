@@ -101,6 +101,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_NAME is the single source of the version string the
+        // About screen displays; AGP 9 does not generate BuildConfig unless asked.
+        buildConfig = true
     }
     testOptions {
         unitTests {
@@ -160,6 +163,11 @@ android {
         baseline = file("lint-baseline.xml")
         error 'Recycle', 'UnusedResources', 'IconDuplicates', 'UseKtx', 'DefaultLocale',
                 'DuplicateUsesFeature', 'InlinedApi', 'AutoboxingStateCreation'
+        // Fires whenever a newer Gradle/AGP is published, so under
+        // warningsAsErrors it breaks every branch the day of a release
+        // (e.g. Gradle 9.7.0 broke CI repo-wide). Version bumps are deliberate
+        // upgrades, not lint findings - keep the hint visible but never gating.
+        informational 'AndroidGradlePluginVersion'
     }
 }
 

@@ -46,7 +46,10 @@ class HybridOnDeviceProvider @Inject constructor(
      */
     private fun resolveBackend(modelId: String): OnDeviceBackend {
         val spec = OnDeviceModelRegistry.findById(modelId)
-        return spec?.backend ?: OnDeviceBackend.AI_CORE // default to AI Core for legacy model IDs
+        if (spec != null) return spec.backend
+        // Freestanding LiteRT imports use custom- ids and never go through AI Core.
+        if (OnDeviceModelRegistry.isCustomId(modelId)) return OnDeviceBackend.LITERT_LM
+        return OnDeviceBackend.AI_CORE // default to AI Core for legacy / ambiguous model IDs
     }
 
     /**

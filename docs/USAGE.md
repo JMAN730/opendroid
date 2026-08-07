@@ -157,21 +157,29 @@ To run all features, ensure the following settings are enabled:
 
 OpenDroid includes an integrated manager for local LiteRT-LM models.
 
-### 🔑 Hugging Face Authentication Setup
-To download gated models (such as Google's Gemma 3n or Gemma 4 variants):
+### 🔑 Hugging Face Token (gated models only)
+A Hugging Face token is **only** required for gated LiteRT downloads (for example Google Gemma builds). Public catalog models such as **Qwen 2.5** download without any token. Cloud API providers never use this token.
+
+To download a gated model:
 1. Generate an **Access Token** (Read permission) on your Hugging Face account settings page.
-2. Open OpenDroid's **Settings** screen and scroll down to the **Hugging Face Authentication** card.
+2. Open OpenDroid's **Settings** screen and scroll to **Hugging Face Token (gated models only)**.
 3. Paste your token (masked by default, with toggle to show) and click **Validate Token**.
-4. The system will query the HF api and display `✓ Token Valid`. The token is stored securely via Android's local KeyStore.
+4. The system will query the HF API and display `✓ Token Valid`. The token is stored securely via Android's local KeyStore.
 
 ### 📥 Downloading Models
 * Tap **Download** on any registered model in the LiteRT-LM models list.
-* If a model is gated and you haven't configured a Hugging Face token, the app will display a prompt to guide you to settings.
+* Models are labeled **PUBLIC · NO TOKEN** or **GATED · HF TOKEN**. Only gated models prompt for authentication.
 * Live status checks display download speed (MB/s), downloaded bytes, and remaining time (ETA). Tap **Pause** to suspend or **Cancel** to abort.
 
 ### 📋 Offline Local Model Importing
-If you already have a model file locally (such as a custom `.task` or `.litertlm` file):
+LiteRT on-device runtime accepts `.task` and `.litertlm` files. GGUF is not supported yet.
+
+**Catalog import** (replace a known model slot):
 1. Tap **Import** on the model card in Settings.
 2. Select your file from the system file picker.
-3. The app will copy it to secure sandboxed storage and execute an automated LiteRT load verification check.
-4. Once verified, the status changes to `Ready` and it is registered for offline inference.
+3. The app copies it to sandboxed storage and runs a LiteRT load verification check.
+
+**Custom import** (new model, not tied to Gemma/Qwen slots):
+1. Under **Custom LiteRT models**, tap **Import custom LiteRT model**.
+2. Choose any `.task` / `.litertlm` file.
+3. Once verified, the model appears in the list as Ready — load it to use offline.

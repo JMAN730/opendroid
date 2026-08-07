@@ -471,11 +471,14 @@ class ModelArtifactInstaller(
         spec: OnDeviceModelSpec,
         verifyFormat: (File) -> Unit
     ): ArtifactVerificationResult {
-        val manifest = try {
+        // Hash the source bytes, but record the *destination* filename. Using source.name would
+        // persist a temp path component and fail every later verify (filename mismatch).
+        val fingerprint = try {
             verifier.createLocalImportManifest(spec, source)
         } catch (_: IOException) {
             return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.HASH_UNAVAILABLE)
         }
+        val manifest = fingerprint.copy(filename = target.name)
 
         return stageAndCommit(source, target, manifestFile, manifest, verifyFormat) { staged ->
             verifier.verifyFingerprint(staged, manifest.byteSize, manifest.sha256)
