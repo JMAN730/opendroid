@@ -262,6 +262,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun importCustomLocalModel(uri: android.net.Uri) {
+        _localImportStatus.value = "Importing..."
+        viewModelScope.launch {
+            when (val result = modelRepository.importCustomLocalModel(uri)) {
+                is ImportLocalModelResult.Success ->
+                    _localImportStatus.value = "Success"
+                is ImportLocalModelResult.Failure ->
+                    _localImportStatus.value = result.reason
+            }
+        }
+    }
+
     fun clearImportStatus() {
         _localImportStatus.value = null
     }
@@ -708,28 +720,46 @@ class SettingsViewModel @Inject constructor(
 
     fun cancelDownload(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
-            spec?.let {
-                modelRepository.cancelDownload(it)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            if (catalog != null) {
+                modelRepository.cancelDownload(catalog)
+            } else if (com.opendroid.ai.core.llm.OnDeviceModelRegistry.isCustomId(modelId)) {
+                modelRepository.cancelDownload(
+                    com.opendroid.ai.core.llm.OnDeviceModelRegistry.customSpec(
+                        id = modelId,
+                        displayName = modelId,
+                        modelFilename = "model.litertlm"
+                    )
+                )
             }
         }
     }
 
     fun deleteModel(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
-            spec?.let {
-                modelRepository.delete(it)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            if (catalog != null) {
+                modelRepository.delete(catalog)
+            } else if (com.opendroid.ai.core.llm.OnDeviceModelRegistry.isCustomId(modelId)) {
+                modelRepository.delete(
+                    com.opendroid.ai.core.llm.OnDeviceModelRegistry.customSpec(
+                        id = modelId,
+                        displayName = modelId,
+                        modelFilename = "model.litertlm"
+                    )
+                )
             }
         }
     }
 
     fun loadModel(modelId: String) {
         viewModelScope.launch {
-            val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            val catalog = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
+            val spec = catalog
+                ?: modelRepository.resolveLiteRTSpec(modelId)
             spec?.let {
                 modelRepository.load(it)
-                updateActiveModel(it.id)
+                // load() already switches the active on-device provider + model
             }
         }
     }
