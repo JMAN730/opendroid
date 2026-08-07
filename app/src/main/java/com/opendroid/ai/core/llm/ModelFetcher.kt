@@ -488,7 +488,7 @@ class ModelFetcher @Inject constructor(
 
     private fun getGeminiFallback() = listOf(
         AIModel("gemini-2.5-flash", "Gemini 2.5 Flash", "Google Gemini", isRecommended = true, isFree = true),
-        AIModel("gemini-2.0-flash", "Gemini 2.0 Flash", "Google Gemini", isRecommended = true, isFree = true),
+        AIModel("gemini-2.0-flash", "Gemini 2.0 Flash", "Google Gemini", isFree = true),
         AIModel("gemini-1.5-pro", "Gemini 1.5 Pro", "Google Gemini", isPremium = true),
         AIModel("gemini-1.5-flash", "Gemini 1.5 Flash", "Google Gemini", isFree = true),
         AIModel("gemini-nano", "Gemini Nano (On-device Mock)", "Google Gemini")
