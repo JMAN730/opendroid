@@ -227,9 +227,9 @@ class LiteRTLMProvider @Inject constructor(
 
     override suspend fun isAvailable(): Boolean {
         return try {
-            // LiteRT-LM requires Android 12+ (API 31) for many catalog models; allow API 26+
-            // when a smaller model (including custom import) is present.
-            if (Build.VERSION.SDK_INT < 26) return false
+            // LiteRT-LM requires Android 12+ (API 31) for many catalog models; smaller models
+            // (including custom imports) run on the app's minSdk, so no extra SDK gate here.
+            // Per-model SDK requirements are enforced by checkSdkCompatibility().
             // Check if at least one catalog or custom model is ready on disk
             OnDeviceModelRegistry.liteRTOnly.any { spec ->
                 isModelDownloaded(spec.id)
