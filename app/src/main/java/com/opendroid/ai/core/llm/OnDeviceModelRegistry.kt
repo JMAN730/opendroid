@@ -79,6 +79,44 @@ data class OnDeviceModelSpec(
  */
 object OnDeviceModelRegistry {
 
+    /** Id prefix for user-imported LiteRT models that are not in the static catalog. */
+    const val CUSTOM_ID_PREFIX = "custom-"
+
+    /**
+     * Conservative default for unknown custom imports. Under-sizing [OnDeviceModelSpec.contextWindow]
+     * is safer than over-sizing: LiteRT aborts natively if input+output exceeds maxNumTokens.
+     */
+    const val CUSTOM_DEFAULT_CONTEXT_WINDOW = 1280
+
+    fun isCustomId(id: String): Boolean = id.startsWith(CUSTOM_ID_PREFIX)
+
+    /**
+     * Builds a LiteRT spec for a freestanding user import. Not managed-downloadable and never
+     * requires Hugging Face auth.
+     */
+    fun customSpec(
+        id: String,
+        displayName: String,
+        modelFilename: String,
+        expectedSize: Long = 0L,
+        contextWindow: Int = CUSTOM_DEFAULT_CONTEXT_WINDOW,
+        minSdk: Int = 26
+    ): OnDeviceModelSpec {
+        require(isCustomId(id)) { "Custom on-device model ids must start with $CUSTOM_ID_PREFIX" }
+        return OnDeviceModelSpec(
+            id = id,
+            displayName = displayName,
+            family = "Custom",
+            sizeLabel = "Import",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelFilename = modelFilename,
+            expectedSize = expectedSize,
+            authRequired = false,
+            minSdk = minSdk,
+            contextWindow = contextWindow
+        )
+    }
+
     // ── AI Core models (existing, unchanged behaviour) ─────────────────
     private val aiCoreModels = listOf(
         OnDeviceModelSpec(
@@ -112,7 +150,6 @@ object OnDeviceModelRegistry {
             expectedSize = 2588147712L,
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
             authRequired = true,
-            isRecommended = true,
             minSdk = 31,
             contextWindow = 4096
         ),
@@ -188,6 +225,9 @@ object OnDeviceModelRegistry {
             ),
             licenseUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
             authRequired = false,
+            // Public HF artifact + complete integrity metadata — default LiteRT pick for
+            // devices that cannot (or choose not to) configure a Hugging Face token.
+            isRecommended = true,
             minSdk = 26,
             contextWindow = 1280
         )
@@ -202,7 +242,7 @@ object OnDeviceModelRegistry {
     /** Only LiteRT-LM models. */
     val liteRTOnly: List<OnDeviceModelSpec> get() = allModels.filter { it.backend == OnDeviceBackend.LITERT_LM }
 
-    /** Look up a model spec by its stable [id]. */
+    /** Look up a catalog model spec by its stable [id]. Custom imports are resolved via [ModelRepository]. */
     fun findById(id: String): OnDeviceModelSpec? = allModels.find { it.id == id }
 
     /** Returns the recommended model for the given [backend], or the first available. */

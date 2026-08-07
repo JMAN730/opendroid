@@ -23,13 +23,19 @@ data class ClaudeModelSpec(
 )
 
 /**
- * Single source of truth for the Anthropic Claude models OpenDroid supports.
+ * What OpenDroid knows *about* Anthropic Claude models: display names, badges,
+ * which models accept sampling parameters, and how retired IDs migrate.
+ *
+ * This is not the list of models the picker shows. Anthropic's `/v1/models`
+ * response is authoritative there, so a model released after this build is
+ * listed and selectable without an app update; the catalog only decorates the
+ * entries it recognizes.
  *
  * ## Adding or retiring a model
  * 1. Append a [ClaudeModelSpec] to [models], or remove it and add an entry to
  *    [legacyAliases] pointing at its replacement.
- * 2. That's it — the provider, the offline fallback list, the live-fetch
- *    decoration, and the Settings default all read from here.
+ * 2. That's it — the provider, the live-fetch decoration, and the Settings
+ *    default all read from here.
  *
  * Pure Kotlin: no Android or network dependencies, so it is directly unit-testable.
  */

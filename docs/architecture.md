@@ -110,7 +110,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Serialization** | Kotlinx Serialization | 2.4.0 | Fast, type-safe JSON serialization/deserialization |
 | **Voice & Speech Engine** | Android SpeechRecognizer / ElevenLabs API | System Native / REST | Speech-to-Text parsing and natural Text-to-Speech audio synthesis |
 | **Image & Animation** | Coil / Lottie Compose | 2.5.0 / 6.3.0 | Image caching and dynamic vector UI micro-animations |
-| **Build & Optimization** | Gradle / AGP / R8 Optimizer | 9.6.1 / 9.3.1 / 9.3.16 (bundled with AGP) | Build toolchain, bytecode shrinking, and optimization |
+| **Build & Optimization** | Gradle / AGP / R8 Optimizer | 9.7.0 / 9.3.1 / 9.3.16 (bundled with AGP) | Build toolchain, bytecode shrinking, and optimization |
 
 ---
 
