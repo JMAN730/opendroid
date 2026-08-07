@@ -26,7 +26,7 @@ class GeminiProvider @Inject constructor(
 ) : LLMProvider {
 
     override val name: String = "Google Gemini"
-    override val availableModels: List<String> = listOf("gemini-2.0-flash", "gemini-1.5-pro", "gemini-nano")
+    override val availableModels: List<String> = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-nano")
 
     private val gson = Gson()
     private val mediaType = "application/json; charset=utf-8".toMediaType()
