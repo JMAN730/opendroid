@@ -6,6 +6,7 @@ import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
+import com.opendroid.ai.data.models.resolveClaudeModelOrNull
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,13 +42,14 @@ class ClaudeProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        // The persisted model ID is untrusted input: resolve it against the catalog
-        // (migrating legacy IDs) rather than sending it to Anthropic verbatim.
+        // Model IDs are untrusted input: accept catalog entries (incl. legacy
+        // aliases) and IDs Anthropic listed via /v1/models (cached on LLMConfig),
+        // never an arbitrary persisted string.
         val requestedModel = request.model?.takeIf { it.isNotBlank() }
         val selectedModel = if (requestedModel == null) {
             ClaudeModelCatalog.defaultModelId
         } else {
-            ClaudeModelCatalog.resolve(requestedModel)
+            config.resolveClaudeModelOrNull(requestedModel)
                 ?: throw IllegalStateException(
                     "The selected Claude model \"$requestedModel\" is no longer supported. " +
                         "Please pick another model in Settings."
