@@ -19,20 +19,56 @@ class LiteRtRuntimeIncompatibilityException(cause: Exception) : Exception(cause)
  */
 object LiteRtCompatibility {
 
+    /**
+     * Backends to try, in order. Gemma 4 LiteRT packages constrain their main
+     * section to GPU, while older catalog models and arbitrary custom imports
+     * may only load on CPU, and there is no per-model backend metadata to pick
+     * from. Trying GPU first and falling back to CPU keeps both loadable.
+     */
+    val backendPreference: List<() -> Backend> = listOf({ Backend.GPU() }, { Backend.CPU() })
+
     fun verify(file: File, cacheDir: File) {
-        val config = EngineConfig(
-            modelPath = file.absolutePath,
-            // Gemma 4 LiteRT packages constrain their main section to GPU. A CPU
-            // probe rejects valid artifacts before they can be imported.
-            backend = Backend.GPU(),
-            cacheDir = cacheDir.absolutePath
-        )
-        try {
-            Engine(config).use { engine ->
-                engine.initialize()
+        val failures = mutableListOf<Exception>()
+        for (backend in backendPreference) {
+            val config = EngineConfig(
+                modelPath = file.absolutePath,
+                backend = backend(),
+                cacheDir = cacheDir.absolutePath
+            )
+            try {
+                Engine(config).use { engine ->
+                    engine.initialize()
+                }
+                return
+            } catch (e: Exception) {
+                failures += e
             }
-        } catch (e: Exception) {
-            throw LiteRtRuntimeIncompatibilityException(e)
         }
+        // Every backend failed. Only report runtime incompatibility when the
+        // failures name a device/backend limitation; ordinary parse/load errors
+        // mean a malformed artifact and must stay classified as FORMAT_INVALID.
+        val first = failures.first()
+        if (failures.all { isBackendIncompatibility(it) }) {
+            throw LiteRtRuntimeIncompatibilityException(first)
+        }
+        throw first
+    }
+
+    private val BACKEND_FAILURE_MARKERS =
+        listOf("gpu", "opencl", "vulkan", "delegate", "backend", "accelerator")
+
+    /**
+     * The runtime does not expose typed failures, so the only available signal
+     * that a failure is about the device rather than the file is the message.
+     */
+    internal fun isBackendIncompatibility(error: Throwable): Boolean {
+        var current: Throwable? = error
+        val seen = mutableSetOf<Throwable>()
+        while (current != null && seen.add(current)) {
+            val message = current.message?.lowercase()
+            if (message != null && BACKEND_FAILURE_MARKERS.any { message.contains(it) }) return true
+            current = current.cause
+        }
+        return false
     }
 }

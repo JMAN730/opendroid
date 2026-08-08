@@ -21,7 +21,6 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.SamplerConfig
-import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -302,27 +301,40 @@ class LiteRTLMProvider @Inject constructor(
             // engine. It must match the model's KV-cache size (spec.contextWindow),
             // NOT a request's output-token budget — undersizing it makes the native
             // runtime abort (force close) as soon as a prompt exceeds it.
-            val config = EngineConfig(
-                modelPath = modelPath,
-                // Gemma 4 LiteRT packages require the GPU-constrained main section.
-                backend = Backend.GPU(),
-                maxNumTokens = spec.contextWindow,
-                cacheDir = context.cacheDir.absolutePath
-            )
-            
+            // Gemma 4 LiteRT packages require the GPU-constrained main section,
+            // while older catalog models and custom imports may only load on
+            // CPU, so fall back rather than locking every model to one backend.
             Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
-            try {
-                engine = Engine(config)
-                engine.initialize()
-                cachedEngine = engine
-                cachedModelPath = modelPath
-                Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully and cached.")
-            } catch (e: Throwable) {
-                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine. Full Exception Stack Trace:", e)
-                throw e
+            var lastFailure: Throwable? = null
+            for (backend in LiteRtCompatibility.backendPreference) {
+                val config = EngineConfig(
+                    modelPath = modelPath,
+                    backend = backend(),
+                    maxNumTokens = spec.contextWindow,
+                    cacheDir = context.cacheDir.absolutePath
+                )
+                var candidate: Engine? = null
+                try {
+                    candidate = Engine(config)
+                    candidate.initialize()
+                    engine = candidate
+                    cachedEngine = candidate
+                    cachedModelPath = modelPath
+                    Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} and cached.")
+                    lastFailure = null
+                    break
+                } catch (e: Throwable) {
+                    Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend}.", e)
+                    lastFailure = e
+                    runCatching { candidate?.close() }
+                }
+            }
+            if (lastFailure != null) {
+                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
+                throw lastFailure
             }
         }
-        return engine
+        return requireNotNull(engine) { "LiteRT Engine initialization produced no engine" }
     }
 
     /**

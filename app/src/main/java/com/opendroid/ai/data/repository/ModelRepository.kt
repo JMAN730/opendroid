@@ -328,8 +328,9 @@ class ModelRepository @Inject constructor(
                 if (install.failure == ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE) {
                     Log.w(tag, "LiteRT runtime could not initialize imported model: ${spec.id}")
                     return ImportLocalModelResult.Failure(
-                        "This LiteRT model could not be initialized on this device. " +
-                            "Try the latest app version or a GPU-compatible LiteRT model."
+                        "This LiteRT model could not be initialized on this device: " +
+                            "no supported backend could load it. Try the latest app version " +
+                            "or a model built for this device."
                     )
                 }
                 if (install.failure == ArtifactVerificationFailure.FORMAT_INVALID) {
