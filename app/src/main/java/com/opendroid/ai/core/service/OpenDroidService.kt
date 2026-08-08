@@ -34,6 +34,9 @@ class OpenDroidService : Service() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var mcpServer: McpServer
+
     private lateinit var wakeWordDetector: WakeWordDetector
     private lateinit var speechRecognitionEngine: SpeechRecognitionEngine
     private lateinit var textToSpeechEngine: TextToSpeechEngine
@@ -87,6 +90,7 @@ class OpenDroidService : Service() {
         // Start Foreground Notification
         createNotificationChannel()
         startForegroundCompat()
+        mcpServer.start()
 
         // Monitor floating button config to start/stop wake word detection dynamically
         serviceScope.launch {
@@ -234,6 +238,7 @@ class OpenDroidService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        mcpServer.stop()
         wakeWordDetector.destroy()
         speechRecognitionEngine.destroy()
         textToSpeechEngine.destroy()
