@@ -304,7 +304,8 @@ class LiteRTLMProvider @Inject constructor(
             // runtime abort (force close) as soon as a prompt exceeds it.
             val config = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU(), // Run on CPU for compatibility
+                // Gemma 4 LiteRT packages require the GPU-constrained main section.
+                backend = Backend.GPU(),
                 maxNumTokens = spec.contextWindow,
                 cacheDir = context.cacheDir.absolutePath
             )
