@@ -239,6 +239,11 @@ dependencies {
     implementation 'com.squareup.retrofit2:retrofit:3.0.0'
     implementation 'com.squareup.retrofit2:converter-gson:3.0.0'
 
+    // Optional privileged execution through Shizuku/Sui. Root execution remains a runtime
+    // fallback when a su binary is available.
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+
     // Serialization
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'
 
