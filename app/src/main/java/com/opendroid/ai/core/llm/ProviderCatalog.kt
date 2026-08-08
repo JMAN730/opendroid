@@ -15,13 +15,22 @@ object ProviderCatalog {
     const val ON_DEVICE = "On-Device AI"
     const val LEGACY_ON_DEVICE = "Gemma 4 (On-device)"
 
+    /**
+     * The model a provider starts on before its live list has been fetched.
+     * These are seeds, not a catalog: [com.opendroid.ai.core.llm.ModelFetcher]
+     * asks each provider what it currently serves and the picker replaces a
+     * seed that the provider no longer lists. Prefer IDs that track a family
+     * rather than a dated snapshot, so a seed stays valid between releases.
+     */
     val providers: List<ProviderSpec> = listOf(
-        ProviderSpec("Google Gemini", "gemini-2.0-flash"),
+        ProviderSpec("Google Gemini", "gemini-2.5-flash"),
         ProviderSpec("OpenAI", "gpt-4o"),
         ProviderSpec("Anthropic Claude", ClaudeModelCatalog.defaultModelId),
         ProviderSpec("Mistral AI", "mistral-large-latest"),
-        ProviderSpec("Groq", "llama-3.3-70b-specdec"),
-        ProviderSpec("OpenRouter", "google/gemini-2.0-flash-exp:free"),
+        ProviderSpec("Groq", "llama-3.3-70b-versatile"),
+        // OpenRouter's auto-router always resolves to a live model, so this seed
+        // cannot be retired out from under the user.
+        ProviderSpec("OpenRouter", "openrouter/auto"),
         ProviderSpec("Together AI", "meta-llama/Llama-3-70b-chat-hf"),
         ProviderSpec("Cohere", "command-r-plus"),
         ProviderSpec("DeepSeek", "deepseek-chat"),

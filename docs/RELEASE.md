@@ -4,9 +4,9 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.3 — Developer Pre-release (TBD, 2026)
+## v1.0.3 — Latest Release (August 5, 2026)
 
-Developer-facing pre-release for sideload testing. Not a Play Store production upload.
+Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
 ### Highlights since v1.0.2 (PR #30 by @JMAN730)
 
@@ -48,10 +48,10 @@ Developer-facing pre-release for sideload testing. Not a Play Store production u
 *   **`app-release.aab`** — Release Android App Bundle.
 
 ### Checksums (SHA-256)
-*   **`app-debug.apk`**: `TBD`
-*   **`app-release.apk`**: `TBD`
-*   **`app-debug.aab`**: `TBD`
-*   **`app-release.aab`**: `TBD`
+*   **`app-debug.apk`**: `fc1a0726a2e236620c659f54cf8ff65303677b6d6d641cd509c4bac02a2b7c56`
+*   **`app-release.apk`**: `9c28e6b9c8f5414774856b59966939075d58facc82f6e8dd96d808c301409830`
+*   **`app-debug.aab`**: `d1b5029f871400010fdc7cd6528d0c29e3e55559856dd51306b84ee3cb9c59d7`
+*   **`app-release.aab`**: `064a51d8dfdf2bd977a85e64fe7ff49f68cb369a03272c78217b51d22add8bc9`
 
 ### Build Configuration
 *   **Package**: `com.opendroid.aiagent`
