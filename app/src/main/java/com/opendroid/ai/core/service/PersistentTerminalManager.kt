@@ -2,6 +2,8 @@ package com.opendroid.ai.core.service
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.BufferedWriter
+import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +34,7 @@ class PersistentTerminalManager @Inject constructor(
     suspend fun write(id: String, command: String) = withContext(Dispatchers.IO) {
         require(command.length <= MAX_COMMAND_LENGTH) { "Command is too long" }
         val process = requireSession(id)
-        OutputStreamWriter(process.outputStream, Charsets.UTF_8).also { writer ->
+        BufferedWriter(OutputStreamWriter(process.outputStream, Charsets.UTF_8)).also { writer ->
             writer.write(command)
             writer.newLine()
             writer.flush()
@@ -42,8 +44,7 @@ class PersistentTerminalManager @Inject constructor(
     suspend fun read(id: String): String = withContext(Dispatchers.IO) {
         val process = requireSession(id)
         val output = StringBuilder()
-        readAvailable(process.inputStream, output)
-        readAvailable(process.errorStream, output)
+        readAvailable(listOf(process.inputStream, process.errorStream), output)
         output.toString()
     }
 
@@ -63,16 +64,37 @@ class PersistentTerminalManager @Inject constructor(
     private fun requireSession(id: String): Process = sessions[id]
         ?: throw IllegalArgumentException("Unknown terminal session: $id")
 
-    private fun readAvailable(stream: java.io.InputStream, output: StringBuilder) {
-        val available = stream.available().coerceAtMost(MAX_OUTPUT_BYTES - output.length)
-        if (available <= 0) return
-        val buffer = ByteArray(available)
-        val count = stream.read(buffer)
-        if (count > 0) output.append(String(buffer, 0, count, Charsets.UTF_8))
+    private fun readAvailable(streams: List<InputStream>, output: StringBuilder) {
+        val deadline = System.nanoTime() + READ_TIMEOUT_MS * NANOS_PER_MILLISECOND
+        val buffer = ByteArray(8192)
+        while (output.length < MAX_OUTPUT_BYTES && System.nanoTime() < deadline) {
+            var readAny = false
+            streams.forEach { stream ->
+                val available = stream.available().coerceAtMost(MAX_OUTPUT_BYTES - output.length)
+                if (available > 0) {
+                    val count = stream.read(buffer, 0, minOf(buffer.size, available))
+                    if (count > 0) {
+                        output.append(String(buffer, 0, count, Charsets.UTF_8))
+                        readAny = true
+                    }
+                }
+            }
+            if (!readAny) {
+                try {
+                    Thread.sleep(READ_POLL_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+        }
     }
 
     private companion object {
         const val MAX_COMMAND_LENGTH = 4096
         const val MAX_OUTPUT_BYTES = 64 * 1024
+        const val READ_TIMEOUT_MS = 1000L
+        const val READ_POLL_INTERVAL_MS = 10L
+        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }

@@ -45,7 +45,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
     fun status(): Map<String, String> = mapOf(
         "backend" to selectBackend().name,
         "shizuku" to shizukuStatus(),
-        "root" to if (rootAvailable()) "available" else "unavailable"
+        "root" to if (rootAvailable) "available" else "unavailable"
     )
 
     fun startShell(): Pair<CommandBackend, Process> = when (val backend = selectBackend()) {
@@ -57,7 +57,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
 
     private fun selectBackend(): CommandBackend = when {
         shizukuAvailable() -> CommandBackend.SHIZUKU
-        rootAvailable() -> CommandBackend.ROOT
+        rootAvailable -> CommandBackend.ROOT
         appShellAvailable() -> CommandBackend.APP_SHELL
         else -> CommandBackend.UNAVAILABLE
     }
@@ -80,13 +80,15 @@ class PrivilegedCommandExecutor @Inject constructor() {
         "unavailable"
     }
 
-    private fun rootAvailable(): Boolean = try {
-        val process = ProcessBuilder("su", "-c", "id").start()
-        process.inputStream.close()
-        process.errorStream.close()
-        process.waitFor() == 0
-    } catch (_: Throwable) {
-        false
+    private val rootAvailable: Boolean by lazy {
+        try {
+            val process = ProcessBuilder("su", "-c", "id").start()
+            process.inputStream.close()
+            process.errorStream.close()
+            process.waitFor() == 0
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun appShellAvailable(): Boolean = try {
@@ -110,7 +112,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
         val stderrThread = Thread { readLimited(process.errorStream, stderr) }
         stdoutThread.start()
         stderrThread.start()
-        val completed = process.waitFor(COMMAND_TIMEOUT_MS, java.util.concurrent.TimeUnit.SECONDS)
+        val completed = process.waitFor(COMMAND_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
         if (!completed) process.destroyForcibly()
         stdoutThread.join(OUTPUT_JOIN_TIMEOUT_MS)
         stderrThread.join(OUTPUT_JOIN_TIMEOUT_MS)
@@ -139,7 +141,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
         const val TAG = "PrivilegedCommandExecutor"
         const val MAX_COMMAND_LENGTH = 4096
         const val MAX_OUTPUT_BYTES = 64 * 1024
-        const val COMMAND_TIMEOUT_MS = 30L
+        const val COMMAND_TIMEOUT_SECONDS = 30L
         const val OUTPUT_JOIN_TIMEOUT_MS = 1000L
         const val TIMEOUT_EXIT_CODE = 124
     }

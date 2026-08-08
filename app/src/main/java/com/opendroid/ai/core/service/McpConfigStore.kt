@@ -36,12 +36,13 @@ class McpConfigStore @Inject constructor(
         val values = JSONArray(preferences.getString(ENDPOINTS_KEY, "[]"))
         return (0 until values.length()).mapNotNull { index ->
             values.optJSONObject(index)?.let { json ->
+                val headers = json.optJSONObject("headers")
                 McpEndpointConfig(
                     name = json.optString("name"),
                     url = json.optString("url"),
                     enabled = json.optBoolean("enabled", true),
-                    headers = json.optJSONObject("headers")?.keys()?.asSequence()
-                        ?.associateWith { key -> json.optString(key) }
+                    headers = headers?.keys()?.asSequence()
+                        ?.associateWith { key -> headers.optString(key) }
                         .orEmpty()
                 )
             }
@@ -55,28 +56,22 @@ class McpConfigStore @Inject constructor(
             "url must use http or https"
         }
         val values = JSONArray()
-        list().filterNot { it.name == config.name }.plus(config).forEach { item ->
-            values.put(JSONObject()
-                .put("name", item.name)
-                .put("url", item.url)
-                .put("enabled", item.enabled)
-                .put("headers", JSONObject(item.headers)))
-        }
+        list().filterNot { it.name == config.name }.plus(config).forEach { values.put(it.toJson()) }
         preferences.edit().putString(ENDPOINTS_KEY, values.toString()).apply()
     }
 
     @Synchronized
     fun remove(name: String) {
         val values = JSONArray()
-        list().filterNot { it.name == name }.forEach { item ->
-            values.put(JSONObject()
-                .put("name", item.name)
-                .put("url", item.url)
-                .put("enabled", item.enabled)
-                .put("headers", JSONObject(item.headers)))
-        }
+        list().filterNot { it.name == name }.forEach { values.put(it.toJson()) }
         preferences.edit().putString(ENDPOINTS_KEY, values.toString()).apply()
     }
+
+    private fun McpEndpointConfig.toJson(): JSONObject = JSONObject()
+        .put("name", name)
+        .put("url", url)
+        .put("enabled", enabled)
+        .put("headers", JSONObject(headers))
 
     private companion object {
         const val PREFERENCES = "opendroid_mcp"

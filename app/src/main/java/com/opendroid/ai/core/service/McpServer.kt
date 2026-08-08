@@ -14,6 +14,7 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -36,7 +37,6 @@ class McpServer @Inject constructor(
     fun start() {
         if (running.get()) return
         running.set(true)
-        Log.i(TAG, "MCP access token: ${configStore.accessToken()}")
         serverThread = Thread(::serve, THREAD_NAME).also { it.start() }
     }
 
@@ -83,7 +83,7 @@ class McpServer @Inject constructor(
             }
         }
 
-        if (headers["x-opendroid-token"] != configStore.accessToken()) {
+        if (!tokensMatch(headers["x-opendroid-token"].orEmpty(), configStore.accessToken())) {
             writeResponse(socket.getOutputStream(), 401, JSONObject().put("error", "Unauthorized"))
             return
         }
@@ -296,6 +296,11 @@ class McpServer @Inject constructor(
         output.write("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
         output.flush()
     }
+
+    private fun tokensMatch(provided: String, expected: String): Boolean = MessageDigest.isEqual(
+        provided.toByteArray(StandardCharsets.UTF_8),
+        expected.toByteArray(StandardCharsets.UTF_8)
+    )
 
     private companion object {
         const val TAG = "McpServer"
