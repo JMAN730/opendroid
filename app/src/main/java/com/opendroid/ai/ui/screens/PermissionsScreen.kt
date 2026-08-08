@@ -86,6 +86,7 @@ import com.opendroid.ai.core.permissions.runtimePermissions
 import com.opendroid.ai.core.permissions.summaryHasBlocked
 import com.opendroid.ai.core.permissions.summaryLine
 import com.opendroid.ai.core.permissions.visibleCards
+import com.opendroid.ai.ui.theme.AccentGreenButton
 import com.opendroid.ai.ui.theme.AccentNeonGreen
 import com.opendroid.ai.ui.theme.AccentRed
 import com.opendroid.ai.ui.theme.BorderColor
@@ -329,7 +330,7 @@ private fun PermissionsPanelContent(
                 .fillMaxWidth()
                 .heightIn(min = 50.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = AccentNeonGreen,
+                containerColor = AccentGreenButton,
                 contentColor = DarkBackground,
                 disabledContainerColor = BorderColor,
                 disabledContentColor = TextSecondary,
@@ -406,7 +407,7 @@ private fun PermissionsPanelContent(
                     .fillMaxWidth()
                     .height(50.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (allRequirementsHeld) AccentNeonGreen else CardBackground,
+                    containerColor = if (allRequirementsHeld) AccentGreenButton else CardBackground,
                     contentColor = if (allRequirementsHeld) DarkBackground else TextPrimary,
                 ),
                 border = if (allRequirementsHeld) null else BorderStroke(1.dp, BorderColor),
@@ -499,7 +500,7 @@ private fun PermissionCard(
             onClick = onAction,
             enabled = buttonEnabled,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (buttonHasError) AccentRed else AccentNeonGreen,
+                containerColor = if (buttonHasError) AccentRed else AccentGreenButton,
                 contentColor = if (buttonHasError) TextPrimary else DarkBackground,
                 disabledContainerColor = BorderColor,
                 disabledContentColor = TextSecondary,
