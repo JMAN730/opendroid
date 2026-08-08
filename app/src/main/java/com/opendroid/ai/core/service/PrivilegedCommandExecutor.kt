@@ -48,6 +48,13 @@ class PrivilegedCommandExecutor @Inject constructor() {
         "root" to if (rootAvailable()) "available" else "unavailable"
     )
 
+    fun startShell(): Pair<CommandBackend, Process> = when (val backend = selectBackend()) {
+        CommandBackend.SHIZUKU -> backend to Shizuku.newProcess(arrayOf("sh"), null, null)
+        CommandBackend.ROOT -> backend to ProcessBuilder("su").redirectErrorStream(true).start()
+        CommandBackend.APP_SHELL -> backend to ProcessBuilder("sh").redirectErrorStream(true).start()
+        CommandBackend.UNAVAILABLE -> error("No command execution backend is available")
+    }
+
     private fun selectBackend(): CommandBackend = when {
         shizukuAvailable() -> CommandBackend.SHIZUKU
         rootAvailable() -> CommandBackend.ROOT
@@ -97,13 +104,43 @@ class PrivilegedCommandExecutor @Inject constructor() {
         readProcess(ProcessBuilder(*command).start(), backend)
 
     private fun readProcess(process: Process, backend: CommandBackend): CommandExecutionResult {
-        val stdout = process.inputStream.bufferedReader().use { it.readText() }
-        val stderr = process.errorStream.bufferedReader().use { it.readText() }
-        return CommandExecutionResult(backend, process.waitFor(), stdout, stderr)
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val stdoutThread = Thread { readLimited(process.inputStream, stdout) }
+        val stderrThread = Thread { readLimited(process.errorStream, stderr) }
+        stdoutThread.start()
+        stderrThread.start()
+        val completed = process.waitFor(COMMAND_TIMEOUT_MS, java.util.concurrent.TimeUnit.SECONDS)
+        if (!completed) process.destroyForcibly()
+        stdoutThread.join(OUTPUT_JOIN_TIMEOUT_MS)
+        stderrThread.join(OUTPUT_JOIN_TIMEOUT_MS)
+        return CommandExecutionResult(
+            backend,
+            if (completed) process.exitValue() else TIMEOUT_EXIT_CODE,
+            stdout.toString(),
+            if (completed) stderr.toString() else "${stderr}Command timed out"
+        )
+    }
+
+    private fun readLimited(stream: java.io.InputStream, output: StringBuilder) {
+        val buffer = ByteArray(8192)
+        var remaining = MAX_OUTPUT_BYTES
+        stream.use {
+            while (remaining > 0) {
+                val count = it.read(buffer, 0, minOf(buffer.size, remaining))
+                if (count < 0) break
+                output.append(String(buffer, 0, count, Charsets.UTF_8))
+                remaining -= count
+            }
+        }
     }
 
     private companion object {
         const val TAG = "PrivilegedCommandExecutor"
         const val MAX_COMMAND_LENGTH = 4096
+        const val MAX_OUTPUT_BYTES = 64 * 1024
+        const val COMMAND_TIMEOUT_MS = 30L
+        const val OUTPUT_JOIN_TIMEOUT_MS = 1000L
+        const val TIMEOUT_EXIT_CODE = 124
     }
 }
