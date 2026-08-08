@@ -11,7 +11,9 @@ If you're contributing code, you're a **VibeCoder** — someone who doesn't ship
 ## 🚀 Getting Started
 
 1.  **Fork** the repository and clone it to your local machine.
-2.  Set up the Android development environment (Android Studio, JDK 17+).
+2.  Set up the Android development environment (Android Studio, JDK 21 exactly).
+    The build targets Java 21 (`jvmToolchain(21)`), and `gradle/gradle-daemon-jvm.properties`
+    pins the Gradle daemon to JDK 21.
 3.  Ensure the Android build runs successfully:
     ```bash
     ./gradlew assembleDebug
