@@ -70,6 +70,54 @@ class ProviderCatalogTest {
     }
 
     @Test
+    fun `Claude ids returned by Anthropic live list may cross the provider boundary`() {
+        // Option 1 from #141: trust IDs Anthropic listed via /v1/models this session
+        // (modelCache), even when they are not yet in the hardcoded catalog.
+        val liveId = "claude-future-not-in-catalog"
+        val config = LLMConfig(
+            activeProvider = "Anthropic Claude",
+            activeModel = liveId,
+            selectedModels = mapOf("Anthropic Claude" to liveId),
+            modelCache = mapOf(
+                "Anthropic Claude" to listOf(
+                    AIModel(
+                        id = liveId,
+                        displayName = "Claude Future",
+                        provider = "Anthropic Claude"
+                    )
+                )
+            )
+        )
+
+        assertEquals(liveId, config.selectedModelFor("Anthropic Claude"))
+        assertEquals(
+            liveId,
+            config.withSelectedModel("Anthropic Claude", liveId)
+                .selectedModels?.get("Anthropic Claude")
+        )
+    }
+
+    @Test
+    fun `Claude ids absent from both catalog and live cache still coerce`() {
+        val config = LLMConfig(
+            activeProvider = "Anthropic Claude",
+            activeModel = "claude-future-not-in-catalog",
+            selectedModels = mapOf("Anthropic Claude" to "claude-future-not-in-catalog"),
+            modelCache = mapOf(
+                "Anthropic Claude" to listOf(
+                    AIModel(
+                        id = "claude-sonnet-5",
+                        displayName = "Claude Sonnet 5",
+                        provider = "Anthropic Claude"
+                    )
+                )
+            )
+        )
+
+        assertEquals(ClaudeModelCatalog.defaultModelId, config.selectedModelFor("Anthropic Claude"))
+    }
+
+    @Test
     fun `non-active provider resolves its own remembered model for Test All pairing`() {
         val config = LLMConfig(
             activeProvider = "OpenAI",
