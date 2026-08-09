@@ -24,6 +24,7 @@ sealed class LLMError(val code: String) {
     data object Network : LLMError("NETWORK")
     data object ServerError : LLMError("SERVER_ERROR")
     data object MalformedResponse : LLMError("MALFORMED_RESPONSE")
+    data object SafeFallbackUnavailable : LLMError("SAFE_FALLBACK_UNAVAILABLE")
     data object Unknown : LLMError("UNKNOWN")
 }
 
@@ -223,6 +224,12 @@ object LLMErrorMapper {
 
     fun requestInvalid(provider: String, model: String): LLMException = LLMException(
         error = LLMError.RequestInvalid,
+        provider = provider,
+        model = model
+    )
+
+    fun safeFallbackUnavailable(provider: String, model: String): LLMException = LLMException(
+        error = LLMError.SafeFallbackUnavailable,
         provider = provider,
         model = model
     )

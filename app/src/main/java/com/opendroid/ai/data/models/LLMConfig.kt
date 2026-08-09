@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import com.opendroid.ai.core.llm.AIModel
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
 import com.opendroid.ai.core.llm.ProviderCatalog
+import com.opendroid.ai.core.llm.OnDeviceLatencyProfile
 
 private const val TAG = "LLMConfig"
 
@@ -39,6 +40,10 @@ data class LLMConfig(
     // An explicit empty map means "user revoked everything" and stays empty.
     val grantedActions: Map<String, Long>? = null,
     val latencyBenchmarks: Map<String, Long> = emptyMap(), // Provider -> latency Ms
+    /** Per-device, per-model-tier local planning measurements. */
+    val onDeviceLatencyProfiles: Map<String, OnDeviceLatencyProfile> = emptyMap(),
+    /** Provider names explicitly allowed as planning fallbacks; empty means none. */
+    val fallbackProviders: List<String> = emptyList(),
     val elevenLabsApiKey: String = "",
     val elevenLabsVoiceId: String = "",
     val ollamaUrl: String = "",

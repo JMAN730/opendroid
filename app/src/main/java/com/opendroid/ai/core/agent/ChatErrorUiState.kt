@@ -74,6 +74,7 @@ fun ChatErrorUiState.primaryAction(): ChatErrorPrimaryAction = when (category) {
     LLMError.Network,
     LLMError.ServerError,
     LLMError.MalformedResponse,
+    LLMError.SafeFallbackUnavailable,
     LLMError.Unknown ->
         if (retryable) ChatErrorPrimaryAction.RETRY else ChatErrorPrimaryAction.NONE
 }
@@ -88,6 +89,7 @@ fun ChatErrorUiState.title(): String = when (category) {
     LLMError.Network -> "Can't reach $provider"
     LLMError.ServerError -> "$provider had a server error"
     LLMError.MalformedResponse -> "$provider returned an unreadable response"
+    LLMError.SafeFallbackUnavailable -> "No safe fallback is configured for $provider"
     LLMError.Unknown -> "$provider request failed"
 }
 
@@ -101,5 +103,6 @@ fun ChatErrorUiState.guidance(): String = when (category) {
     LLMError.Network -> "Check your connection and try again."
     LLMError.ServerError -> "Try again in a moment."
     LLMError.MalformedResponse -> "Try again, or check technical details."
+    LLMError.SafeFallbackUnavailable -> "Choose and configure an explicit fallback provider, then retry."
     LLMError.Unknown -> "Try again, or check technical details."
 }
