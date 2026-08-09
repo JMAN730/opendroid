@@ -922,7 +922,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Runs without Google AI Core. Public catalog models (e.g. Qwen) need no HF token; Gemma LiteRT builds are gated. Or import your own .task / .litertlm file.",
+                                text = "Runs without Google AI Core. Models tagged PUBLIC (Qwen, the Gemma 4 community mirrors) need no HF token; models tagged GATED (the Google-hosted Gemma 3n builds) do. Or import your own .task / .litertlm file.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -2336,7 +2336,7 @@ fun SettingsScreen(
             text = {
                 Text(
                     text = "This model is gated on Hugging Face and needs an Access Token to download.\n\n" +
-                        "Public models (for example Qwen 2.5) do not need a token — only Gemma LiteRT builds do. " +
+                        "Models tagged PUBLIC (for example Qwen 2.5 and the Gemma 4 community mirrors) do not need a token — only the ones tagged GATED do. " +
                         "Add a read-only token in the Hugging Face section above, or pick a PUBLIC model.",
                     color = TextSecondary
                 )
