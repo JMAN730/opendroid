@@ -147,9 +147,18 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E2B-it-litert-lm",
             modelFilename = "gemma-4-E2B-it.litertlm",
-            expectedSize = 2588147712L,
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm",
+                sourceRevision = "6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94",
+                expectedSize = 2588147712L,
+                // Publisher LFS sha256 recorded in #129, agreed by two independent Hugging Face
+                // endpoints (model-info `?blobs=true` and the resolve `X-Linked-ETag` header) for
+                // the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+            ),
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
-            authRequired = true,
+            // The litert-community mirror is ungated: anonymous resolve returns the artifact.
+            authRequired = false,
             minSdk = 31,
             contextWindow = 4096
         ),
@@ -161,9 +170,20 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E4B-it-litert-lm",
             modelFilename = "gemma-4-E4B-it.litertlm",
-            expectedSize = 3660000000L,
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+                sourceRevision = "2eee7ac325f20eb8c9ac1d0e972f7c84663062da",
+                // The previous 3_660_000_000 constant was an estimate; the real artifact is
+                // 469,760 bytes smaller, which an exact-size check would have rejected.
+                expectedSize = 3659530240L,
+                // Publisher LFS sha256 recorded in #129, agreed by two independent Hugging Face
+                // endpoints (model-info `?blobs=true` and the resolve `X-Linked-ETag` header) for
+                // the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+            ),
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm",
-            authRequired = true,
+            // The litert-community mirror is ungated: anonymous resolve returns the artifact.
+            authRequired = false,
             minSdk = 31,
             contextWindow = 4096
         ),
