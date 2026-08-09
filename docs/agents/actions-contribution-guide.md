@@ -102,14 +102,18 @@ entry there only if you expect the planner to frequently hallucinate a different
 action, not as a routine step. Natural-language voice-command aliasing is a separate, unrelated
 mechanism in `AliasResolver.kt` under `core/agent/` — don't confuse the two.
 
-## 3. Wiring a new category into `ActionDispatcher`
+## 3. Wiring `ActionDispatcher`
 
-Only needed if you're adding a whole new category file, not another action in an existing one:
+If your action needs internet, add its schema `name` to `internetRequiredActions` in
+`ActionDispatcher` — this applies whether the action lands in a new category or an existing one.
+`ActionDispatcher` only runs its offline precheck for names in that set, so skipping this step
+means the new handler runs with no connectivity guard.
+
+The rest of this section is only needed if you're adding a whole new category file, not another
+action in an existing one:
 
 1. Add `private val yourActions: YourActions` to `ActionDispatcher`'s constructor.
 2. Add `putAll(yourActions.getActions().associateBy { it.name })` in the `actionsMap` builder.
-3. If any action in the category needs internet, add its schema name to
-   `internetRequiredActions` in the same file.
 
 ## 4. Tests
 
@@ -132,7 +136,11 @@ Minimum coverage for a new action:
 
 - The success path, asserting on the exact `result.data` string (not just `result.success`) —
   wording changes are easy to miss otherwise.
-- Each `required = true` param missing → the specific `Failure`/`NeedsInput` your handler returns.
+- Each `required = true` param missing → `NeedsInput` from `ActionSchema.validateParams` (or the
+  `ActionDispatcher.trySchemaExecution` path). `trySchemaExecution` returns `NeedsInput` before
+  your handler ever runs, so test the schema/dispatcher path here, not the handler directly —
+  a handler-level check would duplicate validation the schema already does and assert on
+  behavior production dispatch never reaches.
 - Any branch that distinguishes "app installed" vs "app not installed" fallback behavior, if the
   action launches an external app via `Intent`.
 - If the action can only claim `Success` after observing a real state change (see the "only report
@@ -152,6 +160,8 @@ Run the suite with:
 - [ ] `Success` returned only for a verified side effect, not just a launched intent
 - [ ] `ActionDefinition` added to `ActionSchema.kt` under the right category banner, with accurate
       `required`/`defaultValue`, `neverAutoApprove` set if the action is destructive or moves money
+- [ ] Internet-dependent action: schema `name` added to `internetRequiredActions` in
+      `ActionDispatcher`
 - [ ] New category only: constructor param + `putAll(...)` added to `ActionDispatcher`
 - [ ] Unit test covering the success path and each required-param-missing case
 - [ ] `./gradlew assembleDebug` and the actions test suite both pass
