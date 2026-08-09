@@ -33,7 +33,7 @@ class CallFlowExecutor @Inject constructor(
         }
 
         return try {
-            if (hasTelephony && hasCallPermission(context)) {
+            if (hasTelephony && canVerifyDirectCall(context)) {
                 val wasAlreadyInProgress = callFlowVerifier.isCallInProgress(context)
                 context.startActivity(Intent(Intent.ACTION_CALL, callUri).withNewTask())
 
@@ -68,9 +68,18 @@ class CallFlowExecutor @Inject constructor(
             metadata = mapOf("action" to "MAKE_CALL", "requiresUserAction" to "true")
         )
 
-    private fun hasCallPermission(context: Context): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
-            PackageManager.PERMISSION_GRANTED
+    /**
+     * ACTION_CALL alone is not enough: without READ_PHONE_STATE the verifier can never
+     * observe the call, so a call that really was placed would be reported as failed.
+     * Users who upgrade keep CALL_PHONE but start without READ_PHONE_STATE, so both
+     * permissions must be granted before taking the verified direct-call path.
+     */
+    private fun canVerifyDirectCall(context: Context): Boolean =
+        isGranted(context, Manifest.permission.CALL_PHONE) &&
+            isGranted(context, Manifest.permission.READ_PHONE_STATE)
+
+    private fun isGranted(context: Context, permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun Intent.withNewTask(): Intent = apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

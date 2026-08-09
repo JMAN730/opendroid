@@ -46,6 +46,19 @@ class CallFlowExecutorTest {
     }
 
     @Test
+    fun `missing phone state permission falls back to the dialer`() = runBlocking {
+        val context = recordingContext(
+            grantCallPermission = true,
+            grantPhoneStatePermission = false
+        )
+
+        val result = CallFlowExecutor(FakeCallFlowVerifier(callStarted = false)).execute("5550100", context)
+
+        assertTrue(result is ActionResult.PendingUserAction)
+        assertEquals(Intent.ACTION_DIAL, context.startedIntent?.action)
+    }
+
+    @Test
     fun `launch failure is not reported as a successful call`() = runBlocking {
         val context = recordingContext(grantCallPermission = true, failToLaunch = true)
 
@@ -68,22 +81,26 @@ class CallFlowExecutorTest {
 
     private fun recordingContext(
         grantCallPermission: Boolean,
+        grantPhoneStatePermission: Boolean = grantCallPermission,
         failToLaunch: Boolean = false
     ): RecordingContext {
         val base = ApplicationProvider.getApplicationContext<Context>()
         shadowOf(base.packageManager).setSystemFeature(PackageManager.FEATURE_TELEPHONY_CALLING, true)
-        return RecordingContext(base, grantCallPermission, failToLaunch)
+        return RecordingContext(base, grantCallPermission, grantPhoneStatePermission, failToLaunch)
     }
 
     private class RecordingContext(
         base: Context,
         private val grantCallPermission: Boolean,
+        private val grantPhoneStatePermission: Boolean,
         private val failToLaunch: Boolean
     ) : ContextWrapper(base) {
         var startedIntent: Intent? = null
 
         override fun checkSelfPermission(permission: String): Int = when {
             permission == Manifest.permission.CALL_PHONE && grantCallPermission ->
+                PackageManager.PERMISSION_GRANTED
+            permission == Manifest.permission.READ_PHONE_STATE && grantPhoneStatePermission ->
                 PackageManager.PERMISSION_GRANTED
             else -> PackageManager.PERMISSION_DENIED
         }

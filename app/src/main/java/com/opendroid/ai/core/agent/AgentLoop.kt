@@ -996,6 +996,17 @@ class AgentLoop @Inject constructor(
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
                 )
+            } else if (actionResult is ActionResult.PendingUserAction) {
+                // The action handed control to the user (e.g. the dialer is open awaiting a
+                // tap). Nothing failed, so no fallback and no failure replan - surface the
+                // hand-off in chat and speech, record it as the step result, and let the
+                // normal re-evaluation path decide what remains.
+                handlePendingUserAction(actionResult, sessionId)
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.COMPLETED,
+                    result = actionResult.message
+                )
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
@@ -1410,6 +1421,24 @@ class AgentLoop @Inject constructor(
             actionDispatcher.execute(actionName, newParams, context),
             newParams
         )
+    }
+
+    /**
+     * Tell the user that a step is now waiting on them. The agent cannot observe the
+     * user's tap, so this is a hand-off notice, not a prompt that blocks the plan.
+     */
+    private suspend fun handlePendingUserAction(
+        pending: ActionResult.PendingUserAction,
+        sessionId: String
+    ) {
+        val pendingMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = pending.message,
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(sessionId, pendingMsg)
+        onSpeakCallback?.invoke(pending.message)
     }
 
     /**
