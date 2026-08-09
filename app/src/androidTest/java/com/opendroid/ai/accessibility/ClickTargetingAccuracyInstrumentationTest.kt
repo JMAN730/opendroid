@@ -49,8 +49,16 @@ class ClickTargetingAccuracyInstrumentationTest {
         AccessibilityServiceTestHarness.disableService()
     }
 
+    /**
+     * The contract being pinned is the one `findAndClick` actually has:
+     * `findAccessibilityNodeInfosByText` is a case-insensitive *substring*
+     * match, and the first clickable result in tree order wins. There is no
+     * exact-match preference, so the screen stages a decoy on each side of that
+     * boundary - one that must not be returned at all, and one that is returned
+     * and must lose on order.
+     */
     @Test
-    fun exactTextClickPrefersTheFullMatchOverASamePrefixDecoy() = onProbeScreen { root ->
+    fun textClickPicksTheFirstGenuineMatchAndIgnoresTheSamePrefixDecoy() = onProbeScreen { root ->
         assertTrue(
             "findAndClick reported no click for ${A11yProbeActivity.EXACT_TARGET_TEXT}",
             nodeTraversal.findAndClick(root, A11yProbeActivity.EXACT_TARGET_TEXT),

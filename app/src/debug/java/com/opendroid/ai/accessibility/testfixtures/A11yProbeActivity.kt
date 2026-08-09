@@ -61,11 +61,14 @@ class A11yProbeActivity : Activity() {
             hint = FIELD_HINT
         })
 
-        // (1) Exact-text targeting. The decoy comes first in the tree and shares
-        // a prefix with the target, so a match that is loose at either end - or
-        // an "any node that looks close" walk - lands on the wrong button.
+        // (1) Text targeting with a decoy on each side of the match boundary:
+        // the prefix decoy comes first and is NOT returned for the target query
+        // (loosening the match in either direction would start returning it,
+        // and it is first, so it would win), while the superstring decoy IS a
+        // genuine competing match and only loses on tree order.
         root.addView(compactButton(PREFIX_DECOY_TEXT, prefixDecoyClicks))
         root.addView(compactButton(EXACT_TARGET_TEXT, exactTargetClicks))
+        root.addView(compactButton(SUPERSTRING_DECOY_TEXT, superstringDecoyClicks))
 
         // (2) Ancestor bubbling: a non-clickable leaf inside a clickable row,
         // the shape every list item in the app's own screens has.
@@ -132,6 +135,13 @@ class A11yProbeActivity : Activity() {
         const val PREFIX_DECOY_TEXT = "A11Y CLICK SEND"
         const val EXACT_TARGET_TEXT = "A11Y CLICK SEND REPORT"
 
+        /**
+         * (1) Contains [EXACT_TARGET_TEXT], so the substring match really does
+         * return it alongside the target - it loses only because it is later in
+         * the tree, which is the selection rule under test.
+         */
+        const val SUPERSTRING_DECOY_TEXT = "A11Y CLICK SEND REPORT NOW"
+
         /** (2) Non-clickable leaf; the click must land on its clickable ancestor row. */
         const val ROW_LEAF_TEXT = "A11Y ROW LEAF LABEL"
 
@@ -152,6 +162,7 @@ class A11yProbeActivity : Activity() {
 
         val prefixDecoyClicks = AtomicInteger(0)
         val exactTargetClicks = AtomicInteger(0)
+        val superstringDecoyClicks = AtomicInteger(0)
         val rowClicks = AtomicInteger(0)
         val idDecoyClicks = AtomicInteger(0)
         val idTargetClicks = AtomicInteger(0)
@@ -164,6 +175,7 @@ class A11yProbeActivity : Activity() {
                 clickCount,
                 prefixDecoyClicks,
                 exactTargetClicks,
+                superstringDecoyClicks,
                 rowClicks,
                 idDecoyClicks,
                 idTargetClicks,
