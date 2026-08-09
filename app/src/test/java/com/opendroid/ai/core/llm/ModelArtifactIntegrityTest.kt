@@ -315,6 +315,38 @@ class ModelArtifactIntegrityTest {
     }
 
     @Test
+    fun `local import reports LiteRT runtime incompatibility separately from an invalid file`() {
+        val spec = OnDeviceModelSpec(
+            id = "local-model",
+            displayName = "Local model",
+            family = "Test",
+            sizeLabel = "Test",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelFilename = "local.task"
+        )
+        val source = File(tempFolder.root, "import.task").apply { writeText("model") }
+        val target = File(tempFolder.root, spec.modelFilename)
+        val manifestFile = File(tempFolder.root, "manifest.json")
+
+        val result = ModelArtifactInstaller().installLocalImport(
+            source = source,
+            target = target,
+            manifestFile = manifestFile,
+            spec = spec,
+            verifyFormat = {
+                throw LiteRtRuntimeIncompatibilityException(IllegalStateException("GPU unavailable"))
+            }
+        )
+
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE),
+            result
+        )
+        assertFalse(target.exists())
+        assertFalse(manifestFile.exists())
+    }
+
+    @Test
     fun `hash cache is keyed by stable file metadata`() {
         val file = File(tempFolder.root, "cached.task")
         file.writeText("hello")

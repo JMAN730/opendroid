@@ -325,6 +325,14 @@ class ModelRepository @Inject constructor(
                 verifyFormat = { LiteRtCompatibility.verify(it, context.cacheDir) }
             )
             if (install is ArtifactVerificationResult.Invalid) {
+                if (install.failure == ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE) {
+                    Log.w(tag, "LiteRT runtime could not initialize imported model: ${spec.id}")
+                    return ImportLocalModelResult.Failure(
+                        "This LiteRT model could not be initialized on this device: " +
+                            "no supported backend could load it. Try the latest app version " +
+                            "or a model built for this device."
+                    )
+                }
                 if (install.failure == ArtifactVerificationFailure.FORMAT_INVALID) {
                     return ImportLocalModelResult.Failure(
                         "LiteRT could not open this file. Ensure it is a valid .litertlm or .task model."
