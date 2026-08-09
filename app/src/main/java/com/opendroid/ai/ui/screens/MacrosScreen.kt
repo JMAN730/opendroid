@@ -50,6 +50,7 @@ fun MacrosScreen(
     var stepAction by remember { mutableStateOf("") }
     var stepParamKey by remember { mutableStateOf("") }
     var stepParamVal by remember { mutableStateOf("") }
+    var stepFallback by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -145,7 +146,10 @@ fun MacrosScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             macroSteps.forEachIndexed { idx, st ->
                                 Text(
-                                    text = "Step ${idx + 1}: ${st.description} [${st.action}]",
+                                    text = buildString {
+                                        append("Step ${idx + 1}: ${st.description} [${st.action}]")
+                                        if (st.fallback.isNotBlank()) append(" → fallback: ${st.fallback}")
+                                    },
                                     fontSize = 11.sp,
                                     color = AccentNeonGreen,
                                     fontFamily = FontFamily.Monospace,
@@ -210,6 +214,22 @@ fun MacrosScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                             }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = stepFallback,
+                                onValueChange = { stepFallback = it },
+                                label = { Text("Fallback Action (optional)", fontSize = 11.sp) },
+                                supportingText = {
+                                    Text("Runs once if the primary action fails.", fontSize = 10.sp)
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = AccentNeonGreen,
+                                    unfocusedBorderColor = BorderColor,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = {
@@ -222,7 +242,7 @@ fun MacrosScreen(
                                                 description = stepDesc,
                                                 action = stepAction,
                                                 params = params,
-                                                fallback = "",
+                                                fallback = stepFallback.trim(),
                                                 status = StepStatus.PENDING
                                             )
                                         )
@@ -230,6 +250,7 @@ fun MacrosScreen(
                                         stepAction = ""
                                         stepParamKey = ""
                                         stepParamVal = ""
+                                        stepFallback = ""
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentPurple, contentColor = TextPrimary),

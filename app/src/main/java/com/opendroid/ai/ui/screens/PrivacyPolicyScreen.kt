@@ -173,6 +173,8 @@ fun PrivacyPolicyScreen(
                     title = "5. DATA STORAGE & RETENTION",
                     content = "• All conversation history, memory facts, and task logs are stored in a local SQLite database on your device.\n" +
                             "• Memory entries support time-to-live (TTL) and are automatically cleaned on expiration.\n" +
+                            "• Execution history remains until you clear it from System Logs or uninstall the app.\n" +
+                            "• Saving a completed task as a macro is an explicit user action; API keys, tokens, passwords, and recognized credentials are replaced with [REDACTED] before recording.\n" +
                             "• You can clear any memory type (Working, Episodic, Semantic, Procedural) from the Memory screen.\n" +
                             "• Uninstalling the app removes all stored data permanently."
                 )
