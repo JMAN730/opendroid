@@ -121,7 +121,7 @@ issue. Filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55
 | — | Manual smoke test on API 36 | Tracked in [#61](https://github.com/JMAN730/opendroid/issues/61) — the definition-of-done item from the original `targetSdk 36` task. |
 | — | Drop `security-crypto` once a migrating release has shipped | Tracked in [#98](https://github.com/JMAN730/opendroid/issues/98) — a release-cadence call, not something resolvable from the repo alone. |
 
-All items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129) (closed), [#130](https://github.com/JMAN730/opendroid/issues/130) (docs now consistent), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134).
+All items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129) (closed), [#130](https://github.com/JMAN730/opendroid/issues/130) (docs now consistent), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134) (docs gate resolved).
 
 ---
 
@@ -147,10 +147,9 @@ scoping ticket for each one so they're tracked rather than only living in prose.
   Screenshot → vision-LLM works (`VisionEngine.kt`); the accessibility-tree fallback has
   no stated accuracy bar and no test that holds one.
 - **Action catalog breadth.** ([#134](https://github.com/JMAN730/opendroid/issues/134))
-  `actions/` is the best on-ramp for outside contributions. Gated on
-  `docs/agents/domain.md` covering the pattern — it currently doesn't (it's a generic
-  domain-docs/CONTEXT.md meta-guide, not an `actions/` contribution guide) — so the "good
-  first issue" sweep stays blocked on that first.
+  `actions/` is the best on-ramp for outside contributions. Was gated on a real `actions/`
+  contribution guide — `docs/agents/actions-contribution-guide.md` now covers the pattern,
+  so the doc gate is resolved and the "good first issue" sweep can proceed.
 
 ---
 
