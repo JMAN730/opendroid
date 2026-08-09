@@ -78,6 +78,10 @@ sealed class ActionResult {
         val options: List<String> = emptyList(),
         val metadata: Map<String, String> = emptyMap()
     ) : ActionResult()
+
+    // 5. User-facing flow started but the requested operation is not complete
+    @Serializable
+    data class UserActionRequired(val message: String) : ActionResult()
 }
 ```
 

@@ -51,6 +51,18 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
 private const val MAX_INCOMPLETE_MESSAGE_IDS = 100
 private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP")
 
+private fun paramsForExecutionHistory(
+    actionName: String,
+    params: Map<String, String>
+): Map<String, String> = if (actionName.equals("SEND_EMAIL", ignoreCase = true)) {
+    params.mapValues { "[REDACTED]" }
+} else {
+    params
+}
+
+private fun descriptionForExecutionHistory(actionName: String, description: String): String =
+    if (actionName.equals("SEND_EMAIL", ignoreCase = true)) "Email action" else description
+
 internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionName: String): String {
     needsInput.metadata["param"]?.let { return it }
 
@@ -976,9 +988,9 @@ class AgentLoop @Inject constructor(
                 memoryManager.logTaskExecution(
                     stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = stepToExecute.description,
+                    description = descriptionForExecutionHistory(stepToExecute.action, stepToExecute.description),
                     actionType = stepToExecute.action,
-                    params = resolvedParams,
+                    params = paramsForExecutionHistory(stepToExecute.action, resolvedParams),
                     success = actionResult.success,
                     resultData = actionResult.data,
                     errorMessage = actionResult.error
@@ -995,6 +1007,15 @@ class AgentLoop @Inject constructor(
                     stepToExecute.stepId,
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
+                )
+            } else if (actionResult is ActionResult.UserActionRequired) {
+                // A user-facing flow (for example email compose) is not an
+                // executed side effect. Do not run an automated fallback or
+                // allow the plan to treat the step as completed.
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.FAILED,
+                    error = actionResult.error ?: "User action is required before this step can complete."
                 )
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(

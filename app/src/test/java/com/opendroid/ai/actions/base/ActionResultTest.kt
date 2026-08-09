@@ -70,6 +70,14 @@ class ActionResultTest {
         assertEquals("Needs user input: Pick one", result.error)
     }
 
+    @Test
+    fun `user action required is explicitly non-success`() {
+        val result = ActionResult.UserActionRequired("Review and send the draft")
+        assertFalse(result.success)
+        assertNull(result.data)
+        assertEquals("Review and send the draft", result.error)
+    }
+
     // ── Companion invoke factory ────────────────────────────────────────
 
     @Test
