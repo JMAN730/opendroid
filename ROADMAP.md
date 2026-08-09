@@ -68,7 +68,9 @@ re-litigated.
   device-QA acceptance gate remains open — see [Open items](#open-items).
 - **JDK 21 daemon pin** — PR #50 is merged: `gradle/gradle-daemon-jvm.properties` pins the
   daemon to JDK 21 and `README.md` / `docs/development_guide.md` were corrected to say
-  "JDK 21 exactly," not "21+." One file was missed — see [Open items](#open-items).
+  "JDK 21 exactly," not "21+." PR #147 caught up the file PR #50 missed
+  (`docs/CONTRIBUTING.md`); all three docs now agree — see
+  [#130](https://github.com/JMAN730/opendroid/issues/130).
 - **Lint baseline burn-down** — three sequential passes
   ([#81](https://github.com/JMAN730/opendroid/issues/81),
   [#88](https://github.com/JMAN730/opendroid/issues/88),
@@ -115,12 +117,11 @@ issue. Filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55
 
 | # | Item | Why it's open |
 |---|---|---|
-| — | [#130](https://github.com/JMAN730/opendroid/issues/130) `docs/CONTRIBUTING.md` still says "JDK 17+" | PR #50 corrected `README.md` and `docs/development_guide.md` to "JDK 21 exactly" but missed this file, so the two docs now actively disagree with each other. |
 | — | Device-QA sign-off for grant-all permissions (#15) | Tracked in [#75](https://github.com/JMAN730/opendroid/issues/75) — an emulator OOM aborted the one attempted automated run; needs a real device or a bigger box. |
 | — | Manual smoke test on API 36 | Tracked in [#61](https://github.com/JMAN730/opendroid/issues/61) — the definition-of-done item from the original `targetSdk 36` task. |
 | — | Drop `security-crypto` once a migrating release has shipped | Tracked in [#98](https://github.com/JMAN730/opendroid/issues/98) — a release-cadence call, not something resolvable from the repo alone. |
 
-All items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129) (closed), [#130](https://github.com/JMAN730/opendroid/issues/130), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134).
+All items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129) (closed), [#130](https://github.com/JMAN730/opendroid/issues/130) (docs now consistent), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134).
 
 ---
 
