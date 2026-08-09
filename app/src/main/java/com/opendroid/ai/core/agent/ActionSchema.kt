@@ -1,5 +1,32 @@
 package com.opendroid.ai.core.agent
 
+import java.util.Locale
+
+enum class ActionRisk {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL;
+
+    companion object {
+        /**
+         * Conservative defaults keep existing action declarations compatible
+         * while making advanced-control and irreversible actions explicit in
+         * the catalog. This never changes AutoApprovalPolicy semantics.
+         */
+        fun defaultFor(
+            category: ActionCategory,
+            isSimple: Boolean,
+            neverAutoApprove: Boolean
+        ): ActionRisk = when {
+            category == ActionCategory.FINANCE && !isSimple -> CRITICAL
+            neverAutoApprove || category == ActionCategory.ADVANCED -> HIGH
+            !isSimple -> MEDIUM
+            else -> LOW
+        }
+    }
+}
+
 data class ActionDefinition(
     val name: String,
     val description: String,
@@ -9,7 +36,8 @@ data class ActionDefinition(
     val isSimple: Boolean = true,
     // Moves money or has irreversible/destructive consequence: always show the
     // approval modal in Auto mode, never offer an "Always allow" grant.
-    val neverAutoApprove: Boolean = false
+    val neverAutoApprove: Boolean = false,
+    val risk: ActionRisk = ActionRisk.defaultFor(category, isSimple, neverAutoApprove)
 )
 
 data class ParamDefinition(
@@ -1130,6 +1158,63 @@ object ActionSchema {
     /** Get action by name */
     fun getAction(name: String): ActionDefinition? =
         ALL_ACTIONS.find { it.name == name }
+
+    /** Unknown actions fail closed so routing cannot trust an unvalidated plan. */
+    fun riskFor(name: String): ActionRisk = getAction(name)?.risk ?: ActionRisk.CRITICAL
+
+    /**
+     * Finds catalog actions suggested by a natural-language goal before a plan
+     * exists. Exact example matches are preferred; risk-bearing verbs are also
+     * matched conservatively so advanced actions do not silently stay local.
+     */
+    fun inferRequestedActions(goal: String): List<String> {
+        val normalizedGoal = normalize(goal)
+        val matched = linkedSetOf<String>()
+        ALL_ACTIONS.forEach { definition ->
+            if (definition.examples.any { example ->
+                    val terms = significantTokens(example)
+                    terms.isNotEmpty() && terms.all(normalizedGoal::contains)
+                }
+            ) {
+                matched += definition.name
+            }
+        }
+
+        val riskHints = mapOf(
+            "pay" to listOf("PAY_UPI"),
+            "payment" to listOf("PAY_UPI"),
+            "delete" to listOf("DELETE_FILE"),
+            "remove" to listOf("DELETE_FILE"),
+            "write" to listOf("WRITE_FILE"),
+            "copy" to listOf("COPY_FILE"),
+            "move" to listOf("MOVE_FILE"),
+            "install" to listOf("INSTALL_APP"),
+            "restart" to listOf("RESTART_DEVICE"),
+            "reboot" to listOf("RESTART_DEVICE"),
+            "book" to listOf("BOOK_UBER", "BOOK_OLA"),
+            "dismiss" to listOf("DISMISS_NOTIFICATION"),
+            "macro" to listOf("RUN_MACRO", "CREATE_MACRO", "SCHEDULE_MACRO"),
+            "click" to listOf("CLICK_TEXT", "CLICK_ID", "CLICK_COORDINATES"),
+            "type" to listOf("TYPE_TEXT", "TYPE_ID")
+        )
+        riskHints.forEach { (hint, actions) ->
+            if (normalizedGoal.contains(hint)) matched += actions
+        }
+        return matched.toList()
+    }
+
+    private fun normalize(value: String): String =
+        " ${value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), " ").trim()} "
+
+    private fun significantTokens(value: String): List<String> =
+        normalize(value)
+            .trim()
+            .split(Regex("\\s+"))
+            .filter { it.length > 2 && it !in STOP_WORDS && it.any(Char::isLetter) }
+
+    private val STOP_WORDS = setOf(
+        "the", "a", "an", "to", "in", "on", "for", "from", "my", "with", "via", "and"
+    )
 
     /** Check if action exists in schema */
     fun isValid(name: String): Boolean =

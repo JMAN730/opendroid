@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.serialization.Serializable
 import com.opendroid.ai.core.llm.AIModel
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
+import com.opendroid.ai.core.llm.LatencyProfile
 import com.opendroid.ai.core.llm.ProviderCatalog
 
 private const val TAG = "LLMConfig"
@@ -17,6 +18,8 @@ private fun warnCoercion() = runCatching {
 @Serializable
 data class LLMConfig(
     val activeProvider: String = "Google Gemini",
+    /** Explicit provider used only when policy requires leaving an on-device model. */
+    val fallbackProvider: String? = null,
     // Read from the catalog rather than repeated here, so one seed cannot drift
     // from the other. It is replaced by the provider's live list on first fetch.
     val activeModel: String = ProviderCatalog.defaultModel("Google Gemini"),
@@ -39,6 +42,8 @@ data class LLMConfig(
     // An explicit empty map means "user revoked everything" and stays empty.
     val grantedActions: Map<String, Long>? = null,
     val latencyBenchmarks: Map<String, Long> = emptyMap(), // Provider -> latency Ms
+    /** Measured local planning profiles keyed by provider/model/hardware. */
+    val latencyProfiles: Map<String, LatencyProfile> = emptyMap(),
     val elevenLabsApiKey: String = "",
     val elevenLabsVoiceId: String = "",
     val ollamaUrl: String = "",
@@ -138,4 +143,18 @@ fun LLMConfig.withActiveProvider(providerName: String): LLMConfig {
         activeProvider = provider,
         activeModel = selectedModelFor(provider)
     )
+}
+
+fun LLMConfig.withFallbackProvider(providerName: String?): LLMConfig {
+    val normalized = providerName
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.let(ProviderCatalog::canonicalName)
+    require(normalized == null || ProviderCatalog.isKnown(normalized)) {
+        "Unknown LLM provider."
+    }
+    require(normalized == null || normalized != ProviderCatalog.canonicalName(activeProvider)) {
+        "Fallback provider must differ from the active provider."
+    }
+    return copy(fallbackProvider = normalized)
 }

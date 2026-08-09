@@ -1,10 +1,15 @@
 package com.opendroid.ai.core.agent
 
 import android.content.Context
+import android.os.Build
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.LatencyClassification
+import com.opendroid.ai.core.llm.LatencyProfileRecorder
+import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.memory.MemoryManager
@@ -613,12 +618,13 @@ class AgentLoop @Inject constructor(
 
     private suspend fun generatePlan(userMsg: ChatMessage, context: Context, sessionId: String) {
         try {
-            val provider = llmProviderFactory.getActiveProvider()
+            val requestedActions = ActionSchema.inferRequestedActions(userMsg.text)
+            val provider = llmProviderFactory.getActiveProvider(requestedActions)
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
             val sysPrompt = "${PlanningPrompts.PLANNING_SYSTEM_PROMPT}\n\nContext about user and device:\n$relevantContext"
             
             val config = settingsRepository.llmConfig.first()
-            val plan = if (config.multiAgentModeEnabled) {
+            val planned = if (config.multiAgentModeEnabled) {
                 kotlinx.coroutines.coroutineScope {
                     val plannerDeferred = async(Dispatchers.Default) {
                         provider.complete(
@@ -672,7 +678,7 @@ class AgentLoop @Inject constructor(
                         )
                     )
 
-                    parsePlanFromLlmResponse(mergeResponse.content, userMsg.text)
+                    parsePlanFromLlmResponse(mergeResponse.content, userMsg.text) to mergeResponse
                 }
             } else {
                 val response = provider.complete(
@@ -684,8 +690,10 @@ class AgentLoop @Inject constructor(
                         responseFormat = ResponseFormat.JSON
                     )
                 )
-                parsePlanFromLlmResponse(response.content, userMsg.text)
+                parsePlanFromLlmResponse(response.content, userMsg.text) to response
             }
+            val plan = planned.first
+            recordLocalPlanningLatency(provider.name, planned.second, sessionId)
 
             planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             // Re-read after LLM work: user may have flipped mode or revoked grants
@@ -711,6 +719,65 @@ class AgentLoop @Inject constructor(
             )
         } catch (e: Exception) {
             fallbackOrError(userMsg, context, e, sessionId)
+        }
+    }
+
+    /**
+     * Records only successful planning observations. A device-specific p95 is
+     * the accepted profile; no timeout or synthetic model-spec threshold is
+     * introduced. The warning is a user-visible signal, not a routing/auth
+     * decision and never blocks execution.
+     */
+    private suspend fun recordLocalPlanningLatency(
+        providerName: String,
+        response: com.opendroid.ai.core.llm.LLMResponse,
+        sessionId: String
+    ) {
+        if (!ProviderCatalog.isOnDevice(providerName)) return
+
+        val hardware = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.SDK_INT})"
+        val model = response.model
+        val modelTier = OnDeviceModelRegistry.findById(model)?.sizeLabel ?: "unknown"
+        val config = settingsRepository.llmConfig.first()
+        val key = LatencyProfileRecorder.key(providerName, model, hardware)
+        val previous = config.latencyProfiles[key]
+        val observation = LatencyProfileRecorder.observe(
+            previous = previous,
+            provider = providerName,
+            model = model,
+            modelTier = modelTier,
+            referenceHardware = hardware,
+            latencyMs = response.latencyMs.coerceAtLeast(0L),
+            measuredAtMillis = System.currentTimeMillis()
+        )
+
+        try {
+            settingsRepository.updateConfig { current ->
+                current.copy(latencyProfiles = current.latencyProfiles + (key to observation.profile))
+            }
+        } catch (_: Exception) {
+            // A profile write must never turn a successful plan into a failure.
+        }
+
+        val measuredBudget = previous?.p95Ms
+        if (observation.classification == LatencyClassification.EXCEEDS_MEASURED_PROFILE &&
+            measuredBudget != null
+        ) {
+            try {
+                conversationRepository.insertMessage(
+                    sessionId,
+                    ChatMessage(
+                        id = UUID.randomUUID().toString(),
+                        text = "On-device planning took ${response.latencyMs} ms, above the measured " +
+                            "p95 of ${measuredBudget} ms for $modelTier on $hardware. This is a " +
+                            "performance signal; no hardcoded timeout was applied.",
+                        sender = ChatMessage.Sender.AGENT,
+                        modelBadge = "Performance"
+                    )
+                )
+            } catch (_: Exception) {
+                // Observability must not affect task execution.
+            }
         }
     }
 

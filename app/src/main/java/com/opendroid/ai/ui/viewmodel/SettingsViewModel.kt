@@ -6,6 +6,7 @@ import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.withActiveProvider
+import com.opendroid.ai.data.models.withFallbackProvider
 import com.opendroid.ai.data.models.withSelectedModel
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -380,6 +381,15 @@ class SettingsViewModel @Inject constructor(
             } catch (e: Exception) {
                 android.util.Log.e("SettingsViewModel", "Failed to update active provider: ${e.message}", e)
             }
+        }
+    }
+
+    /** Selects the only provider allowed to receive a safe local-plan fallback. */
+    fun updateFallbackProvider(provider: String?) {
+        val updated = _llmConfig.value.withFallbackProvider(provider)
+        _llmConfig.value = updated
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current -> current.withFallbackProvider(provider) }
         }
     }
 

@@ -1,8 +1,9 @@
 package com.opendroid.ai.core.agent
 
-import com.opendroid.ai.actions.ActionDispatcher
-import com.opendroid.ai.core.llm.LLMProviderFactory
+import com.opendroid.ai.core.llm.LLMProvider
+import com.opendroid.ai.core.llm.LLMProviderResolver
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.error.LLMErrorMapper
 import com.opendroid.ai.core.llm.error.LLMException
@@ -11,7 +12,6 @@ import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
-import com.opendroid.ai.data.models.StepStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -21,8 +21,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ReEvaluationEngine @Inject constructor(
-    private val llmProviderFactory: LLMProviderFactory,
-    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
+    private val llmProviderResolver: LLMProviderResolver,
     private val unknownActionDao: dagger.Lazy<UnknownActionDao>
 ) {
     private val json = Json {
@@ -45,7 +44,8 @@ class ReEvaluationEngine @Inject constructor(
         planId: String
     ): ReEvalResult {
         return try {
-            val provider = llmProviderFactory.getActiveProvider()
+            val actionNames = (failedSteps + remainingSteps).map(PlanStep::action)
+            val provider = llmProviderResolver.getActiveProvider(actionNames)
             
             // Format details for the prompt
             val inputDetails = """
@@ -55,28 +55,20 @@ class ReEvaluationEngine @Inject constructor(
                 - Remaining steps: ${json.encodeToString(remainingSteps)}
             """.trimIndent()
 
-            val response = provider.complete(
-                LLMRequest(
-                    systemPrompt = ReEvalPrompts.RE_EVAL_SYSTEM_PROMPT,
-                    messages = listOf(
-                        com.opendroid.ai.data.models.ChatMessage(
-                            id = java.util.UUID.randomUUID().toString(),
-                            text = inputDetails,
-                            sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
-                        )
-                    ),
-                    temperature = 0.0f,
-                    maxTokens = 1000,
-                    responseFormat = ResponseFormat.JSON
-                )
+            val request = LLMRequest(
+                systemPrompt = ReEvalPrompts.RE_EVAL_SYSTEM_PROMPT,
+                messages = listOf(
+                    com.opendroid.ai.data.models.ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        text = inputDetails,
+                        sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
+                    )
+                ),
+                temperature = 0.0f,
+                maxTokens = 1000,
+                responseFormat = ResponseFormat.JSON
             )
-
-            val cleaned = cleanJsonString(response.content)
-            try {
-                json.decodeFromString<ReEvalResult>(cleaned)
-            } catch (decode: Exception) {
-                throw LLMErrorMapper.malformed(provider.name, response.model)
-            }
+            completeWithSafeFallback(provider, request)
         } catch (e: CancellationException) {
             throw e
         } catch (e: LLMException) {
@@ -94,7 +86,8 @@ class ReEvaluationEngine @Inject constructor(
         planId: String
     ): ReEvalResult {
         return try {
-            val provider = llmProviderFactory.getActiveProvider()
+            val actionNames = listOf(failedStep.action) + remainingSteps.map(PlanStep::action)
+            val provider = llmProviderResolver.getActiveProvider(actionNames)
             val whitelist = ActionSchema.getAllActionNames()
             
             // Format details for the prompt
@@ -129,29 +122,21 @@ class ReEvaluationEngine @Inject constructor(
                 - Remaining steps: ${json.encodeToString(remainingSteps)}
             """.trimIndent()
 
-            val response = provider.complete(
-                LLMRequest(
-                    systemPrompt = systemPrompt,
-                    messages = listOf(
-                        com.opendroid.ai.data.models.ChatMessage(
-                            id = java.util.UUID.randomUUID().toString(),
-                            text = inputDetails,
-                            sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
-                        )
-                    ),
-                    temperature = 0.0f,
-                    maxTokens = 1000,
-                    responseFormat = ResponseFormat.JSON
-                )
+            val request = LLMRequest(
+                systemPrompt = systemPrompt,
+                messages = listOf(
+                    com.opendroid.ai.data.models.ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        text = inputDetails,
+                        sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
+                    )
+                ),
+                temperature = 0.0f,
+                maxTokens = 1000,
+                responseFormat = ResponseFormat.JSON
             )
+            val result = completeWithSafeFallback(provider, request)
 
-            val cleaned = cleanJsonString(response.content)
-            val result = try {
-                json.decodeFromString<ReEvalResult>(cleaned)
-            } catch (decode: Exception) {
-                throw LLMErrorMapper.malformed(provider.name, response.model)
-            }
-            
             // Log to unknown actions DB only — never to semantic memory
             try {
                 unknownActionDao.get().insertUnknownAction(
@@ -189,6 +174,56 @@ class ReEvaluationEngine @Inject constructor(
             } catch (_: Exception) {}
             throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
+    }
+
+    private suspend fun completeWithSafeFallback(
+        primary: LLMProvider,
+        request: LLMRequest
+    ): ReEvalResult {
+        return try {
+            completeAndDecode(primary, request)
+        } catch (failure: LLMException) {
+            if (failure.error != com.opendroid.ai.core.llm.error.LLMError.MalformedResponse ||
+                !ProviderCatalog.isOnDevice(primary.name)
+            ) {
+                throw failure
+            }
+
+            val fallback = llmProviderResolver.getExplicitFallbackProvider(primary.name)
+                ?.takeIf {
+                    ProviderCatalog.canonicalName(it.name) !=
+                        ProviderCatalog.canonicalName(primary.name)
+                }
+                ?.takeIf { candidate ->
+                    runCatching { candidate.isAvailable() }.getOrDefault(false)
+                }
+                ?: throw LLMErrorMapper.noSafeFallback(primary.name, failure.model)
+            completeAndDecode(fallback, request)
+        }
+    }
+
+    private suspend fun completeAndDecode(
+        provider: LLMProvider,
+        request: LLMRequest
+    ): ReEvalResult {
+        val response = provider.complete(request)
+        val cleaned = cleanJsonString(response.content)
+        return try {
+            validateResult(json.decodeFromString<ReEvalResult>(cleaned))
+        } catch (decode: Exception) {
+            throw LLMErrorMapper.malformed(provider.name, response.model)
+        }
+    }
+
+    private fun validateResult(result: ReEvalResult): ReEvalResult {
+        require(result.speech.isNotBlank())
+        require(result.decision in setOf("CONTINUE", "MODIFY", "ABANDON"))
+        if (result.decision == "MODIFY") {
+            val plan = requireNotNull(result.updatedPlan)
+            require(plan.steps.isNotEmpty())
+            require(plan.steps.all { ActionSchema.isValid(it.action) })
+        }
+        return result
     }
 
     suspend fun extractLearning(attemptedAction: String, goal: String) {

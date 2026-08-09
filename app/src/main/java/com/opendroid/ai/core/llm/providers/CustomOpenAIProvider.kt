@@ -9,8 +9,8 @@ import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -105,8 +105,9 @@ class CustomOpenAIProvider @Inject constructor(
     }
 
     override suspend fun isAvailable(): Boolean {
-        // Available if the user configured it, or fallback checks pass
-        return true
+        val config = settingsRepository.llmConfig.first()
+        return !config.apiKeys[name].isNullOrBlank() &&
+            config.customEndpoints[name].orEmpty().trim().isNotBlank()
     }
 
 }

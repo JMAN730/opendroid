@@ -47,7 +47,7 @@ class LLMProviderFactory @Inject constructor(
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
     private val intentClassifier: dagger.Lazy<IntentClassifier>,
     private val deviceStateProvider: DeviceStateProvider
-) {
+) : LLMProviderResolver {
 
     fun getProviderByName(name: String): LLMProvider {
         val rawProvider = when (name) {
@@ -80,10 +80,62 @@ class LLMProviderFactory @Inject constructor(
         )
     }
 
-    suspend fun getActiveProvider(): LLMProvider {
+    override suspend fun getActiveProvider(actionNames: Collection<String>): LLMProvider {
         val config = settingsRepository.llmConfig.first()
-        return getProviderByName(ProviderCatalog.canonicalName(config.activeProvider))
+        val activeProvider = ProviderCatalog.canonicalName(config.activeProvider)
+        val fallbackName = config.fallbackProvider
+        val fallbackAvailable = fallbackName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { name ->
+                if (!configuredProviderAvailable(config, name)) {
+                    false
+                } else {
+                    try {
+                        getProviderByName(name).isAvailable()
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+            }
+            ?: false
+        return when (
+            val route = ProviderRoutingPolicy.chooseProvider(
+                activeProvider = activeProvider,
+                configuredFallback = fallbackName,
+                actionNames = actionNames,
+                fallbackAvailable = fallbackAvailable
+            )
+        ) {
+            is ProviderRoute.Active -> getProviderByName(route.provider)
+            is ProviderRoute.ExplicitFallback -> getProviderByName(route.fallbackProvider)
+            is ProviderRoute.Blocked -> throw LLMErrorMapper.noSafeFallback(
+                provider = route.activeProvider,
+                model = config.selectedModelFor(route.activeProvider)
+            )
+        }
     }
+
+    override suspend fun getExplicitFallbackProvider(excludedProvider: String): LLMProvider? {
+        val config = settingsRepository.llmConfig.first()
+        val fallbackName = config.fallbackProvider
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?.let(ProviderCatalog::canonicalName)
+            ?: return null
+        val excluded = ProviderCatalog.canonicalName(excludedProvider)
+        if (fallbackName == excluded || !ProviderCatalog.isKnown(fallbackName)) return null
+        if (!configuredProviderAvailable(config, fallbackName)) return null
+
+        val fallback = getProviderByName(fallbackName)
+        return try {
+            if (fallback.isAvailable()) fallback else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun configuredProviderAvailable(config: LLMConfig, providerName: String): Boolean =
+        ProviderAuthorization.isConfigured(config, providerName)
 
     private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {
         if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains("AVAILABLE ACTIONS")) {

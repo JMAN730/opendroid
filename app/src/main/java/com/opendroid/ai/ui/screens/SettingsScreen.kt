@@ -40,6 +40,7 @@ import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
@@ -328,6 +329,72 @@ fun SettingsScreen(
                                         }
                                     )
                                 }
+                            }
+                        }
+
+                        var fallbackDropdownExpanded by remember { mutableStateOf(false) }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "SAFE LOCAL-PLAN FALLBACK",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Used only for high-risk actions or an unreadable local plan. " +
+                                "It must be explicitly selected and authorized.",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { fallbackDropdownExpanded = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    config.fallbackProvider ?: "None configured",
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Choose safe fallback",
+                                    tint = AccentNeonGreen
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = fallbackDropdownExpanded,
+                                onDismissRequest = { fallbackDropdownExpanded = false },
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .background(CardBackground)
+                                    .border(1.dp, BorderColor)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("None configured", color = TextPrimary) },
+                                    onClick = {
+                                        viewModel.updateFallbackProvider(null)
+                                        fallbackDropdownExpanded = false
+                                    }
+                                )
+                                providers
+                                    .filter {
+                                        !ProviderCatalog.isOnDevice(it) &&
+                                            ProviderCatalog.canonicalName(it) !=
+                                            ProviderCatalog.canonicalName(config.activeProvider)
+                                    }
+                                    .forEach { name ->
+                                        DropdownMenuItem(
+                                            text = { Text(name, color = TextPrimary) },
+                                            onClick = {
+                                                viewModel.updateFallbackProvider(name)
+                                                fallbackDropdownExpanded = false
+                                            }
+                                        )
+                                    }
                             }
                         }
 
