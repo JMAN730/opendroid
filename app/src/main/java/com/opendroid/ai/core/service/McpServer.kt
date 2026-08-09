@@ -36,6 +36,10 @@ class McpServer @Inject constructor(
     @Synchronized
     fun start() {
         if (running.get()) return
+        val previous = serverThread
+        if (previous != null && previous.isAlive) {
+            previous.join(JOIN_TIMEOUT_MS)
+        }
         running.set(true)
         serverThread = Thread(::serve, THREAD_NAME).also { it.start() }
     }
@@ -45,7 +49,9 @@ class McpServer @Inject constructor(
         running.set(false)
         serverSocket?.close()
         serverSocket = null
+        val thread = serverThread
         serverThread = null
+        thread?.join(JOIN_TIMEOUT_MS)
         terminalManager.closeAll()
     }
 
@@ -297,10 +303,17 @@ class McpServer @Inject constructor(
         output.flush()
     }
 
-    private fun tokensMatch(provided: String, expected: String): Boolean = MessageDigest.isEqual(
-        provided.toByteArray(StandardCharsets.UTF_8),
-        expected.toByteArray(StandardCharsets.UTF_8)
-    )
+    /**
+     * Compare digests so unequal lengths cannot short-circuit before a constant-time compare.
+     * Token values are never logged.
+     */
+    private fun tokensMatch(provided: String, expected: String): Boolean {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val providedHash = digest.digest(provided.toByteArray(StandardCharsets.UTF_8))
+        digest.reset()
+        val expectedHash = digest.digest(expected.toByteArray(StandardCharsets.UTF_8))
+        return MessageDigest.isEqual(providedHash, expectedHash)
+    }
 
     private companion object {
         const val TAG = "McpServer"
@@ -310,6 +323,7 @@ class McpServer @Inject constructor(
         const val MAX_REQUEST_BYTES = 1_048_576
         const val MAX_HEADER_LINE_BYTES = 8192
         const val REQUEST_TIMEOUT_MS = 15_000
+        const val JOIN_TIMEOUT_MS = 2_000L
         const val THREAD_NAME = "OpenDroid-MCP"
     }
 }

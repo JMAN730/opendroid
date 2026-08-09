@@ -2,9 +2,10 @@ package com.opendroid.ai.core.service
 
 import android.content.pm.PackageManager
 import android.util.Log
-import dev.rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import rikka.shizuku.Shizuku
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,7 +50,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
     )
 
     fun startShell(): Pair<CommandBackend, Process> = when (val backend = selectBackend()) {
-        CommandBackend.SHIZUKU -> backend to Shizuku.newProcess(arrayOf("sh"), null, null)
+        CommandBackend.SHIZUKU -> backend to shizukuProcess(arrayOf("sh"))
         CommandBackend.ROOT -> backend to ProcessBuilder("su").redirectErrorStream(true).start()
         CommandBackend.APP_SHELL -> backend to ProcessBuilder("sh").redirectErrorStream(true).start()
         CommandBackend.UNAVAILABLE -> error("No command execution backend is available")
@@ -83,27 +84,52 @@ class PrivilegedCommandExecutor @Inject constructor() {
     private val rootAvailable: Boolean by lazy {
         try {
             val process = ProcessBuilder("su", "-c", "id").start()
-            process.inputStream.close()
-            process.errorStream.close()
-            process.waitFor() == 0
+            try {
+                process.inputStream.close()
+                process.errorStream.close()
+                val completed = process.waitFor(ROOT_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                completed && process.exitValue() == 0
+            } finally {
+                process.destroyForcibly()
+            }
         } catch (_: Throwable) {
             false
         }
     }
 
     private fun appShellAvailable(): Boolean = try {
-        ProcessBuilder("sh", "-c", "true").start().waitFor() == 0
+        val process = ProcessBuilder("sh", "-c", "true").start()
+        try {
+            process.waitFor(ROOT_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS) &&
+                process.exitValue() == 0
+        } finally {
+            process.destroyForcibly()
+        }
     } catch (_: Throwable) {
         false
     }
 
     private fun runShizuku(command: String, backend: CommandBackend): CommandExecutionResult {
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-        return readProcess(process, backend)
+        return readProcess(shizukuProcess(arrayOf("sh", "-c", command)), backend)
     }
 
     private fun runProcess(command: Array<String>, backend: CommandBackend): CommandExecutionResult =
         readProcess(ProcessBuilder(*command).start(), backend)
+
+    /**
+     * `Shizuku.newProcess` is package-private and slated for removal; reflection is the
+     * transitional way to run shell commands until a UserService is adopted.
+     */
+    private fun shizukuProcess(command: Array<String>): Process {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(null, command, null, null) as Process
+    }
 
     private fun readProcess(process: Process, backend: CommandBackend): CommandExecutionResult {
         val stdout = StringBuilder()
@@ -112,7 +138,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
         val stderrThread = Thread { readLimited(process.errorStream, stderr) }
         stdoutThread.start()
         stderrThread.start()
-        val completed = process.waitFor(COMMAND_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        val completed = process.waitFor(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         if (!completed) process.destroyForcibly()
         stdoutThread.join(OUTPUT_JOIN_TIMEOUT_MS)
         stderrThread.join(OUTPUT_JOIN_TIMEOUT_MS)
@@ -142,6 +168,7 @@ class PrivilegedCommandExecutor @Inject constructor() {
         const val MAX_COMMAND_LENGTH = 4096
         const val MAX_OUTPUT_BYTES = 64 * 1024
         const val COMMAND_TIMEOUT_SECONDS = 30L
+        const val ROOT_PROBE_TIMEOUT_SECONDS = 3L
         const val OUTPUT_JOIN_TIMEOUT_MS = 1000L
         const val TIMEOUT_EXIT_CODE = 124
     }

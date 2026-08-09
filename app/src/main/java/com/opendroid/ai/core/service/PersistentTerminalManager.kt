@@ -2,9 +2,7 @@ package com.opendroid.ai.core.service
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedWriter
 import java.io.InputStream
-import java.io.OutputStreamWriter
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -34,11 +32,10 @@ class PersistentTerminalManager @Inject constructor(
     suspend fun write(id: String, command: String) = withContext(Dispatchers.IO) {
         require(command.length <= MAX_COMMAND_LENGTH) { "Command is too long" }
         val process = requireSession(id)
-        BufferedWriter(OutputStreamWriter(process.outputStream, Charsets.UTF_8)).also { writer ->
-            writer.write(command)
-            writer.newLine()
-            writer.flush()
-        }
+        // Write bytes directly so we never close the process's long-lived output stream.
+        val stream = process.outputStream
+        stream.write((command + "\n").toByteArray(Charsets.UTF_8))
+        stream.flush()
     }
 
     suspend fun read(id: String): String = withContext(Dispatchers.IO) {
