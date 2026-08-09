@@ -35,7 +35,7 @@ OpenDroid features robust, fallback-oriented communication controls:
 | **`MAKE_CALL`** | `contact` (or `number` / `phone`) | Resolves the contact using the fuzzy resolver. Starts direct background calling if the `CALL_PHONE` permission is granted, otherwise opens the native system dialer with the number pre-filled. |
 | **`SEND_SMS`** | `contact`, `message` (or `text` / `body`) | Automatically attempts direct SMS sending. If cellular services are unavailable (e.g., on tablets or emulator environments), it falls back to launching the default SMS composer app with pre-filled details. |
 | **`SEND_WHATSAPP`** | `contact`, `message` | Opens WhatsApp directly using the contact's phone number. Pre-fills the message and automatically clicks the "Send" button using the Accessibility service. |
-| **`SEND_EMAIL`** | `to`, `subject`, `body` | Drafts and dispatches emails using default system mail clients. |
+| **`SEND_EMAIL`** | `to`, `subject`, `body` | Opens a pre-filled draft in the default mail client. The user must review and tap Send; OpenDroid does not report the draft as sent. |
 
 ---
 

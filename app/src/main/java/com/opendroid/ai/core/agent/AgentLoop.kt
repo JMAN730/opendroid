@@ -51,6 +51,18 @@ private const val MAX_NEEDS_INPUT_PROMPTS = 5
 private const val MAX_INCOMPLETE_MESSAGE_IDS = 100
 private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP")
 
+private fun paramsForExecutionHistory(
+    actionName: String,
+    params: Map<String, String>
+): Map<String, String> = if (actionName.equals("SEND_EMAIL", ignoreCase = true)) {
+    params.mapValues { "[REDACTED]" }
+} else {
+    params
+}
+
+private fun descriptionForExecutionHistory(actionName: String, description: String): String =
+    if (actionName.equals("SEND_EMAIL", ignoreCase = true)) "Email action" else description
+
 internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionName: String): String {
     needsInput.metadata["param"]?.let { return it }
 
@@ -972,13 +984,18 @@ class AgentLoop @Inject constructor(
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
+            // Redaction must be based on the dispatcher's canonical mapped action,
+            // not the raw plan action string — the dispatcher accepts non-canonical
+            // names (e.g. "EMAIL", "send-email") that still execute as SEND_EMAIL.
+            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action)
+
             try {
                 memoryManager.logTaskExecution(
                     stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = stepToExecute.description,
+                    description = descriptionForExecutionHistory(canonicalActionName, stepToExecute.description),
                     actionType = stepToExecute.action,
-                    params = resolvedParams,
+                    params = paramsForExecutionHistory(canonicalActionName, resolvedParams),
                     success = actionResult.success,
                     resultData = actionResult.data,
                     errorMessage = actionResult.error
@@ -1007,6 +1024,22 @@ class AgentLoop @Inject constructor(
                     StepStatus.COMPLETED,
                     result = actionResult.message
                 )
+            } else if (actionResult is ActionResult.UserActionRequired) {
+                // A user-facing flow (for example email compose) is not an
+                // executed side effect. Do not run an automated fallback or
+                // allow the plan to treat the step as completed.
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.FAILED,
+                    error = actionResult.error ?: "User action is required before this step can complete."
+                )
+                // Skip the generic re-evaluation below: its prompt allows adding
+                // alternative steps, which would let the agent launch another
+                // action or duplicate composer while the user is still reviewing
+                // the one just opened. Move on to the next plan step (if any)
+                // instead of triggering an automated replan for this failure.
+                currentPlanState = planManager.currentPlan.value ?: break
+                continue
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
