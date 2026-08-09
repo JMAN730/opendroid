@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only view ids for the accessibility test fixture (#167).
+
+     `findAndClickById` matches on `viewIdResourceName`, which only exists for
+     views carrying a *real* resource id - a `View.generateViewId()` id has no
+     resource name at all. So the id-targeting scenario needs declared ids, and
+     they live in the debug source set alongside A11yProbeActivity. -->
+<resources>
+    <item name="a11y_probe_id_target" type="id" />
+    <item name="a11y_probe_id_decoy" type="id" />
+</resources>
