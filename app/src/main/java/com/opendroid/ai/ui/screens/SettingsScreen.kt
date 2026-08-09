@@ -778,7 +778,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Needed only for gated Hugging Face downloads (Google Gemma LiteRT builds). Public models such as Qwen 2.5 download without a token. Not used for cloud API providers.",
+                                text = "Needed only for gated Hugging Face downloads (the Google-hosted Gemma 3n LiteRT builds). Public models such as Qwen 2.5 and the Gemma 4 community mirrors download without a token. Not used for cloud API providers.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
