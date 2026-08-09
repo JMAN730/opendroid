@@ -97,11 +97,14 @@ re-litigated.
   itself stays for now, behind a read-only legacy importer — see
   [#98](https://github.com/JMAN730/opendroid/issues/98), already open, for the removal
   precondition.
-- **LiteRT-LM artifact integrity (partial)** — the Gemma 3n E2B/E4B and Qwen 2.5 entries
-  in `OnDeviceModelRegistry.kt` now carry a pinned revision, a real byte size, and a
-  publisher SHA-256 ([#65](https://github.com/JMAN730/opendroid/issues/65),
-  [#82](https://github.com/JMAN730/opendroid/issues/82)). The Gemma 4 (non-3n) entries do
-  not yet — see [Open items](#open-items).
+- **LiteRT-LM artifact integrity** — every catalog LiteRT entry in
+  `OnDeviceModelRegistry.kt` now carries a pinned revision, a real byte size, and a
+  publisher SHA-256: Gemma 3n E2B/E4B and Qwen 2.5 via
+  [#65](https://github.com/JMAN730/opendroid/issues/65) and
+  [#82](https://github.com/JMAN730/opendroid/issues/82), Gemma 4 E2B/E4B via
+  [#129](https://github.com/JMAN730/opendroid/issues/129). No digest has been re-hashed
+  from downloaded bytes yet — the first successful end-to-end managed download is still
+  the acceptance gate ([#53](https://github.com/JMAN730/opendroid/issues/53)).
 
 ---
 
@@ -112,13 +115,12 @@ issue. Filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55
 
 | # | Item | Why it's open |
 |---|---|---|
-| P0 | [#129](https://github.com/JMAN730/opendroid/issues/129) Gemma 4 (E2B/E4B) LiteRT artifacts still lack SHA-256 / pinned-revision metadata | `OnDeviceModelRegistry.kt`'s two `gemma-4-*-it-litert` entries carry only a bare `expectedSize` (one of them a suspiciously round 3,660,000,000) — no `managedArtifact`, no hash. Same risk the original P0 flagged, now half-resolved: the Gemma 3n pair and Qwen got the full treatment, these two didn't. |
 | — | [#130](https://github.com/JMAN730/opendroid/issues/130) `docs/CONTRIBUTING.md` still says "JDK 17+" | PR #50 corrected `README.md` and `docs/development_guide.md` to "JDK 21 exactly" but missed this file, so the two docs now actively disagree with each other. |
 | — | Device-QA sign-off for grant-all permissions (#15) | Tracked in [#75](https://github.com/JMAN730/opendroid/issues/75) — an emulator OOM aborted the one attempted automated run; needs a real device or a bigger box. |
 | — | Manual smoke test on API 36 | Tracked in [#61](https://github.com/JMAN730/opendroid/issues/61) — the definition-of-done item from the original `targetSdk 36` task. |
 | — | Drop `security-crypto` once a migrating release has shipped | Tracked in [#98](https://github.com/JMAN730/opendroid/issues/98) — a release-cadence call, not something resolvable from the repo alone. |
 
-All six items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129), [#130](https://github.com/JMAN730/opendroid/issues/130), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134).
+All items above (including the four 2.0 scoping tickets below) are filed as children of [#55](https://github.com/JMAN730/opendroid/issues/55): [#129](https://github.com/JMAN730/opendroid/issues/129) (closed), [#130](https://github.com/JMAN730/opendroid/issues/130), [#131](https://github.com/JMAN730/opendroid/issues/131), [#132](https://github.com/JMAN730/opendroid/issues/132), [#133](https://github.com/JMAN730/opendroid/issues/133), [#134](https://github.com/JMAN730/opendroid/issues/134).
 
 ---
 

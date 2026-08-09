@@ -9,6 +9,8 @@ import com.opendroid.ai.core.settings.AndroidAppSettingsStore
 import com.opendroid.ai.core.settings.AppSettingsStore
 import com.opendroid.ai.accessibility.AndroidCallFlowVerifier
 import com.opendroid.ai.accessibility.CallFlowVerifier
+import com.opendroid.ai.actions.AndroidMediaPlaybackVerifier
+import com.opendroid.ai.actions.MediaPlaybackVerifier
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -49,6 +51,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideCallFlowVerifier(): CallFlowVerifier = AndroidCallFlowVerifier()
+
+    @Provides
+    @Singleton
+    fun provideMediaPlaybackVerifier(): MediaPlaybackVerifier = AndroidMediaPlaybackVerifier()
 
     @Provides
     @Singleton
