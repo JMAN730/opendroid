@@ -984,13 +984,18 @@ class AgentLoop @Inject constructor(
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
+            // Redaction must be based on the dispatcher's canonical mapped action,
+            // not the raw plan action string — the dispatcher accepts non-canonical
+            // names (e.g. "EMAIL", "send-email") that still execute as SEND_EMAIL.
+            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action)
+
             try {
                 memoryManager.logTaskExecution(
                     stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = descriptionForExecutionHistory(stepToExecute.action, stepToExecute.description),
+                    description = descriptionForExecutionHistory(canonicalActionName, stepToExecute.description),
                     actionType = stepToExecute.action,
-                    params = paramsForExecutionHistory(stepToExecute.action, resolvedParams),
+                    params = paramsForExecutionHistory(canonicalActionName, resolvedParams),
                     success = actionResult.success,
                     resultData = actionResult.data,
                     errorMessage = actionResult.error
@@ -1017,6 +1022,13 @@ class AgentLoop @Inject constructor(
                     StepStatus.FAILED,
                     error = actionResult.error ?: "User action is required before this step can complete."
                 )
+                // Skip the generic re-evaluation below: its prompt allows adding
+                // alternative steps, which would let the agent launch another
+                // action or duplicate composer while the user is still reviewing
+                // the one just opened. Move on to the next plan step (if any)
+                // instead of triggering an automated replan for this failure.
+                currentPlanState = planManager.currentPlan.value ?: break
+                continue
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
