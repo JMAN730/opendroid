@@ -7,6 +7,8 @@ import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.core.settings.AndroidAppSettingsStore
 import com.opendroid.ai.core.settings.AppSettingsStore
+import com.opendroid.ai.actions.AndroidMediaPlaybackVerifier
+import com.opendroid.ai.actions.MediaPlaybackVerifier
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,6 +45,10 @@ object AppModule {
     fun provideAppSettingsStore(@ApplicationContext context: Context): AppSettingsStore {
         return AndroidAppSettingsStore(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideMediaPlaybackVerifier(): MediaPlaybackVerifier = AndroidMediaPlaybackVerifier()
 
     @Provides
     @Singleton

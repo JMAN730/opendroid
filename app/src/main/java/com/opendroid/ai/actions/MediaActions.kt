@@ -16,28 +16,36 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class MediaActions @Inject constructor() {
+class MediaActions @Inject constructor(
+    private val playbackVerifier: MediaPlaybackVerifier
+) {
 
     fun getActions(): List<Action> = listOf(
-        PlayMusicAction(),
+        PlayMusicAction(playbackVerifier),
         PauseMusicAction(),
         ResumeMusicAction(),
         NextTrackAction(),
         PrevTrackAction(),
         SetVolumeMusicAction(),
-        PlayYoutubeAction(),
+        PlayYoutubeAction(playbackVerifier),
         TakePhotoAction(),
         RecordVideoAction()
     )
 
-    private class PlayMusicAction : Action {
+    private class PlayMusicAction(
+        private val playbackVerifier: MediaPlaybackVerifier
+    ) : Action {
         override val name: String = "PLAY_MUSIC"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val query = params["query"] ?: ""
             val app = params["app"] ?: "spotify"
             return try {
+                val normalizedApp = app.lowercase()
+                if (normalizedApp !in setOf("spotify", "youtube", "local")) {
+                    return ActionResult(false, null, "That music app is not supported.")
+                }
                 val encQuery = URLEncoder.encode(query, "UTF-8")
-                val intent = when (app.lowercase()) {
+                val intent = when (normalizedApp) {
                     "spotify" -> {
                         Intent(Intent.ACTION_VIEW, "spotify:search:$encQuery".toUri()).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -56,10 +64,17 @@ class MediaActions @Inject constructor() {
                         }
                     }
                 }
+                if (intent.resolveActivity(context.packageManager) == null) {
+                    return ActionResult(false, null, "The requested music app isn't available on this device.")
+                }
                 context.startActivity(intent)
-                ActionResult(true, if (query.isNotEmpty()) "Playing '$query' for you!" else "Music is playing!", null)
+                if (playbackVerifier.awaitVerifiedPlayback(context, normalizedApp, query)) {
+                    ActionResult(true, if (query.isNotEmpty()) "Playing '$query' for you!" else "Music is playing!", null)
+                } else {
+                    ActionResult(false, null, "The music app opened, but playback could not be verified.")
+                }
             } catch (e: Exception) {
-                Log.e("PlayMusic", "Music failed: ${e.localizedMessage}")
+                Log.e("PlayMusic", "Music action failed: ${e.javaClass.simpleName}")
                 ActionResult(false, null, "Couldn't play that right now. Try again?")
             }
         }
@@ -134,7 +149,9 @@ class MediaActions @Inject constructor() {
         }
     }
 
-    private class PlayYoutubeAction : Action {
+    private class PlayYoutubeAction(
+        private val playbackVerifier: MediaPlaybackVerifier
+    ) : Action {
         override val name: String = "PLAY_YOUTUBE"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val query = params["query"] ?: ""
@@ -147,16 +164,20 @@ class MediaActions @Inject constructor() {
                 }
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, if (query.isNotEmpty()) "Playing '$query' on YouTube!" else "YouTube is open!", null)
+                    if (playbackVerifier.awaitVerifiedPlayback(context, "youtube", query)) {
+                        ActionResult(true, if (query.isNotEmpty()) "Playing '$query' on YouTube!" else "YouTube is playing!", null)
+                    } else {
+                        ActionResult(false, null, "YouTube opened, but playback could not be verified.")
+                    }
                 } else {
                     val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(browserIntent)
-                    ActionResult(true, "YouTube app isn't installed, but I opened it in your browser!", null, true)
+                    ActionResult(false, null, "The YouTube app isn't installed; I opened the search in your browser, but playback could not be verified.")
                 }
             } catch (e: Exception) {
-                Log.e("PlayYoutube", "YouTube failed: ${e.localizedMessage}")
+                Log.e("PlayYoutube", "YouTube action failed: ${e.javaClass.simpleName}")
                 ActionResult(false, null, "Couldn't open YouTube right now.")
             }
         }
