@@ -16,6 +16,7 @@ import android.net.wifi.WifiManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
@@ -35,6 +36,10 @@ private class AndroidBluetoothController(
 ) : BluetoothController {
     override fun isEnabled(): Boolean = adapter.isEnabled
 
+    // BLUETOOTH_CONNECT is a runtime permission on API 31+, so enable()/disable() can
+    // throw SecurityException. Callers of BluetoothController handle that and report it
+    // as a permission failure instead of claiming the state changed.
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     override fun requestState(enabled: Boolean): Boolean {
         @Suppress("DEPRECATION")
         return if (enabled) adapter.enable() else adapter.disable()
