@@ -97,6 +97,7 @@ class PermissionModelTest {
             "android.permission.CALL_PHONE",
             "android.permission.READ_SMS",
             "android.permission.RECEIVE_SMS",
+            "android.permission.READ_PHONE_STATE",
         )
 
         SDKS.forEach { sdkInt ->
@@ -233,6 +234,7 @@ class PermissionModelTest {
                 "android.permission.CALL_PHONE",
                 "android.permission.READ_SMS",
                 "android.permission.RECEIVE_SMS",
+                "android.permission.READ_PHONE_STATE",
                 "android.permission.READ_CONTACTS",
                 "android.permission.WRITE_CONTACTS",
                 "android.permission.READ_CALENDAR",
@@ -255,6 +257,7 @@ class PermissionModelTest {
                 "android.permission.CALL_PHONE",
                 "android.permission.READ_SMS",
                 "android.permission.RECEIVE_SMS",
+                "android.permission.READ_PHONE_STATE",
                 "android.permission.READ_CONTACTS",
                 "android.permission.WRITE_CONTACTS",
                 "android.permission.READ_CALENDAR",
@@ -281,6 +284,7 @@ class PermissionModelTest {
                 "android.permission.SEND_SMS",
                 "android.permission.READ_SMS",
                 "android.permission.RECEIVE_SMS",
+                "android.permission.READ_PHONE_STATE",
                 "android.permission.WRITE_CONTACTS",
                 "android.permission.READ_CALENDAR",
                 "android.permission.CAMERA",
@@ -331,6 +335,7 @@ class PermissionModelTest {
                 "android.permission.CALL_PHONE",
                 "android.permission.READ_SMS",
                 "android.permission.RECEIVE_SMS",
+                "android.permission.READ_PHONE_STATE",
             ),
             requestPlan(
                 granted = setOf("android.permission.SEND_SMS"),
@@ -512,7 +517,7 @@ class PermissionModelTest {
             grantAllButton(snapshot),
         )
         assertEquals(
-            "12 runtime permissions still needed. Android asks for them in one dialog.",
+            "13 runtime permissions still needed. Android asks for them in one dialog.",
             summaryLine(snapshot),
         )
     }
@@ -581,7 +586,7 @@ class PermissionModelTest {
         val permissions = allRuntimePermissions(35).toSet()
 
         assertEquals(
-            "All 12 permissions granted.",
+            "All 13 permissions granted.",
             summaryLine(
                 snapshot(
                     granted = permissions,
@@ -599,7 +604,7 @@ class PermissionModelTest {
         val declined = permissions.drop(8)
 
         assertEquals(
-            "8 of 12 granted. 4 declined → tap Grant on a card to ask again.",
+            "8 of 13 granted. 5 declined → tap Grant on a card to ask again.",
             summaryLine(
                 snapshot(
                     granted = granted,
@@ -621,7 +626,7 @@ class PermissionModelTest {
             grantAll = GrantAllState.Returned(permissions.toSet()),
         )
         assertEquals(
-            "None granted. 12 blocked in system settings → use App info below.",
+            "None granted. 13 blocked in system settings → use App info below.",
             summaryLine(snapshot),
         )
         assertTrue(summaryHasBlocked(snapshot))
@@ -641,7 +646,7 @@ class PermissionModelTest {
             grantAll = GrantAllState.Returned(permissions.toSet()),
         )
         assertEquals(
-            "8 of 12 granted. 1 declined, 3 blocked → use App info below.",
+            "8 of 13 granted. 1 declined, 4 blocked → use App info below.",
             summaryLine(snapshot),
         )
         assertTrue(summaryHasBlocked(snapshot))
@@ -661,7 +666,7 @@ class PermissionModelTest {
         )
 
         assertEquals(
-            "10 of 12 granted. 1 declined, 1 blocked → use App info below.",
+            "10 of 13 granted. 1 declined, 2 blocked → use App info below.",
             summaryLine(base.copy(granted = firstEight + blocked.take(2))),
         )
     }
@@ -676,7 +681,7 @@ class PermissionModelTest {
 
         val partialSms = snapshot(granted = setOf("android.permission.SEND_SMS"))
         assertEquals("Grant rest", cardButtonLabel(PermissionCardId.SMS_TELEPHONY, partialSms))
-        assertEquals("1 of 4 granted.", cardStatusLine(PermissionCardId.SMS_TELEPHONY, partialSms))
+        assertEquals("1 of 5 granted.", cardStatusLine(PermissionCardId.SMS_TELEPHONY, partialSms))
         assertTrue(cardActionEnabled(PermissionCardId.SMS_TELEPHONY, partialSms))
 
         val deniedCamera = snapshot(

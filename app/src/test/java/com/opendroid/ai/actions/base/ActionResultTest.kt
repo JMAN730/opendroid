@@ -71,6 +71,14 @@ class ActionResultTest {
     }
 
     @Test
+    fun `pending user action is explicitly non-success`() {
+        val result = ActionResult.PendingUserAction("Tap Call")
+        assertFalse(result.success)
+        assertEquals("Tap Call", result.data)
+        assertEquals("Tap Call", result.error)
+    }
+
+    @Test
     fun `user action required is explicitly non-success`() {
         val result = ActionResult.UserActionRequired("Review and send the draft")
         assertFalse(result.success)
