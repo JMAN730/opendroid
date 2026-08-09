@@ -1107,6 +1107,17 @@ object ActionSchema {
             ),
             examples = listOf("turn on auto reply", "disable auto reply for whatsapp", "enable auto reply"),
             category = ActionCategory.NOTIFICATION
+        ),
+        ActionDefinition(
+            name = "DISMISS_NOTIFICATION",
+            description = "Removes saved notification history for an app, by ID, or for all apps",
+            params = listOf(
+                ParamDefinition("app", ParamType.STRING, false, "App name or package to filter", defaultValue = ""),
+                ParamDefinition("notificationId", ParamType.STRING, false, "Specific saved notification ID")
+            ),
+            examples = listOf("dismiss the WhatsApp notification", "clear all notifications", "dismiss notification 42"),
+            category = ActionCategory.NOTIFICATION,
+            neverAutoApprove = true
         )
     )
 
