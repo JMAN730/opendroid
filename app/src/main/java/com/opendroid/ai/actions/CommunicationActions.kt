@@ -11,7 +11,6 @@ import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
-import com.opendroid.ai.accessibility.CallAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ContactResolution
@@ -27,7 +26,8 @@ import javax.inject.Singleton
 
 @Singleton
 class CommunicationActions @Inject constructor(
-    private val contactResolver: ContactResolver
+    private val contactResolver: ContactResolver,
+    private val callFlowExecutor: CallFlowExecutor
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -103,7 +103,7 @@ class CommunicationActions @Inject constructor(
                 ?: return ActionResult(false, null, "contact or number parameter missing")
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
-                is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, contact, context)
+                is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, context)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_CALL")
                 is ContactResolution.NotFound -> ActionResult.NeedsInput(
                     question = "I couldn't find '$contact' in your contacts. What's their number?",
@@ -165,64 +165,8 @@ class CommunicationActions @Inject constructor(
 
     // ── Execution helpers ────────────────────────────────────
 
-    private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
-        val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
-        val callUri = "tel:$cleanPhone".toUri()
-        // Telephony is optional (see AndroidManifest uses-feature). Without a radio,
-        // ACTION_CALL goes nowhere — but a VoIP dialer (Google Voice, Phone Hub) may
-        // still handle tel: on ChromeOS and tablets, so only fail when nothing can.
-        val hasTelephony = DeviceCapabilities.canMakeCalls(context)
-        if (!hasTelephony &&
-            Intent(Intent.ACTION_DIAL, callUri).resolveActivity(context.packageManager) == null) {
-            return ActionResult(false, null, "This device can't make phone calls — it has no phone hardware or dialer app. Try WhatsApp instead?")
-        }
-        return try {
-            if (hasTelephony &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                val intent = Intent(Intent.ACTION_CALL, callUri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "Calling $contactLabel now!", null)
-            } else {
-                val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                
-                val service = OpenDroidAccessibilityService.getInstance()
-                if (service != null) {
-                    val clicked = CallAutomator.automateCall()
-                    if (clicked) {
-                        return ActionResult(true, "Calling $contactLabel now!", null)
-                    }
-                }
-                ActionResult(false, null, "I've opened the dialer for $contactLabel — please tap call.", true)
-            }
-        } catch (e: SecurityException) {
-            try {
-                val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$cleanPhone".toUri()).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(dialIntent)
-                
-                val service = OpenDroidAccessibilityService.getInstance()
-                if (service != null) {
-                    val clicked = CallAutomator.automateCall()
-                    if (clicked) {
-                        return ActionResult(true, "Calling $contactLabel now!", null)
-                    }
-                }
-                ActionResult(false, null, "Dialer is open for $contactLabel — please tap call to connect.", true)
-            } catch (e2: Exception) {
-                Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
-                ActionResult(false, null, "Couldn't make that call. Want to try again?")
-            }
-        } catch (e: Exception) {
-            Log.e("MakeCall", "Call failed: ${e.localizedMessage}")
-            ActionResult(false, null, "Something went wrong with the call. Try again?")
-        }
-    }
+    private suspend fun executeCall(phone: String, context: Context): ActionResult =
+        callFlowExecutor.execute(phone, context)
 
     private suspend fun executeWhatsApp(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
         return try {

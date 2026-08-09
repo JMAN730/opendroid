@@ -7,6 +7,8 @@ import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.core.settings.AndroidAppSettingsStore
 import com.opendroid.ai.core.settings.AppSettingsStore
+import com.opendroid.ai.accessibility.AndroidCallFlowVerifier
+import com.opendroid.ai.accessibility.CallFlowVerifier
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,6 +45,10 @@ object AppModule {
     fun provideAppSettingsStore(@ApplicationContext context: Context): AppSettingsStore {
         return AndroidAppSettingsStore(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideCallFlowVerifier(): CallFlowVerifier = AndroidCallFlowVerifier()
 
     @Provides
     @Singleton

@@ -46,6 +46,17 @@ sealed class ActionResult {
         override val error: String? get() = "Needs user input: $question"
     }
 
+    /** A user-mediated flow is underway, but the requested operation is not complete. */
+    @Serializable
+    data class PendingUserAction(
+        val message: String,
+        val metadata: Map<String, String> = emptyMap()
+    ) : ActionResult() {
+        override val success: Boolean get() = false
+        override val data: String? get() = message
+        override val error: String? get() = message
+    }
+
     companion object {
         operator fun invoke(
             success: Boolean,
