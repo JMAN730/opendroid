@@ -46,6 +46,18 @@ sealed class ActionResult {
         override val error: String? get() = "Needs user input: $question"
     }
 
+    /**
+     * The action started a user-facing flow, but the requested operation has
+     * not completed. This is deliberately non-success so callers cannot
+     * report an unverified side effect as completed.
+     */
+    @Serializable
+    data class UserActionRequired(val message: String) : ActionResult() {
+        override val success: Boolean get() = false
+        override val data: String? get() = null
+        override val error: String? get() = message
+    }
+
     companion object {
         operator fun invoke(
             success: Boolean,

@@ -294,6 +294,9 @@ sealed class ActionResult {
 
     @Serializable
     data class NeedsInput(val question: String, val options: List<String> = emptyList()) : ActionResult()
+
+    @Serializable
+    data class UserActionRequired(val message: String) : ActionResult()
 }
 ```
 

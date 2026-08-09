@@ -25,6 +25,38 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal enum class EmailComposeOutcome {
+    COMPOSED,
+    VERIFIED_SENT,
+    UNAVAILABLE
+}
+
+internal fun interface EmailComposer {
+    fun open(context: Context, to: String, subject: String, body: String): EmailComposeOutcome
+}
+
+private class AndroidEmailComposer : EmailComposer {
+    override fun open(
+        context: Context,
+        to: String,
+        subject: String,
+        body: String
+    ): EmailComposeOutcome {
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = "mailto:".toUri()
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            return EmailComposeOutcome.UNAVAILABLE
+        }
+        context.startActivity(intent)
+        return EmailComposeOutcome.COMPOSED
+    }
+}
+
 @Singleton
 class CommunicationActions @Inject constructor(
     private val contactResolver: ContactResolver
@@ -366,24 +398,27 @@ class CommunicationActions @Inject constructor(
 
     // ── Non-disambiguated actions (unchanged) ────────────────
 
-    private class SendEmailAction : Action {
+    internal class SendEmailAction(
+        private val emailComposer: EmailComposer = AndroidEmailComposer()
+    ) : Action {
         override val name: String = "SEND_EMAIL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val to = params["to"] ?: return ActionResult(false, null, "to email is missing")
             val subject = params["subject"] ?: ""
             val body = params["body"] ?: ""
             return try {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = "mailto:".toUri()
-                    putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-                    putExtra(Intent.EXTRA_SUBJECT, subject)
-                    putExtra(Intent.EXTRA_TEXT, body)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                when (emailComposer.open(context, to, subject, body)) {
+                    EmailComposeOutcome.VERIFIED_SENT ->
+                        ActionResult(true, "Email sent successfully.", null)
+                    EmailComposeOutcome.COMPOSED ->
+                        ActionResult.UserActionRequired(
+                            "Email draft opened. Review it and tap Send; sending was not verified."
+                        )
+                    EmailComposeOutcome.UNAVAILABLE ->
+                        ActionResult(false, null, "Couldn't open the email app. Is one installed?")
                 }
-                context.startActivity(intent)
-                ActionResult(true, "Email to $to is ready — just review and send!", null)
             } catch (e: Exception) {
-                Log.e("SendEmail", "Email failed: ${e.localizedMessage}")
+                Log.e("SendEmail", "Email compose launch failed")
                 ActionResult(false, null, "Couldn't open the email app. Is one installed?")
             }
         }

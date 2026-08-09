@@ -351,7 +351,7 @@ object ActionSchema {
         ),
         ActionDefinition(
             name = "SEND_EMAIL",
-            description = "Sends an email",
+            description = "Opens a pre-filled email draft; the user must review and send it. Sending is not verified.",
             params = listOf(
                 ParamDefinition("to", ParamType.STRING, true, "Recipient email or contact name"),
                 ParamDefinition("subject", ParamType.STRING, true, "Email subject"),
