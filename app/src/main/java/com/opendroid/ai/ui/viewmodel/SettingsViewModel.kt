@@ -410,6 +410,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Stores an explicit planning fallback allowlist. No provider is inferred
+     * from credentials alone; the list is the user's authorization boundary.
+     */
+    fun updateFallbackProvider(providerName: String, enabled: Boolean) {
+        val provider = ProviderCatalog.canonicalName(providerName)
+        val updated = _llmConfig.value.fallbackProviders.toMutableList().apply {
+            if (enabled) add(provider) else removeAll { it == provider }
+        }.distinct()
+        _llmConfig.value = _llmConfig.value.copy(fallbackProviders = updated)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                current.copy(fallbackProviders = updated)
+            }
+        }
+    }
+
     fun updateApiKey(providerName: String, key: String) {
         val keys = _llmConfig.value.apiKeys.toMutableMap()
         keys[providerName] = key

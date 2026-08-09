@@ -397,7 +397,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            if (fetchedModels.isNotEmpty()) {
+                        if (fetchedModels.isNotEmpty()) {
                                 DropdownMenu(
                                     expanded = modelDropdownExpanded,
                                     onDismissRequest = { modelDropdownExpanded = false },
@@ -486,6 +486,46 @@ fun SettingsScreen(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "EXPLICIT PLANNING FALLBACKS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Text(
+                            text = "Only selected providers may receive a retry after an unusable low-impact local plan. High-impact plans never switch automatically.",
+                            fontSize = 10.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        )
+                        providers
+                            .filter { it != config.activeProvider && it != "On-Device AI" }
+                            .forEach { fallbackProvider ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = config.fallbackProviders.contains(fallbackProvider),
+                                        onCheckedChange = { enabled ->
+                                            viewModel.updateFallbackProvider(fallbackProvider, enabled)
+                                        },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = AccentNeonGreen,
+                                            uncheckedColor = BorderColor,
+                                            checkmarkColor = DarkBackground
+                                        )
+                                    )
+                                    Text(
+                                        text = fallbackProvider,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
 
                         // Model names are never bundled with the app, so when the
                         // live list is unavailable the reason is shown rather than

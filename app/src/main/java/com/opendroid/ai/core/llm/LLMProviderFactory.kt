@@ -44,6 +44,7 @@ class LLMProviderFactory @Inject constructor(
     private val liteRTLMProvider: Provider<LiteRTLMProvider>,
     private val hybridOnDeviceProvider: Provider<HybridOnDeviceProvider>,
     private val settingsRepository: SettingsRepository,
+    private val onDeviceLatencyTracker: OnDeviceLatencyTracker,
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
     private val intentClassifier: dagger.Lazy<IntentClassifier>,
     private val deviceStateProvider: DeviceStateProvider
@@ -83,6 +84,51 @@ class LLMProviderFactory @Inject constructor(
     suspend fun getActiveProvider(): LLMProvider {
         val config = settingsRepository.llmConfig.first()
         return getProviderByName(ProviderCatalog.canonicalName(config.activeProvider))
+    }
+
+    /**
+     * Returns the active planner followed only by explicitly configured,
+     * available fallbacks. Risk is evaluated before any alternate provider is
+     * contacted; high-impact plans never cross a provider boundary silently.
+     */
+    suspend fun getPlanningProviders(actionNames: Collection<String>): List<LLMProvider> {
+        val config = settingsRepository.llmConfig.first()
+        val activeName = ProviderCatalog.canonicalName(config.activeProvider)
+        val active = getProviderByName(activeName)
+        val risk = ActionSchema.highestRisk(actionNames)
+        val fallbackNames = ProviderSelectionPolicy.explicitFallbacks(
+            activeProvider = activeName,
+            configuredFallbacks = config.fallbackProviders,
+            risk = risk
+        )
+
+        val availableFallbacks = fallbackNames.mapNotNull { providerName ->
+            if (!isConfigured(config, providerName)) return@mapNotNull null
+            val provider = getProviderByName(providerName)
+            provider.takeIf { runCatching { it.isAvailable() }.getOrDefault(false) }
+        }
+        return listOf(active) + availableFallbacks
+    }
+
+    suspend fun recordPlanningLatency(response: LLMResponse): LatencyBudgetResult? =
+        runCatching { onDeviceLatencyTracker.recordPlanning(response) }.getOrNull()
+
+    private fun isConfigured(config: LLMConfig, providerName: String): Boolean {
+        val provider = ProviderCatalog.canonicalName(providerName)
+        if (ProviderCatalog.isOnDevice(provider)) return true
+        return when (provider) {
+            "Ollama" -> config.ollamaUrl.isNotBlank()
+            "Copilot API" -> config.copilotUrl.isNotBlank()
+            "Custom OpenAI Compatible" ->
+                config.customEndpoints[provider].orEmpty().isNotBlank() &&
+                    config.apiKeys[provider].orEmpty().isNotBlank()
+            else -> {
+                val model = config.selectedModelFor(provider)
+                !ProviderCatalog.requiresApiKey(provider) ||
+                    (provider == "Google Gemini" && model == "gemini-nano") ||
+                    config.apiKeys[provider].orEmpty().isNotBlank()
+            }
+        }
     }
 
     private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {

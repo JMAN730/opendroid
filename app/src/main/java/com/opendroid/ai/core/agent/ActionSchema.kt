@@ -9,7 +9,9 @@ data class ActionDefinition(
     val isSimple: Boolean = true,
     // Moves money or has irreversible/destructive consequence: always show the
     // approval modal in Auto mode, never offer an "Always allow" grant.
-    val neverAutoApprove: Boolean = false
+    val neverAutoApprove: Boolean = false,
+    /** Optional explicit routing risk; unspecified values use catalog policy. */
+    val risk: ActionRisk = ActionRisk.UNSPECIFIED
 )
 
 data class ParamDefinition(
@@ -1130,6 +1132,12 @@ object ActionSchema {
     /** Get action by name */
     fun getAction(name: String): ActionDefinition? =
         ALL_ACTIONS.find { it.name == name }
+
+    fun riskForAction(actionName: String): ActionRisk =
+        getAction(actionName)?.let(ActionRiskPolicy::forDefinition) ?: ActionRisk.SENSITIVE
+
+    fun highestRisk(actionNames: Iterable<String>): ActionRisk =
+        ActionRiskPolicy.highest(actionNames.map(::riskForAction))
 
     /** Check if action exists in schema */
     fun isValid(name: String): Boolean =
