@@ -5,8 +5,6 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.KeyStore
@@ -315,8 +313,8 @@ internal class KeystoreSecretRecords(
 }
 
 /**
- * A one-time migration source. Reading is best-effort: an unreadable source is reported, never
- * silently downgraded to a plaintext fallback.
+ * A one-time migration source. Reading is best-effort: failures are reported and never cause an
+ * unsafe write to a destination.
  */
 internal interface LegacySecretSource {
     fun keys(): SecretRecordResult<Set<String>>
@@ -328,73 +326,7 @@ internal interface LegacySecretSource {
 private class LegacyStorageCommitException : RuntimeException()
 
 /**
- * The last remaining use of `androidx.security:security-crypto` in the app.
- *
- * It exists only so values written by builds that predate the direct-Keystore stores can be
- * imported once. Nothing reads or writes this file at runtime, and it is never a fallback.
- */
-@Deprecated(
-    message = "Only use this encrypted preference source to import legacy values into a direct-Keystore store.",
-    level = DeprecationLevel.WARNING
-)
-internal class LegacyEncryptedPreferencesSource(
-    private val context: Context
-) : LegacySecretSource {
-    private val preferences: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            LEGACY_PREFERENCES_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    override fun keys(): SecretRecordResult<Set<String>> = withPreferences { it.all.keys }
-
-    override fun readString(key: String): SecretRecordResult<String?> = withPreferences {
-        it.getString(key, null)
-    }
-
-    override fun readBoolean(key: String): SecretRecordResult<Boolean?> = withPreferences {
-        if (it.contains(key)) it.getBoolean(key, false) else null
-    }
-
-    // Migration must observe whether the legacy deletion committed; edit { }
-    // discards the Boolean from commit(), so the KTX idiom cannot express this. See #99.
-    @Suppress("UseKtx")
-    override fun remove(key: String): SecretRecordResult<Unit> = withPreferences { preferences ->
-        if (preferences.edit().remove(key).commit()) Unit else throw LegacyStorageCommitException()
-    }
-
-    private fun <T> withPreferences(block: (SharedPreferences) -> T): SecretRecordResult<T> = try {
-        SecretRecordResult.Success(block(preferences))
-    } catch (_: LegacyStorageCommitException) {
-        SecretRecordResult.StorageUnavailable
-    } catch (_: java.io.IOException) {
-        SecretRecordResult.Unrecoverable
-    } catch (_: GeneralSecurityException) {
-        SecretRecordResult.Unrecoverable
-    } catch (_: SecurityException) {
-        SecretRecordResult.Unrecoverable
-    } catch (_: IllegalStateException) {
-        SecretRecordResult.Unrecoverable
-    } catch (_: ClassCastException) {
-        SecretRecordResult.Unrecoverable
-    } catch (_: RuntimeException) {
-        SecretRecordResult.Unrecoverable
-    }
-
-    private companion object {
-        const val LEGACY_PREFERENCES_NAME = "opendroid_secure_prefs"
-    }
-}
-
-/**
- * The oldest source: an unencrypted preference file written before any encrypted store existed.
+ * The remaining source: an unencrypted preference file written before any encrypted store existed.
  *
  * Values found here are imported into their classified destination and then erased.
  */
@@ -446,66 +378,7 @@ internal class LegacyPlaintextPreferencesSource(
 }
 
 /**
- * The ordered legacy sources every one-time import reads through.
- *
- * Both files must be covered by every importer: a value stranded in the older plaintext file is
- * a secret at rest that nothing would otherwise migrate or erase.
+ * The plaintext legacy source every one-time import reads through.
  */
-@Suppress("DEPRECATION")
-internal fun legacyPreferenceSources(context: Context): LegacySecretSource = ChainedLegacySecretSource(
-    listOf(
-        LegacyEncryptedPreferencesSource(context.applicationContext),
-        LegacyPlaintextPreferencesSource(context.applicationContext)
-    )
-)
-
-/**
- * Reads legacy sources in priority order so a newer encrypted value always wins over an older
- * plaintext one, while a removal still erases every copy.
- */
-internal class ChainedLegacySecretSource(
-    private val sources: List<LegacySecretSource>
-) : LegacySecretSource {
-    override fun keys(): SecretRecordResult<Set<String>> {
-        val all = linkedSetOf<String>()
-        for (source in sources) {
-            when (val result = source.keys()) {
-                is SecretRecordResult.Success -> all += result.value
-                SecretRecordResult.Unrecoverable -> return SecretRecordResult.Unrecoverable
-                SecretRecordResult.StorageUnavailable -> return SecretRecordResult.StorageUnavailable
-            }
-        }
-        return SecretRecordResult.Success(all)
-    }
-
-    override fun readString(key: String): SecretRecordResult<String?> =
-        firstPresent(key) { it.readString(key) }
-
-    override fun readBoolean(key: String): SecretRecordResult<Boolean?> =
-        firstPresent(key) { it.readBoolean(key) }
-
-    override fun remove(key: String): SecretRecordResult<Unit> {
-        for (source in sources) {
-            when (val result = source.remove(key)) {
-                is SecretRecordResult.Success -> Unit
-                SecretRecordResult.Unrecoverable -> return SecretRecordResult.Unrecoverable
-                SecretRecordResult.StorageUnavailable -> return SecretRecordResult.StorageUnavailable
-            }
-        }
-        return SecretRecordResult.Success(Unit)
-    }
-
-    private fun <T> firstPresent(
-        key: String,
-        read: (LegacySecretSource) -> SecretRecordResult<T?>
-    ): SecretRecordResult<T?> {
-        for (source in sources) {
-            when (val result = read(source)) {
-                is SecretRecordResult.Success -> result.value?.let { return SecretRecordResult.Success(it) }
-                SecretRecordResult.Unrecoverable -> return SecretRecordResult.Unrecoverable
-                SecretRecordResult.StorageUnavailable -> return SecretRecordResult.StorageUnavailable
-            }
-        }
-        return SecretRecordResult.Success(null)
-    }
-}
+internal fun legacyPreferenceSources(context: Context): LegacySecretSource =
+    LegacyPlaintextPreferencesSource(context.applicationContext)

@@ -91,5 +91,5 @@ Verification of the resolved graph:
 ## Security notes
 
 No permission check, foreground-service constraint, endpoint validation, or redaction rule
-was touched. `security-crypto`, the Retrofit/OkHttp stack (#72), and the Gradle/AGP 9
-migration (#73, #74) are deliberately out of scope.
+was touched. The Retrofit/OkHttp stack (#72) and the Gradle/AGP 9 migration (#73, #74) are
+deliberately out of scope; the retired encrypted-preferences dependency is removed separately by #98.

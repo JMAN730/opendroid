@@ -53,10 +53,11 @@ timestamp) live in
 they carry no personal or credential data, and the classification of every legacy key is recorded
 in `LegacySecurePreferenceInventory`.
 
-`SecurePrefs` is gone. `androidx.security:security-crypto` survives in exactly one place — the
-deprecated `LegacyEncryptedPreferencesSource` used to import values written by builds that predate
-these stores. It is never a runtime store and never a fallback, and it is scheduled for removal
-once the migration has shipped for a release.
+`SecurePrefs` and the retired AndroidX encrypted-preferences dependency are gone. The one-time
+import now reads only the older plaintext legacy preference file and writes its values through the
+direct-Keystore or app-settings destinations. A device that never ran a migrating release cannot
+unlock values from the retired encrypted file; it follows the existing re-onboarding or credential
+re-entry recovery path and never receives a plaintext fallback.
 
 ### 2.1. Cryptographic Schemes
 
@@ -65,7 +66,6 @@ once the migration has shipped for a release.
 | **Provider credentials** | Android KeyStore (`AES`, 256-bit, encrypt/decrypt only) | N/A | `AES/GCM/NoPadding`, random 96-bit IV, credential-ID AAD, versioned envelope |
 | **User profile (name, DOB)** | Android KeyStore (`AES`, 256-bit, encrypt/decrypt only, separate alias) | N/A | `AES/GCM/NoPadding`, random 96-bit IV, `user-profile` AAD, versioned envelope |
 | **Non-secret app settings** | None (no personal or credential data) | N/A | App-private storage, excluded from backup and device transfer |
-| **Legacy import source (read-only, one-time)** | Android KeyStore (`MasterKey` AES256_GCM) | `AES256_SIV` (Deterministic AEAD) | `AES256_GCM` (Authenticated Encryption) |
 | **Room Database (SQLite)** | App Sandboxed Storage (`opendroid_database`) | System Scoped Permissions | System Scoped Permissions |
 | **Downloaded Models** | Sandboxed Files Dir (`.litertlm` / `.task`) | Integrity Validation via SHA-256 | Integrity Validation via SHA-256 |
 
@@ -95,11 +95,10 @@ During application startup, `LegacyPreferenceMigration.run()` imports the non-pr
 bookkeeping key. Separately, `ProviderCredentialStore.migrateLegacyCredentials()` imports only
 `llm_api_key_*`, `elevenlabs_api_key`, and `huggingface_token`.
 
-Both read through `ChainedLegacySecretSource`, which prefers the encrypted legacy file over the
-older plaintext `opendroid_prefs` file for the same key. Every import durably commits the
-destination envelope **before** removing the legacy value, so retries are idempotent, a crash in
-between leaves a duplicate the next run resolves in favour of the committed destination, and a
-destination failure leaves the source intact.
+Both read the plaintext `opendroid_prefs` file. Every import durably commits the destination
+envelope **before** removing the legacy value, so retries are idempotent, a crash in between leaves
+a duplicate the next run resolves in favour of the committed destination, and a destination failure
+leaves the source intact.
 
 ---
 

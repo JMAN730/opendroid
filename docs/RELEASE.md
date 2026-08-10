@@ -11,9 +11,9 @@ Current release. Sideload the APK for direct install, or use the AAB for Play St
 ### Highlights since v1.0.2 (PR #30 by @JMAN730)
 
 #### 🔐 Security & Credential Hardening
-*   **Android Keystore Credential Storage**: Moved provider API credentials from `EncryptedSharedPreferences` to direct Android Keystore-backed encryption, with stale-credential recovery on decrypt failure and transactional (all-or-nothing) credential saves.
+*   **Android Keystore Credential Storage**: Moved provider API credentials from the former encrypted-preferences store to direct Android Keystore-backed encryption, with stale-credential recovery on decrypt failure and transactional (all-or-nothing) credential saves.
 *   **Keystore GCM IV Fix**: Stopped rejecting the Keystore-generated GCM IV on encrypt, which previously broke encryption on some devices.
-*   **SecurePrefs Retirement**: Retired `SecurePrefs` for non-provider callers and removed the deprecated `androidx.security:security-crypto` dependency after the direct Keystore migration.
+*   **SecurePrefs Retirement**: Retired `SecurePrefs` for non-provider callers and removed the deprecated encrypted-preferences dependency after the direct Keystore migration.
 *   **Approval & Storage Safety Remediation**: Closed PRD/TRD remediation gaps in action approval and storage safety; YOLO mode now explicitly (and only via user opt-in) bypasses the `neverAutoApprove` guard.
 *   **Typed LLM Errors**: Preserved typed LLM error information through Claude streaming responses instead of collapsing them to generic failures.
 
@@ -121,7 +121,7 @@ Developer-facing pre-release for sideload testing. Not a Play Store production u
 
 ### 🔄 Model Management & Secure Authentication Update (July 13, 2026)
 *   **On-Demand Model Downloader & Manager**: Created a complete lifecycle manager (`ModelManager` / `ModelRepository`) that supports downloading on-device LiteRT-LM models in the background via WorkManager, pausing, resuming, or canceling downloads, and verifying integrity.
-*   **Hugging Face Access Token Authentication**: Added secure token entry (masked password field with toggle, paste, and clear buttons) in Settings. Token is verified against HF `whoami-v2` API and stored securely using AES-256 via `EncryptedSharedPreferences`.
+*   **Hugging Face Access Token Authentication**: Added secure token entry (masked password field with toggle, paste, and clear buttons) in Settings. Token is verified against HF `whoami-v2` API and stored securely with AES-256 encryption.
 *   **Gated Model Gating**: Prompts user with a details dialog if they try to download a gated model (e.g. Gemma 3/4) without configuring a token.
 *   **Diagnostics and Error Page Integration**: Dynamically displays network speed (MB/s), downloaded sizes, and ETA calculations during transfer. Displays exact error causes (unauthorized token, network offline, 404) and shows a quick-link "Open Model Page" button to let users easily accept gated repository license terms on failure.
 *   **Integrity and JNI Loading Verifications**: Before marking a model as ready, the download worker validates the file size, checks the SHA-256 hash (if available), and attempts to load/initialize the model via the LiteRT C++ library to ensure compatibility and prevent archive errors.
@@ -235,7 +235,7 @@ First official production release of OpenDroid, targeting Google Play Store, Ama
 *   Macro recording and scheduled execution.
 
 #### 🔐 Security
-*   Encrypted API key storage using AndroidX Security Crypto.
+*   Encrypted API key storage using Android Keystore-backed encryption.
 *   Scoped network security — cleartext HTTP restricted to localhost only.
 *   Backup exclusion for encrypted preferences.
 

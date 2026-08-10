@@ -190,7 +190,7 @@ memories, and crash history.
   * **OkHttp & Logging Interceptor:** `4.12.0`
   * **Retrofit & Converter Gson:** `2.9.0`
 * **Security & Cryptography:**
-  * **Jetpack Security Crypto (EncryptedSharedPreferences):** `1.1.0-alpha06` - retained only as the deprecated one-time import source for values written by earlier builds
+  * **Android Keystore:** Platform-backed AES-256-GCM envelopes for provider credentials and profile data; no retired encrypted-preferences dependency
 * **User Interface:**
   * **Jetpack Compose BOM:** `2026.06.01`
   * **Lifecycle & ViewModel Compose Extensions:** `2.8.7`

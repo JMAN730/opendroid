@@ -129,7 +129,6 @@ fun LicenseScreen(
                             "• Kotlin Serialization — Apache License 2.0\n" +
                             "• Coil Image Loading — Apache License 2.0\n" +
                             "• Lottie Animations — Apache License 2.0\n" +
-                            "• AndroidX Security Crypto — Apache License 2.0\n" +
                             "• DataStore Preferences — Apache License 2.0"
                 )
             }

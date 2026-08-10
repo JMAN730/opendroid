@@ -378,35 +378,6 @@ class LegacySecurePreferencesRetirementTest {
         assertEquals("Ada", legacy.strings["user_name"])
     }
 
-    // ---------------------------------------------------------------- legacy source chaining
-
-    @Test
-    fun `a newer encrypted value wins over the older plaintext copy and both are cleared`() {
-        val encrypted = InMemoryLegacySource(strings = mutableMapOf("user_name" to "Encrypted"))
-        val plaintext = InMemoryLegacySource(strings = mutableMapOf("user_name" to "Plaintext"))
-        val chained = ChainedLegacySecretSource(listOf(encrypted, plaintext))
-
-        assertEquals(
-            "Encrypted",
-            (chained.readString("user_name") as SecretRecordResult.Success).value
-        )
-        assertTrue(chained.remove("user_name") is SecretRecordResult.Success)
-        assertTrue(encrypted.strings.isEmpty())
-        assertTrue(plaintext.strings.isEmpty())
-    }
-
-    @Test
-    fun `a plaintext-only value is still imported when the encrypted file has nothing`() {
-        val encrypted = InMemoryLegacySource()
-        val plaintext = InMemoryLegacySource(strings = mutableMapOf("user_name" to "Plaintext"))
-        val chained = ChainedLegacySecretSource(listOf(encrypted, plaintext))
-
-        assertEquals(
-            "Plaintext",
-            (chained.readString("user_name") as SecretRecordResult.Success).value
-        )
-    }
-
     // ---------------------------------------------------------------- dependency boundary
 
     @Test
@@ -416,37 +387,24 @@ class LegacySecurePreferencesRetirementTest {
     }
 
     @Test
-    fun `EncryptedSharedPreferences survives only inside the deprecated one-time importer`() {
-        val expected = setOf("KeystoreSecretStorage.kt")
+    fun `security crypto has no production references`() {
+        val forbiddenTokens = listOf(
+            "EncryptedSharedPreferences",
+            "MasterKey",
+            "androidx.security.crypto"
+        )
 
-        assertEquals(expected, mainSourcesMentioning("EncryptedSharedPreferences"))
-        assertEquals(expected, mainSourcesMentioning("MasterKey"))
-        assertEquals(expected, mainSourcesMentioning("androidx.security.crypto"))
+        for (token in forbiddenTokens) {
+            assertTrue("Production source references $token", mainSourcesMentioning(token).isEmpty())
+        }
+        assertFalse(
+            File("build.gradle").readText().contains("androidx.security:" + "security-crypto")
+        )
+        assertFalse(File("proguard-rules.pro").readText().contains("androidx.security.crypto"))
     }
 
     @Test
-    fun `runtime storage no longer depends on the legacy library`() {
-        val importerSource = File(
-            "src/main/java/com/opendroid/ai/core/security/KeystoreSecretStorage.kt"
-        ).readText()
-
-        // The library appears only behind a deprecated migration-only source, never as a store.
-        assertTrue(importerSource.contains("@Deprecated"))
-        assertTrue(importerSource.contains("class LegacyEncryptedPreferencesSource"))
-        assertFalse(
-            File("src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt")
-                .readText()
-                .contains("EncryptedSharedPreferences")
-        )
-        assertFalse(
-            File("src/main/java/com/opendroid/ai/core/settings/AppSettingsStore.kt")
-                .readText()
-                .contains("EncryptedSharedPreferences")
-        )
-    }
-
-    @Test
-    fun `every importer reads both legacy files so no secret is stranded in plaintext`() {
+    fun `every importer reads the plaintext legacy source so values can be safely rehomed`() {
         val importers = listOf(
             "src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt",
             "src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt",

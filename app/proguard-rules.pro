@@ -71,9 +71,6 @@
 -dontwarn com.airbnb.lottie.**
 -keep class com.airbnb.lottie.** { *; }
 
-# ── Security Crypto ──
--keep class androidx.security.crypto.** { *; }
-
 # ── General ──
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
