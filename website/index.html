@@ -1,412 +1,522 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="bg-[#0A0A0A]">
 <head>
-  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('opendroid-theme') || 'dark');</script>
-
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenDroid — Your Open Autonomous Android Agent</title>
-  <meta name="description" content="OpenDroid is a production-ready, autonomous, self-planning AI assistant for Android. Break complex goals into sub-tasks with full device control.">
+  <meta name="description" content="OpenDroid is a production-ready, autonomous, self-planning AI assistant for Android. Execute complex device workflows and automate multi-step tasks autonomously.">
   <meta name="keywords" content="OpenDroid, Android AI, autonomous agent, accessibility automation, open source">
-  <meta name="author" content="yashab-cyber">
+  <meta name="author" content="OpenDroid Contributors">
+
   <meta property="og:title" content="OpenDroid — Your Open Autonomous Android Agent">
   <meta property="og:description" content="A fully agentic AI system capable of breaking complex goals into sequential sub-tasks, executing them through direct device controls.">
-  <meta property="og:image" content="https://yashab-cyber.github.io/opendroid/assets/bot.png">
+  <meta property="og:image" content="assets/bot.png">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://yashab-cyber.github.io/opendroid/">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenDroid — Your Open Autonomous Android Agent">
   <meta name="twitter:description" content="A fully agentic AI system capable of breaking complex goals into sequential sub-tasks, executing them through direct device controls.">
-  <meta name="twitter:image" content="https://yashab-cyber.github.io/opendroid/assets/bot.png">
-  <link rel="canonical" href="https://yashab-cyber.github.io/opendroid/">
+  <meta name="twitter:image" content="assets/bot.png">
+
   <link rel="icon" type="image/png" href="assets/bot.png">
-  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Inter & Geist Sans Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              bg: '#0A0A0A',
+              surface: '#141414',
+              border: '#27272A',
+              primary: '#FAFAFA',
+              secondary: '#A1A1AA',
+              accent: '#10B981',
+              accentHover: '#059669',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'Geist', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom styling to ensure premium transitions and animations without layout shift */
+    body {
+      background-color: #0A0A0A;
+      color: #FAFAFA;
+      font-family: 'Inter', 'Geist', sans-serif;
+    }
+    /* Simple tracking tight utilities for premium headers */
+    .tracking-tight-premium {
+      letter-spacing: -0.03em;
+    }
+    .tracking-tighter-premium {
+      letter-spacing: -0.04em;
+    }
+  </style>
 </head>
-<body>
+<body class="selection:bg-brand-accent/30 selection:text-brand-accent antialiased">
 
-<!-- Navigation -->
-<nav class="navbar" id="navbar">
-  <div class="nav-inner">
-    <a href="index.html" class="nav-brand">
-      <img src="assets/bot.png" alt="OpenDroid">
-      <span>OpenDroid</span>
-    </a>
-    <div class="nav-right">
-    <ul class="nav-links" id="nav-links">
-      <li class="nav-dropdown">
-        <a href="features.html">Products</a>
-        <ul class="dropdown-menu">
-          <li><a href="features.html">Features</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank">Download APK</a></li>
-          <li><a href="https://indusapp.store/wphbqhzu" target="_blank">Indus Appstore</a></li>
-        </ul>
-      </li>
-      <li class="nav-dropdown">
-        <a href="features.html">Use Cases</a>
-        <ul class="dropdown-menu">
-          <li><a href="features.html#feat-planning">Autonomous Planning</a></li>
-          <li><a href="features.html#feat-device">Device Control</a></li>
-          <li><a href="features.html#feat-accessibility">App Automation</a></li>
-          <li><a href="features.html#feat-vision">Vision Engine</a></li>
-        </ul>
-      </li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="support.html">Support</a></li>
-      <li class="nav-dropdown">
-        <a href="#">Resources</a>
-        <ul class="dropdown-menu">
-          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a></li>
-          <li><a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer">Product Hunt</a></li>
-          <li><a href="https://discord.gg/knRMyFmvpp" target="_blank">Discord</a></li>
-          <li><a href="contributor.html">Contributors</a></li>
-          <li><a href="security.html">Security</a></li>
-          <li><a href="privacy.html">Privacy</a></li>
-        </ul>
-      </li>
-      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta" aria-label="Download OpenDroid">
-        Download
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-      </a></li>
-    </ul>
-    <div class="nav-controls">
-      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Enable light mode" aria-pressed="false">
-        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        <span class="theme-toggle-text-wrap"><span class="tt-dark">Dark</span><span class="tt-light">Light</span></span>
-      </button>
-      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu">
-        <span></span><span></span><span></span>
-      </button>
+  <!-- Navigation (Navbar) -->
+  <header class="sticky top-0 z-50 w-full border-b border-brand-border bg-[#0A0A0A]/85 backdrop-blur-md">
+    <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+
+      <!-- Logo -->
+      <a href="index.html" class="flex items-center gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] rounded-md py-1 px-1.5 transition-opacity hover:opacity-90" aria-label="OpenDroid Home">
+        <img src="assets/bot.png" alt="OpenDroid logo" class="h-7 w-7" />
+        <span class="font-sans font-semibold tracking-tight text-brand-primary text-lg">OpenDroid</span>
+      </a>
+
+      <!-- Desktop Links -->
+      <nav class="hidden md:flex items-center gap-8" aria-label="Main Navigation">
+        <a href="features.html" class="text-sm font-medium text-brand-secondary transition-colors hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">Features</a>
+        <a href="#architecture" class="text-sm font-medium text-brand-secondary transition-colors hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">Architecture</a>
+        <a href="about.html" class="text-sm font-medium text-brand-secondary transition-colors hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">Docs</a>
+        <a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-brand-secondary transition-colors hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">GitHub</a>
+      </nav>
+
+      <!-- CTA / Controls -->
+      <div class="flex items-center gap-4">
+        <a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex items-center justify-center rounded-lg border border-brand-border bg-transparent px-4 py-2 text-sm font-medium text-brand-primary transition-all hover:bg-brand-surface hover:border-brand-secondary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A]" aria-label="Download OpenDroid APK">
+          Download
+        </a>
+
+        <!-- Mobile menu toggle -->
+        <button id="mobile-menu-btn" type="button" class="inline-flex md:hidden h-10 w-10 items-center justify-center rounded-lg border border-brand-border text-brand-secondary hover:text-brand-primary hover:bg-brand-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent" aria-controls="mobile-menu" aria-expanded="false" aria-label="Toggle main menu">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"></path>
+          </svg>
+        </button>
+      </div>
     </div>
-  </div>
-</nav>
 
-<!-- Hero -->
-<section class="hero" id="hero">
-  <div class="container">
-    <div class="hero-grid">
-      <div class="hero-content">
-        <div class="hero-badge">
-          <span class="pulse"></span>
-          Open Source &amp; Free
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="hidden md:hidden border-b border-brand-border bg-[#0A0A0A] px-6 py-4 space-y-3" aria-label="Mobile Navigation">
+      <a href="features.html" class="block text-base font-medium text-brand-secondary hover:text-brand-primary py-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent px-1">Features</a>
+      <a href="#architecture" class="block text-base font-medium text-brand-secondary hover:text-brand-primary py-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent px-1">Architecture</a>
+      <a href="about.html" class="block text-base font-medium text-brand-secondary hover:text-brand-primary py-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent px-1">Docs</a>
+      <a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer" class="block text-base font-medium text-brand-secondary hover:text-brand-primary py-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent px-1">GitHub</a>
+      <a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" rel="noopener noreferrer" class="block w-full text-center rounded-lg border border-brand-border bg-brand-surface py-2.5 text-sm font-medium text-brand-primary hover:bg-zinc-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent">
+        Download
+      </a>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="relative overflow-hidden py-24 md:py-32">
+      <!-- Minimalist Background Grid overlay for tech aesthetic -->
+      <div class="absolute inset-0 bg-[linear-gradient(to_right,#141414_1px,transparent_1px),linear-gradient(to_bottom,#141414_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-25 pointer-events-none"></div>
+
+      <div class="mx-auto max-w-4xl px-6 text-center relative z-10">
+        <!-- Badge -->
+        <div class="inline-flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface px-3.5 py-1 text-xs font-medium text-brand-accent mb-8">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+          </span>
+          Production-Ready Autonomous Agent
         </div>
-        <h1>Your Open<br><span class="gradient-text">Autonomous Android</span><br>Agent</h1>
-        <p class="hero-description">
+
+        <!-- H1 Title -->
+        <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tighter-premium text-brand-primary mb-6 leading-none">
+          Your Open Autonomous Android Agent.
+        </h1>
+
+        <!-- Subtitle -->
+        <p class="text-base sm:text-lg md:text-xl text-brand-secondary max-w-2xl mx-auto mb-10 leading-relaxed font-normal">
           A production-ready, modular AI assistant designed to execute complex device workflows and automate multi-step tasks autonomously.
         </p>
-        <div class="hero-buttons">
-          <a href="https://github.com/yashab-cyber/opendroid/releases" class="btn btn-primary" id="download-btn" aria-label="Download APK">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+
+        <!-- CTA Button (Single Primary) -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+          <a href="https://github.com/yashab-cyber/opendroid/releases" class="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-brand-accent px-8 py-4 text-base font-semibold text-[#06110B] hover:bg-brand-accentHover transition-all shadow-[0_4px_20px_rgba(16,185,129,0.25)] hover:shadow-[0_4px_25px_rgba(16,185,129,0.4)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98]">
+            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2a1 1 0 0 1 .993.883L13 3v10.585l2.293-2.292a1 1 0 0 1 1.32-.083l.094.083a1 1 0 0 1 0 1.414l-4 4a1 1 0 0 1-1.32.083l-.094-.083-4-4a1 1 0 0 1 1.32-1.497l.094.083L11 13.585V3a1 1 0 0 1 1-1zm8 14a1 1 0 0 1 .993.883L21 17v2a3 3 0 0 1-2.824 2.995L18 22H6a3 3 0 0 1-2.995-2.824L3 19v-2a1 1 0 0 1 1.993-.117L5 17v2a1 1 0 0 0 .883.993L6 20h12a1 1 0 0 0 .993-.883L19 19v-2a1 1 0 0 1 1-1z"></path>
+            </svg>
             Download APK
           </a>
-          <a href="https://indusapp.store/wphbqhzu" target="_blank" class="indus-badge-link" id="indus-badge-btn" aria-label="Get it on Indus Appstore">
-            <img src="assets/indus-badge.png" alt="Get it on Indus Appstore" class="indus-badge-img">
+        </div>
+
+        <!-- Social Proof (Subtle, Desaturated Monochrome) -->
+        <div class="border-t border-brand-border/40 pt-10 max-w-md mx-auto">
+          <p class="text-xs font-semibold uppercase tracking-widest text-brand-secondary/60 mb-5">Supported & Featured On</p>
+          <div class="flex items-center justify-center gap-8">
+            <a href="https://www.producthunt.com/products/opendroid" target="_blank" rel="noopener noreferrer" class="group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded p-1 transition-all duration-300" aria-label="Product Hunt Page">
+              <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205420&theme=light&t=1784972318707" alt="OpenDroid on Product Hunt" class="h-10 w-auto filter grayscale contrast-200 brightness-50 group-hover:grayscale-0 group-hover:brightness-100 group-hover:contrast-100 transition-all duration-300" />
+            </a>
+            <a href="https://indusapp.store/wphbqhzu" target="_blank" rel="noopener noreferrer" class="group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded p-1 transition-all duration-300" aria-label="Indus Appstore Page">
+              <img src="assets/indus-badge.png" alt="Get it on Indus Appstore" class="h-9 w-auto filter grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-300" />
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product Visualization Section -->
+    <section class="pb-24 md:pb-32 px-6">
+      <div class="mx-auto max-w-5xl">
+        <div class="rounded-2xl border border-brand-border bg-brand-surface p-2 shadow-2xl relative group overflow-hidden">
+          <div class="absolute inset-0 bg-brand-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+          <div class="rounded-xl overflow-hidden border border-brand-border/60 aspect-[16/9] bg-black">
+            <video autoplay muted loop playsinline class="w-full h-full object-cover" id="hero-video" aria-label="3D demonstration video of OpenDroid agent greeting the user">
+              <source src="assets/opendroid-3d-hello.mp4" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        </div>
+        <div class="text-center mt-4">
+          <span class="text-xs font-mono text-brand-secondary">OpenDroid interactive 3D model interface greeting the user</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bento Grid Features Section -->
+    <section class="py-24 md:py-32 border-t border-brand-border bg-[#070707] relative">
+      <div class="mx-auto max-w-7xl px-6">
+
+        <!-- Section Header -->
+        <div class="max-w-3xl mx-auto text-center mb-16 md:mb-24">
+          <div class="text-xs font-mono text-brand-accent uppercase tracking-widest mb-3">Core Capabilities</div>
+          <h2 class="text-3xl sm:text-4xl font-bold tracking-tight-premium text-brand-primary mb-4">
+            Everything Your Phone Needs to Think for Itself.
+          </h2>
+          <p class="text-base text-brand-secondary leading-relaxed">
+            OpenDroid integrates deep operating system controls, multimodal visual analysis, and long-term memory systems into a single responsive agent.
+          </p>
+        </div>
+
+        <!-- Asymmetric Bento Grid (4 Cards total: 1 large, 1 medium, 2 small) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+          <!-- Card 1: Autonomous Planning (Large - Spans 2 columns on desktop) -->
+          <div class="md:col-span-2 group relative rounded-2xl border border-brand-border bg-brand-surface p-8 transition-all hover:border-brand-accent/40 hover:-translate-y-1 hover:shadow-xl duration-300 flex flex-col justify-between">
+            <div class="space-y-4">
+              <div class="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-brand-border bg-[#0A0A0A] text-brand-accent">
+                <!-- Lucide: Route / Workflow Icon -->
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <circle cx="18" cy="18" r="3"></circle>
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M6 9v3a3 3 0 0 0 3 3h3"></path>
+                  <path d="M12 15v-3a3 3 0 0 1 3-3h3"></path>
+                </svg>
+              </div>
+              <h3 class="text-xl font-bold text-brand-primary">Autonomous Planning</h3>
+              <p class="text-sm text-brand-secondary leading-relaxed max-w-md">
+                Decomposes compound, multi-step prompts into sequential logic gates, executing tasks through device control protocols. If a sub-task fails, the agent continuously recalculates in real-time.
+              </p>
+            </div>
+
+            <!-- Graphic / UI Preview within the large bento card -->
+            <div class="mt-8 border border-brand-border/60 rounded-xl bg-black/50 p-4 font-mono text-xs text-brand-secondary space-y-2">
+              <div class="flex items-center gap-2 border-b border-brand-border/40 pb-2">
+                <span class="h-2 w-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                <span class="text-[10px] uppercase font-bold text-brand-primary">OpenDroid Plan Engine</span>
+              </div>
+              <div class="text-emerald-400 font-medium">> Prompt: "Send latest screenshot to Anna and set alarms"</div>
+              <div class="pl-3 border-l border-brand-border/80 py-1 space-y-1">
+                <div class="text-brand-primary flex items-center gap-2">
+                  <svg class="h-3 w-3 text-brand-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path></svg>
+                  1. Capture screen buffer
+                </div>
+                <div class="text-brand-primary flex items-center gap-2">
+                  <svg class="h-3 w-3 text-brand-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path></svg>
+                  2. Extract contact information ("Anna")
+                </div>
+                <div class="text-yellow-500 flex items-center gap-2">
+                  <span class="h-3 w-3 flex items-center justify-center text-[10px] font-bold border border-yellow-500/50 rounded-full">!</span>
+                  3. Dispatch Accessibility automated share (Retrying...)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Full Device Control (Medium - Spans 1 column) -->
+          <div class="group relative rounded-2xl border border-brand-border bg-brand-surface p-8 transition-all hover:border-brand-accent/40 hover:-translate-y-1 hover:shadow-xl duration-300 flex flex-col justify-between">
+            <div class="space-y-4">
+              <div class="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-brand-border bg-[#0A0A0A] text-brand-accent">
+                <!-- Lucide: Smartphone -->
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect>
+                  <path d="M12 18h.01"></path>
+                </svg>
+              </div>
+              <h3 class="text-xl font-bold text-brand-primary">Full Device Control</h3>
+              <p class="text-sm text-brand-secondary leading-relaxed">
+                Seamlessly control system settings like brightness, volume, Wi-Fi, bluetooth, flashlights, active screen locking, and execute commands through system APIs.
+              </p>
+            </div>
+
+            <div class="mt-8 grid grid-cols-2 gap-2 text-[11px] font-mono">
+              <div class="rounded-lg bg-[#0A0A0A] p-2.5 border border-brand-border/40 text-brand-primary flex items-center gap-2">
+                <span class="h-1.5 w-1.5 rounded-full bg-brand-accent"></span> Brightness
+              </div>
+              <div class="rounded-lg bg-[#0A0A0A] p-2.5 border border-brand-border/40 text-brand-primary flex items-center gap-2">
+                <span class="h-1.5 w-1.5 rounded-full bg-brand-accent"></span> Flashlight
+              </div>
+              <div class="rounded-lg bg-[#0A0A0A] p-2.5 border border-brand-border/40 text-brand-primary flex items-center gap-2">
+                <span class="h-1.5 w-1.5 rounded-full bg-brand-accent"></span> Wi-Fi Toggle
+              </div>
+              <div class="rounded-lg bg-[#0A0A0A] p-2.5 border border-brand-border/40 text-brand-primary flex items-center gap-2">
+                <span class="h-1.5 w-1.5 rounded-full bg-brand-accent"></span> AlarmManager
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Memory (Small - Spans 1 column) -->
+          <div class="group relative rounded-2xl border border-brand-border bg-brand-surface p-8 transition-all hover:border-brand-accent/40 hover:-translate-y-1 hover:shadow-xl duration-300 flex flex-col justify-between">
+            <div class="space-y-4">
+              <div class="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-brand-border bg-[#0A0A0A] text-brand-accent">
+                <!-- Lucide: Database -->
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                  <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+                  <path d="M3 12A9 3 0 0 0 21 12"></path>
+                </svg>
+              </div>
+              <h3 class="text-lg font-bold text-brand-primary">Multi-Tier Memory</h3>
+              <p class="text-sm text-brand-secondary leading-relaxed">
+                Retains temporal context over 4 structural layers: Working, Episodic, Semantic, and custom macro Procedural memory.
+              </p>
+            </div>
+            <div class="mt-8 border-t border-brand-border/40 pt-4">
+              <span class="text-[10px] font-mono text-brand-secondary uppercase">Local Room DB Secured</span>
+            </div>
+          </div>
+
+          <!-- Card 4: Vision (Small - Spans 1 column) -->
+          <div class="group relative rounded-2xl border border-brand-border bg-brand-surface p-8 transition-all hover:border-brand-accent/40 hover:-translate-y-1 hover:shadow-xl duration-300 flex flex-col justify-between">
+            <div class="space-y-4">
+              <div class="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-brand-border bg-[#0A0A0A] text-brand-accent">
+                <!-- Lucide: Eye -->
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </div>
+              <h3 class="text-lg font-bold text-brand-primary">Vision Engine</h3>
+              <p class="text-sm text-brand-secondary leading-relaxed">
+                Captures and analyzes active screen buffers using multimodal vision LLMs, automatically falling back to robust local XML text-scraping on older systems.
+              </p>
+            </div>
+            <div class="mt-8 border-t border-brand-border/40 pt-4">
+              <span class="text-[10px] font-mono text-brand-secondary uppercase">Multimodal AI Enabled</span>
+            </div>
+          </div>
+
+          <!-- Extra Minimal Bento CTA Slot (Spans 1 column to balance grid) -->
+          <div class="group relative rounded-2xl border border-dashed border-brand-border bg-transparent p-8 transition-all hover:border-brand-accent/40 hover:-translate-y-1 duration-300 flex flex-col justify-between items-center text-center">
+            <div class="my-auto space-y-4">
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-brand-border text-brand-secondary">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
+                </svg>
+              </div>
+              <h4 class="text-sm font-semibold text-brand-primary">Want to inspect deeper?</h4>
+              <p class="text-xs text-brand-secondary max-w-[200px]">
+                Browse the complete architectural breakdowns and active codebase features.
+              </p>
+              <a href="features.html" class="inline-flex text-xs font-semibold text-brand-accent hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-accent rounded p-0.5">
+                Explore All Capabilities &rarr;
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Architecture & Modularity Section -->
+    <section id="architecture" class="py-24 md:py-32 bg-[#0A0A0A]">
+      <div class="mx-auto max-w-7xl px-6">
+
+        <!-- Section Header -->
+        <div class="max-w-3xl mx-auto text-center mb-16 md:mb-24">
+          <div class="text-xs font-mono text-brand-accent uppercase tracking-widest mb-3">System Flow</div>
+          <h2 class="text-3xl sm:text-4xl font-bold tracking-tight-premium text-brand-primary mb-4">
+            Architecture & Modularity
+          </h2>
+          <p class="text-base text-brand-secondary leading-relaxed">
+            Engineered using robust Android components, a powerful AI reasoning core, and deep system automation bridges.
+          </p>
+        </div>
+
+        <!-- System Flow Visual Representation -->
+        <div class="max-w-4xl mx-auto mb-16 border border-brand-border bg-brand-surface rounded-2xl p-8 relative overflow-hidden shadow-xl">
+          <div class="absolute inset-0 bg-gradient-to-r from-brand-accent/5 to-transparent pointer-events-none"></div>
+
+          <div class="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-4 relative z-10">
+            <!-- Node 1 -->
+            <div class="flex flex-col items-center text-center p-5 rounded-xl border border-brand-border bg-black/40 w-full md:w-64">
+              <div class="text-brand-accent font-mono text-xs font-bold uppercase mb-2">Layer 1</div>
+              <div class="font-bold text-brand-primary text-sm mb-1">Jetpack Compose UI</div>
+              <p class="text-xs text-brand-secondary">Modern Android frontend offering chat, macro planning loops, and benchmarks.</p>
+            </div>
+
+            <!-- Arrow -->
+            <div class="flex items-center justify-center text-brand-accent/60 animate-pulse">
+              <svg class="h-6 w-6 rotate-90 md:rotate-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
+              </svg>
+            </div>
+
+            <!-- Node 2 -->
+            <div class="flex flex-col items-center text-center p-5 rounded-xl border border-brand-accent/30 bg-[#10B981]/5 w-full md:w-64">
+              <div class="text-brand-accent font-mono text-xs font-bold uppercase mb-2">Layer 2</div>
+              <div class="font-bold text-brand-primary text-sm mb-1">Agent Core</div>
+              <p class="text-xs text-brand-secondary">The planner, reasoning loop, and context memory engines acting on goals.</p>
+            </div>
+
+            <!-- Arrow -->
+            <div class="flex items-center justify-center text-brand-accent/60 animate-pulse">
+              <svg class="h-6 w-6 rotate-90 md:rotate-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
+              </svg>
+            </div>
+
+            <!-- Node 3 -->
+            <div class="flex flex-col items-center text-center p-5 rounded-xl border border-brand-border bg-black/40 w-full md:w-64">
+              <div class="text-brand-accent font-mono text-xs font-bold uppercase mb-2">Layer 3</div>
+              <div class="font-bold text-brand-primary text-sm mb-1">Services</div>
+              <p class="text-xs text-brand-secondary">Accessibility services, TelephonyManager, LLM Providers, and local Room database.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Clean Tabular Grid Representation -->
+        <div class="max-w-4xl mx-auto overflow-hidden border border-brand-border rounded-xl bg-brand-surface shadow-lg">
+          <table class="min-w-full divide-y divide-brand-border text-left font-sans text-sm">
+            <thead class="bg-black/40 text-brand-primary text-xs uppercase tracking-wider font-semibold">
+              <tr>
+                <th scope="col" class="px-6 py-4">System Layer</th>
+                <th scope="col" class="px-6 py-4">Core Components</th>
+                <th scope="col" class="px-6 py-4">Technical Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-brand-border/60 text-brand-secondary">
+              <tr class="hover:bg-black/20 transition-colors">
+                <td class="px-6 py-4 font-mono font-medium text-brand-primary">Jetpack Compose UI</td>
+                <td class="px-6 py-4 text-brand-primary">Chat Screen, Plan Graph, Settings</td>
+                <td class="px-6 py-4">Provides the futuristic user cockpit. Built natively on Android using declarative reactive state flows.</td>
+              </tr>
+              <tr class="hover:bg-black/20 transition-colors">
+                <td class="px-6 py-4 font-mono font-medium text-brand-accent">Agent Core</td>
+                <td class="px-6 py-4 text-brand-primary">PlanManager, Memory Engines, LLM Gateway</td>
+                <td class="px-6 py-4">The core logic hub. Decomposes tasks, coordinates tool invocation, and manages user preferences locally.</td>
+              </tr>
+              <tr class="hover:bg-black/20 transition-colors">
+                <td class="px-6 py-4 font-mono font-medium text-brand-primary">Services Layer</td>
+                <td class="px-6 py-4 text-brand-primary">Accessibility Bridges, Room Database</td>
+                <td class="px-6 py-4">Direct Android hooks. Performs on-screen gestures, queries telephony states, and stores persistent memories.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-brand-border bg-[#0A0A0A] py-16">
+    <div class="mx-auto max-w-7xl px-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8 mb-12">
+
+        <!-- Brand / About Column -->
+        <div class="space-y-4 col-span-1 md:col-span-1">
+          <a href="index.html" class="flex items-center gap-2.5 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded p-0.5" aria-label="OpenDroid Home">
+            <img src="assets/bot.png" alt="OpenDroid logo" class="h-6 w-6" />
+            <span class="font-sans font-semibold tracking-tight text-brand-primary text-base">OpenDroid</span>
           </a>
-          <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer" class="producthunt-badge-link" id="producthunt-badge-btn">
-            <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205420&amp;theme=light&amp;t=1784972318707" alt="Opendroid - Autonomous A.I agent for Android. | Product Hunt" width="250" height="54">
-          </a>
-          <a href="https://github.com/yashab-cyber/opendroid" target="_blank" class="btn btn-secondary" id="github-btn" aria-label="Star on GitHub">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-            Star on GitHub
-          </a>
+          <p class="text-sm text-brand-secondary leading-relaxed max-w-xs">
+            The premium, production-ready autonomous Android agent. Built transparently under Apache License 2.0.
+          </p>
         </div>
-      </div>
-      <div class="hero-visual">
-        <div class="device-frame-wrapper">
-          <div class="device-frame-screen">
-            <img src="assets/screenshot/Screenshot_20260528-234508_OpenDroid.png" alt="OpenDroid Interface Screen Preview">
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
-<!-- 3D Video Showcase -->
-<section class="section video-showcase-section" id="video-showcase">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="label">Meet OpenDroid</span>
-      <h2>Say Hello to Your AI Agent — in 3D</h2>
-      <p>Watch OpenDroid come to life with a friendly greeting, rendered in stunning 3D.</p>
-    </div>
-    <div class="video-showcase reveal">
-      <div class="video-container">
-        <video autoplay muted loop playsinline id="hero-video">
-          <source src="assets/opendroid-3d-hello.mp4" type="video/mp4">
-          Your browser does not support the video tag.
-        </video>
-      </div>
-      <p class="video-caption">OpenDroid saying hi — rendered in 3D ✨</p>
-    </div>
-  </div>
-</section>
+        <!-- Links Column 1: Product -->
+        <div class="space-y-3">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-brand-primary">Product</h4>
+          <ul class="space-y-2 text-sm">
+            <li>
+              <a href="features.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Features</a>
+            </li>
+            <li>
+              <a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" rel="noopener noreferrer" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Download Releases</a>
+            </li>
+            <li>
+              <a href="https://indusapp.store/wphbqhzu" target="_blank" rel="noopener noreferrer" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Indus Appstore</a>
+            </li>
+          </ul>
+        </div>
 
-<!-- Stats -->
-<section class="section" id="stats">
-  <div class="container">
-    <div class="stats-bar reveal">
-      <div class="stat">
-        <div class="number">30+</div>
-        <div class="label">System Actions</div>
-      </div>
-      <div class="stat">
-        <div class="number">10+</div>
-        <div class="label">LLM Providers</div>
-      </div>
-      <div class="stat">
-        <div class="number">4</div>
-        <div class="label">Memory Tiers</div>
-      </div>
-      <div class="stat">
-        <div class="number">100%</div>
-        <div class="label">Open Source</div>
-      </div>
-    </div>
-  </div>
-</section>
+        <!-- Links Column 2: Resources -->
+        <div class="space-y-3">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-brand-primary">Resources</h4>
+          <ul class="space-y-2 text-sm">
+            <li>
+              <a href="about.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">About</a>
+            </li>
+            <li>
+              <a href="contributor.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Contributors</a>
+            </li>
+            <li>
+              <a href="security.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Security</a>
+            </li>
+          </ul>
+        </div>
 
-<!-- Features -->
-<section class="section" id="features" style="background: var(--bg-secondary);">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="label">Core Capabilities</span>
-      <h2>Everything Your Phone Needs to Think for Itself</h2>
-      <p>OpenDroid combines autonomous planning, deep device integration, and multi-modal AI into one seamless agent.</p>
-    </div>
-    <div class="feature-grid">
-      <div class="glass-card feature-card reveal" id="feat-planning">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1 0-3.12 3 3 0 0 1 0-4.88 2.5 2.5 0 0 1 0-3.12A2.5 2.5 0 0 1 9.5 2z"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 0-3.12 3 3 0 0 0 0-4.88 2.5 2.5 0 0 0 0-3.12A2.5 2.5 0 0 0 14.5 2z"></path></svg>
-          </div>
-          <h3>Autonomous Planning</h3>
-          <p>Breaks complex multi-step commands into logical sub-tasks, executes sequentially, and dynamically replans on failure.</p>
+        <!-- Links Column 3: Legal -->
+        <div class="space-y-3">
+          <h4 class="text-xs font-mono uppercase tracking-wider text-brand-primary">Legal</h4>
+          <ul class="space-y-2 text-sm">
+            <li>
+              <a href="privacy.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Privacy Policy</a>
+            </li>
+            <li>
+              <a href="terms.html" class="text-brand-secondary hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded">Terms of Service</a>
+            </li>
+          </ul>
         </div>
+
       </div>
-      <div class="glass-card feature-card reveal" id="feat-device">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-          </div>
-          <h3>Full Device Control</h3>
-          <p>Brightness, Wi-Fi, Bluetooth, flashlight, alarms, timers, calendar, calls, SMS — all controlled autonomously.</p>
+
+      <!-- Footer Bottom -->
+      <div class="border-t border-brand-border/60 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-brand-secondary">
+        <div>
+          &copy; 2026 OpenDroid Contributors. Apache License 2.0.
         </div>
-      </div>
-      <div class="glass-card feature-card reveal" id="feat-accessibility">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
-          </div>
-          <h3>Accessibility Automation</h3>
-          <p>Clicks, scrolls, reads screens, and automates third-party apps like WhatsApp and Maps via Accessibility Services.</p>
-        </div>
-      </div>
-      <div class="glass-card feature-card reveal" id="feat-vision">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-          </div>
-          <h3>Vision Engine</h3>
-          <p>Captures and analyzes screenshots using multimodal LLMs. Falls back to text-scraping on older devices.</p>
-        </div>
-      </div>
-      <div class="glass-card feature-card reveal" id="feat-memory">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path></svg>
-          </div>
-          <h3>Multi-Tier Memory</h3>
-          <p>Working, episodic, semantic, and procedural memory systems for persistent context and user preference learning.</p>
-        </div>
-      </div>
-      <div class="glass-card feature-card reveal" id="feat-voice">
-        <div class="feature-card-content">
-          <div class="icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-          </div>
-          <h3>Voice Interface</h3>
-          <p>Hands-free wake word detection, speech recognition, and high-fidelity TTS with ElevenLabs fallback support.</p>
+        <div class="flex items-center gap-6">
+          <a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer" class="hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">GitHub</a>
+          <a href="https://discord.gg/knRMyFmvpp" target="_blank" rel="noopener noreferrer" class="hover:text-brand-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent rounded px-1">Discord</a>
         </div>
       </div>
     </div>
-    <div class="text-center mt-4 reveal">
-      <a href="features.html" class="btn btn-secondary">Explore All Features →</a>
-    </div>
-  </div>
-</section>
+  </footer>
 
-<!-- Screenshots -->
-<section class="screenshots-section section" id="screenshots">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="label">App Preview</span>
-      <h2>See OpenDroid in Action</h2>
-      <p>A futuristic glassmorphic interface built with Jetpack Compose — dark mode, neon accents, and intelligent agent feedback.</p>
-    </div>
-    <div class="screenshots-scroll reveal">
-      <div class="screenshot-item">
-        <img src="assets/screenshot/Screenshot_20260528-234508_OpenDroid.png" alt="OpenDroid Chat Screen" loading="lazy">
-        <div class="screenshot-label">Chat Interface</div>
-      </div>
-      <div class="screenshot-item">
-        <img src="assets/screenshot/Screenshot_20260528-234521_OpenDroid.png" alt="OpenDroid Plan Engine" loading="lazy">
-        <div class="screenshot-label">Plan Engine</div>
-      </div>
-      <div class="screenshot-item">
-        <img src="assets/screenshot/Screenshot_20260528-234535_OpenDroid.png" alt="OpenDroid Memory System" loading="lazy">
-        <div class="screenshot-label">Memory System</div>
-      </div>
-      <div class="screenshot-item">
-        <img src="assets/screenshot/Screenshot_20260528-234615_OpenDroid.png" alt="OpenDroid Alarm Control" loading="lazy">
-        <div class="screenshot-label">Alarm Control</div>
-      </div>
-    </div>
-  </div>
-</section>
+  <script>
+    // Mobile menu toggle functionality
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
 
-<!-- Architecture -->
-<section class="section" id="architecture">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="label">Architecture</span>
-      <h2>Modular, Clean &amp; Extensible Flow</h2>
-      <p>A visual breakdown of OpenDroid's core modular system — connecting services, models, databases, and UI components.</p>
-    </div>
-    <div class="arch-diagram-wrapper reveal">
-      <svg class="arch-svg" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
-        <!-- Definitions for markers and filters -->
-        <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#10b981" />
-          </marker>
-        </defs>
-
-        <!-- UI / Presentation Layer (Top) -->
-        <g transform="translate(30, 20)">
-          <rect class="node-rect" width="240" height="60" rx="6" />
-          <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Jetpack Compose UI</text>
-        </g>
-        <g transform="translate(310, 20)">
-          <rect class="node-rect" width="260" height="60" rx="6" style="fill: rgba(16, 185, 129, 0.05); stroke: #10b981;" />
-          <text x="130" y="35" font-weight="700" font-size="14" text-anchor="middle" fill="#10b981">Agent Core (Planner &amp; Resolver)</text>
-        </g>
-        <g transform="translate(610, 20)">
-          <rect class="node-rect" width="260" height="60" rx="6" />
-          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Accessibility Automation</text>
-        </g>
-
-        <!-- Middle Layers (Services & Processors) -->
-        <g transform="translate(30, 150)">
-          <rect class="node-rect" width="240" height="60" rx="6" />
-          <text x="120" y="35" font-weight="600" font-size="14" text-anchor="middle">Voice Engine (STT / TTS)</text>
-        </g>
-        <g transform="translate(310, 150)">
-          <rect class="node-rect" width="260" height="60" rx="6" />
-          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">LLM Gateway (10+ Providers)</text>
-        </g>
-        <g transform="translate(610, 150)">
-          <rect class="node-rect" width="260" height="60" rx="6" />
-          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">System Actions Handler</text>
-        </g>
-
-        <!-- Base Layers (Data & Memory) -->
-        <g transform="translate(170, 280)">
-          <rect class="node-rect" width="260" height="60" rx="6" />
-          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Room Database &amp; Repositories</text>
-        </g>
-        <g transform="translate(470, 280)">
-          <rect class="node-rect" width="260" height="60" rx="6" />
-          <text x="130" y="35" font-weight="600" font-size="14" text-anchor="middle">Multi-Tier Persistent Memory</text>
-        </g>
-
-        <!-- Connection Lines / Flows (Top to Middle) -->
-        <path class="flow-line" d="M 150,80 L 150,150" marker-end="url(#arrow)" />
-        <path class="flow-line" d="M 440,80 L 440,150" marker-end="url(#arrow)" />
-        <path class="flow-line" d="M 740,80 L 740,150" marker-end="url(#arrow)" />
-
-        <!-- Bi-directional connections in Middle Layer -->
-        <path class="flow-line" d="M 270,180 L 310,180" marker-end="url(#arrow)" />
-        <path class="flow-line" d="M 610,180 L 570,180" marker-end="url(#arrow)" />
-
-        <!-- Connections from Middle to Base -->
-        <path class="flow-line" d="M 310,50 Q 230,50 230,150 T 300,280" marker-end="url(#arrow)" />
-        <path class="flow-line" d="M 570,50 Q 600,50 600,150 T 600,280" marker-end="url(#arrow)" />
-      </svg>
-    </div>
-  </div>
-</section>
-
-<!-- CTA -->
-<section class="cta-section" id="cta">
-  <div class="container">
-    <div class="cta-box reveal">
-      <h2>Ready to Unleash Your Android?</h2>
-      <p>Download OpenDroid and give your phone the power of autonomous AI. Free, open source, and community driven.</p>
-      <div class="cta-buttons">
-        <a href="https://github.com/yashab-cyber/opendroid/releases" class="btn btn-primary" id="cta-download-btn">⬇ Download Now</a>
-        <a href="https://indusapp.store/wphbqhzu" target="_blank" class="indus-badge-link" id="cta-indus-badge-btn">
-          <img src="assets/indus-badge.png" alt="Get it on Indus Appstore" class="indus-badge-img">
-        </a>
-        <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer" class="producthunt-badge-link" id="cta-producthunt-badge-btn">
-          <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205420&amp;theme=light&amp;t=1784972318707" alt="Opendroid - Autonomous A.I agent for Android. | Product Hunt" width="250" height="54">
-        </a>
-        <a href="https://discord.gg/knRMyFmvpp" target="_blank" class="btn btn-secondary" id="cta-discord-btn">💬 Join Discord</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Footer -->
-<footer class="footer" id="footer">
-  <div class="container">
-    <div class="footer-grid">
-      <div class="footer-brand">
-        <a href="index.html" class="nav-brand">
-          <img src="assets/bot.png" alt="OpenDroid" style="width:28px;height:28px;">
-          <span>OpenDroid</span>
-        </a>
-        <p>Your open autonomous Android agent. Built with ❤ by the open-source community.</p>
-      </div>
-      <div class="footer-col">
-        <h4>Product</h4>
-        <ul>
-          <li><a href="features.html">Features</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank">Download</a></li>
-          <li><a href="https://indusapp.store/wphbqhzu" target="_blank">Indus Appstore</a></li>
-          <li><a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer">Product Hunt</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Resources</h4>
-        <ul>
-          <li><a href="about.html">About</a></li>
-          <li><a href="contributor.html">Contributors</a></li>
-          <li><a href="support.html">Support</a></li>
-          <li><a href="security.html">Security</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h4>Legal</h4>
-        <ul>
-          <li><a href="privacy.html">Privacy Policy</a></li>
-          <li><a href="terms.html">Terms of Service</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/blob/main/LICENSE" target="_blank">License</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <span>&copy; 2026 OpenDroid Contributors. Apache License 2.0.</span>
-      <span>
-        <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer">Product Hunt</a> &nbsp;·&nbsp;
-        <a href="https://discord.gg/knRMyFmvpp" target="_blank">Discord</a> &nbsp;·&nbsp;
-        <a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a>
-      </span>
-    </div>
-  </div>
-</footer>
-
-<script src="js/main.js"></script>
+    if (mobileMenuBtn && mobileMenu) {
+      mobileMenuBtn.addEventListener('click', () => {
+        const isExpanded = mobileMenuBtn.getAttribute('aria-expanded') === 'true';
+        mobileMenuBtn.setAttribute('aria-expanded', !isExpanded);
+        mobileMenu.classList.toggle('hidden');
+      });
+    }
+  </script>
 </body>
 </html>
