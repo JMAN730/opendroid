@@ -752,7 +752,7 @@ fun SettingsScreen(
                                             }
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("Download Gemma 4 (AI Core)", color = DarkBackground)
@@ -1231,7 +1231,7 @@ fun SettingsScreen(
                                                          Button(
                                                              onClick = { viewModel.loadModel(spec.id) },
                                                              colors = ButtonDefaults.buttonColors(
-                                                                 containerColor = if (config.activeModel == spec.id) AccentNeonGreen else AccentCyan
+                                                                 containerColor = if (config.activeModel == spec.id) AccentGreenButton else AccentCyan
                                                              ),
                                                              modifier = Modifier.weight(1f).height(32.dp),
                                                              contentPadding = PaddingValues(horizontal = 4.dp)

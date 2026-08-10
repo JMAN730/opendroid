@@ -982,7 +982,7 @@ fun ProposedPlanPrompt(
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { onApprove(checkedGrants) },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text("Approve & Run", fontWeight = FontWeight.Bold)
@@ -1203,7 +1203,7 @@ private fun ChatErrorRecoveryCard(
                         onClick = onPrimary,
                         enabled = !(retryHeld && error.primaryAction() == ChatErrorPrimaryAction.RETRY),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentNeonGreen,
+                            containerColor = AccentGreenButton,
                             contentColor = DarkBackground
                         ),
                         modifier = Modifier.heightIn(min = 48.dp)

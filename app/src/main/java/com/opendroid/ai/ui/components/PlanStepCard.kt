@@ -268,7 +268,7 @@ fun PlanStepCard(
                                 onSaveEdit(cleanedDescription, cleanedParams)
                                 isEditing = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save", fontWeight = FontWeight.Bold, fontSize = 12.sp)

@@ -608,7 +608,7 @@ fun SemanticMemoryView(
                                     onIsAddingFactChange(false)
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save Fact", fontWeight = FontWeight.Bold)

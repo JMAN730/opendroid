@@ -66,7 +66,7 @@ fun BenchmarkScreen(
                         Button(
                             onClick = { showConfirm = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentNeonGreen,
+                                containerColor = AccentGreenButton,
                                 contentColor = DarkBackground
                             ),
                             shape = RoundedCornerShape(8.dp),
