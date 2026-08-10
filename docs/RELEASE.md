@@ -4,7 +4,59 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.3 — Latest Release (August 5, 2026)
+## v1.0.4 — Latest Release (August 10, 2026)
+
+Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
+
+### Highlights since v1.0.3 (PR #46 by @JMAN730)
+
+#### 🤖 Dynamic Model Fetching & Catalog Updates
+*   **Runtime Model Lists**: Every remote LLM provider (Gemini, OpenAI, Cohere, Groq, OpenRouter, etc.) now dynamically fetches its available model list directly from its respective `/models` endpoint rather than shipping hardcoded fallback lists.
+*   **Capability-Based Chat Model Filtering**: Chat models are identified dynamically by capability markers (e.g. `generateContent` support for Gemini, declared chat endpoints for Cohere, non-chat denylist for OpenAI-compatible providers) ensuring newly released models appear in the picker without requiring an app update.
+*   **De-staled Seed Models**: Updated seed models across provider catalogs (Gemini `gemini-2.5-flash`, Groq `llama-3.3-70b-versatile`, OpenRouter `openrouter/auto`).
+*   **Improved Model Fetch Error Reporting**: Failed model lookups report explicit states (`Success` / `NeedsCredentials` / `Failed`) in Settings instead of swallowing errors and caching stale defaults.
+*   **Standalone Parser Architecture**: Extracted parsing into `ModelListParsers` with unit tests verifying parser stability across provider schemas.
+
+#### ⚡ LiteRT & On-Device Improvements
+*   **SDK Gate Cleanup**: Removed redundant `SDK_INT` runtime checks in `LiteRTLMProvider.isAvailable` as `minSdk 26` guarantees API availability.
+*   **LiteRT Tests**: Added tests for custom LiteRT model registry helpers and the default Qwen model configuration.
+
+#### 📱 About Screen Fixes
+*   **Dynamic Version Display**: Updated the About screen to read `BuildConfig.VERSION_NAME` dynamically rather than using a hardcoded string.
+*   **Icon Badge Scaling**: Replaced text placeholder with properly scaled `bot.png` app icon badge (`requiredSize`).
+
+#### 🛠️ Toolchain & Build Hardening
+*   **Gradle 9.7.0**: Upgraded Gradle wrapper to 9.7.0 and updated SHA-256 wrapper verification checksum.
+*   **Version Bump**: Updated app version to `1.0.4` (`versionCode 5`).
+
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+*   **`app-debug.apk`**: `f7d1e09255b31bdab371a676a721cbbf84ac590241392882e4f41ed2ec25d9e0`
+*   **`app-release.apk`**: `0ca3ba4eb79a2cdbda7ec54ad535f9e20fbe00784b7ac3ba37f75bc44f11139b`
+*   **`app-debug.aab`**: `2a48def95b1f1ed4c8c3298d7f128f3f9e5226439526a3ce1ab46d64be4ac5eb`
+*   **`app-release.aab`**: `1e44938af7d9b6df8e7cd074a210129cc7757ca551462bb122206021833037f5`
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 5
+*   **Version Name**: 1.0.4
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.4`.
+
+---
+
+## v1.0.3 (August 5, 2026)
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
