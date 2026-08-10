@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,7 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -230,8 +231,8 @@ fun OpenDroidNavigation(
 }
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    object Chat : Screen("chat", "Chat", Icons.Default.Chat)
-    object Plan : Screen("plan", "Plan", Icons.Default.List)
+    object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
+    object Plan : Screen("plan", "Plan", Icons.AutoMirrored.Filled.List)
     object Memory : Screen("memory", "Memory", Icons.Default.Star)
     object Macros : Screen("macros", "Macros", Icons.Default.Build)
     object History : Screen("history", "Logs", Icons.Default.History)

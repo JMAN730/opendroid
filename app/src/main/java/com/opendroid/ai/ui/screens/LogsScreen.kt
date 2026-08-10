@@ -110,7 +110,7 @@ fun LogsScreen(
                     )
                 },
                 divider = {
-                    Divider(color = BorderColor)
+                    HorizontalDivider(color = BorderColor)
                 }
             ) {
                 tabs.forEachIndexed { index, title ->
@@ -374,7 +374,7 @@ fun UnknownActionCard(error: UnknownActionEntity) {
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
                     
                     Text(
                         text = "System Status Details:",
@@ -495,7 +495,7 @@ fun HistoryLogCard(
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
                     
                     if (log.paramsJson.isNotBlank() && log.paramsJson != "{}") {
                         Text("Parameters:", fontSize = 11.sp, color = TextSecondary)

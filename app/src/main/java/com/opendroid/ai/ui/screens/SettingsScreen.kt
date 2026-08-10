@@ -12,7 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -57,7 +57,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import kotlinx.coroutines.launch
@@ -298,7 +298,7 @@ fun SettingsScreen(
                                     }
                                 )
                                 
-                                Divider(color = BorderColor, thickness = 1.dp)
+                                HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
                                 DropdownMenuItem(
                                     text = { 
@@ -805,7 +805,7 @@ fun SettingsScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(16.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // ─── Hugging Face Section ───
@@ -949,7 +949,7 @@ fun SettingsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
                             
                             // ─── LiteRT-LM Backend Section ───
@@ -1186,7 +1186,7 @@ fun SettingsScreen(
                                         AnimatedVisibility(visible = expanded) {
                                             Column {
                                                 Spacer(modifier = Modifier.height(10.dp))
-                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                HorizontalDivider(color = BorderColor, thickness = 0.5.dp)
                                                 Spacer(modifier = Modifier.height(8.dp))
                                                 
                                                 Row(
@@ -1237,7 +1237,7 @@ fun SettingsScreen(
                                                              contentPadding = PaddingValues(horizontal = 4.dp)
                                                          ) {
                                                              Icon(
-                                                                 if (config.activeModel == spec.id) Icons.Default.Check else Icons.Default.ArrowForward,
+                                                                 if (config.activeModel == spec.id) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
                                                                  contentDescription = null,
                                                                  modifier = Modifier.size(12.dp),
                                                                  tint = DarkBackground
@@ -1275,7 +1275,7 @@ fun SettingsScreen(
 
                             // ─── Custom LiteRT imports ───
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "CUSTOM LITERT MODELS",
@@ -1356,7 +1356,7 @@ fun SettingsScreen(
                                         AnimatedVisibility(visible = expanded) {
                                             Column {
                                                 Spacer(modifier = Modifier.height(10.dp))
-                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                HorizontalDivider(color = BorderColor, thickness = 0.5.dp)
                                                 Spacer(modifier = Modifier.height(8.dp))
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
@@ -1403,7 +1403,7 @@ fun SettingsScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // ─── Storage Cleanup Section ───
@@ -1973,7 +1973,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2014,7 +2014,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2060,7 +2060,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2101,7 +2101,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2147,7 +2147,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2193,7 +2193,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2239,7 +2239,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2285,7 +2285,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2331,7 +2331,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )

@@ -62,14 +62,14 @@ abstract class OpenDroidDatabase : RoomDatabase() {
         // sessions get randomly generated ids (see ConversationRepository).
         private const val DEFAULT_SESSION_ID = "default_session"
         val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE conversations ADD COLUMN contactPickerData TEXT DEFAULT NULL")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN contactPickerData TEXT DEFAULT NULL")
             }
         }
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS notifications (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         packageName TEXT NOT NULL,
@@ -88,14 +88,14 @@ abstract class OpenDroidDatabase : RoomDatabase() {
         }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE notifications ADD COLUMN senderEmail TEXT DEFAULT NULL")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notifications ADD COLUMN senderEmail TEXT DEFAULT NULL")
             }
         }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS models (
                         id TEXT PRIMARY KEY NOT NULL,
                         name TEXT NOT NULL,
@@ -116,9 +116,9 @@ abstract class OpenDroidDatabase : RoomDatabase() {
         }
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. New table backing multiple chat histories.
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS chat_sessions (
                         id TEXT PRIMARY KEY NOT NULL,
                         title TEXT NOT NULL,
@@ -131,7 +131,7 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                 // 2. Seed exactly one session that existing chat history will be
                 // attached to. INSERT OR IGNORE makes this safe to re-run.
                 val now = System.currentTimeMillis()
-                database.execSQL(
+                db.execSQL(
                     "INSERT OR IGNORE INTO chat_sessions (id, title, createdAt, updatedAt, isCurrent) " +
                         "VALUES ('$DEFAULT_SESSION_ID', 'Chat', $now, $now, 1)"
                 )
@@ -140,25 +140,25 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                 // DEFAULT value into every pre-existing row as part of this ALTER,
                 // and the explicit UPDATE below makes that backfill unmistakable -
                 // no existing chat history is lost by this migration.
-                database.execSQL(
+                db.execSQL(
                     "ALTER TABLE conversations ADD COLUMN sessionId TEXT NOT NULL DEFAULT '$DEFAULT_SESSION_ID'"
                 )
-                database.execSQL(
+                db.execSQL(
                     "UPDATE conversations SET sessionId = '$DEFAULT_SESSION_ID'"
                 )
 
                 // 4. Matches the @Index Room expects on ConversationEntity.sessionId.
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_conversations_sessionId ON conversations(sessionId)"
                 )
             }
         }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // Crash log. Purely additive - nothing existing is touched, so an
                 // upgrade can never lose user data here.
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS crash_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         timestamp INTEGER NOT NULL,
@@ -177,7 +177,7 @@ abstract class OpenDroidDatabase : RoomDatabase() {
 
                 // Matches the @Index on CrashLogEntity.timestamp - every read path
                 // orders by it.
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_crash_logs_timestamp ON crash_logs(timestamp)"
                 )
             }

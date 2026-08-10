@@ -72,7 +72,7 @@ fun ContactPickerCard(
                     onClick = { onContactSelected(contact) }
                 )
                 if (index < matches.size - 1) {
-                    Divider(
+                    HorizontalDivider(
                         color = Color(0xFF2A2A3E),
                         modifier = Modifier.padding(vertical = 4.dp)
                     )

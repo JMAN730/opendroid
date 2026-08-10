@@ -21,13 +21,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -67,6 +67,9 @@ import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** Shared parser for the contact-picker payload; building one per recomposition is wasteful. */
+private val contactPickerJson = Json { ignoreUnknownKeys = true }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -593,7 +596,7 @@ fun ChatScreen(
                                     .background(AccentNeonGreen)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Send,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Send",
                                     tint = DarkBackground
                                 )
@@ -728,14 +731,14 @@ fun ChatBubble(
     // If this is a contact picker message, render the ContactPickerCard instead
     if (isAgent && message.contactPickerData != null) {
         val matches: List<Map<String, String>> = try {
-            Json { ignoreUnknownKeys = true }
+            contactPickerJson
                 .decodeFromString<List<Map<String, String>>>(message.contactPickerData)
         } catch (_: Exception) {
             emptyList()
         }
 
         if (matches.isNotEmpty()) {
-            // Extract query from text ("Which 'dad' do you mean?" ? "dad")
+            // Extract query from text ("Which 'dad' do you mean?" -> "dad")
             val query = Regex("Which '(.*?)'").find(message.text)?.groupValues?.getOrNull(1) ?: "contact"
 
             ContactPickerCard(

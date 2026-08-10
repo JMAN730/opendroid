@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -39,7 +39,7 @@ fun HelpCenterScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = AccentNeonGreen
                         )
@@ -73,7 +73,7 @@ fun HelpCenterScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.HelpOutline,
+                            imageVector = Icons.AutoMirrored.Filled.HelpOutline,
                             contentDescription = "Help",
                             tint = AccentCyan,
                             modifier = Modifier.size(32.dp)

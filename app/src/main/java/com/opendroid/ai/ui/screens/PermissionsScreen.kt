@@ -1,7 +1,6 @@
 package com.opendroid.ai.ui.screens
 
 import android.content.ActivityNotFoundException
-import android.content.ComponentName
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -10,7 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
-import android.text.TextUtils
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,7 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -66,8 +64,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.core.permissions.CardStatus
+import com.opendroid.ai.core.util.isAccessibilityServiceEnabled
 import com.opendroid.ai.core.permissions.GrantAllState
 import com.opendroid.ai.core.permissions.PermissionAskedStore
 import com.opendroid.ai.core.permissions.PermissionCardId
@@ -701,26 +699,6 @@ fun Context.findActivity(): ComponentActivity? {
         }
     }
     return null
-}
-
-private fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    if (OpenDroidAccessibilityService.getInstance() != null) {
-        return true
-    }
-    val expectedComponentName =
-        ComponentName(context, OpenDroidAccessibilityService::class.java).flattenToString()
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ) ?: return false
-    val splitter = TextUtils.SimpleStringSplitter(':')
-    splitter.setString(enabledServices)
-    while (splitter.hasNext()) {
-        if (splitter.next().equals(expectedComponentName, ignoreCase = true)) {
-            return true
-        }
-    }
-    return false
 }
 
 private fun cardTitle(card: PermissionCardId): String = when (card) {

@@ -39,7 +39,16 @@ class TextToSpeechEngine(
                     onCompletionListener?.invoke()
                 }
             }
+            // The no-error-code overload is abstract and still called on API < 21
+            // paths, so it has to stay; the modern overload carries the reason.
+            @Deprecated("Superseded by onError(utteranceId, errorCode)")
             override fun onError(utteranceId: String?) {
+                mainHandler.post {
+                    onCompletionListener?.invoke()
+                }
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
                 mainHandler.post {
                     onCompletionListener?.invoke()
                 }

@@ -82,7 +82,7 @@ fun MemoryScreen(
                 containerColor = DarkBackground,
                 contentColor = AccentNeonGreen,
                 edgePadding = 0.dp,
-                divider = { Divider(color = BorderColor) }
+                divider = { HorizontalDivider(color = BorderColor) }
             ) {
                 MemoryType.values().forEach { type ->
                     Tab(
@@ -287,7 +287,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
-                        Divider(color = BorderColor)
+                        HorizontalDivider(color = BorderColor)
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         plan.steps.forEachIndexed { index, step ->

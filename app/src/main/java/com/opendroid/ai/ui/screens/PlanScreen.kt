@@ -76,11 +76,11 @@ fun PlanScreen(
         ) {
             // Main Section: Current Active Plan
             if (displayPlan != null) {
-                val isCurrentActivePlan = displayPlan!!.planId == currentPlan?.planId
+                val isCurrentActivePlan = displayPlan.planId == currentPlan?.planId
 
                 item {
                     PlanHeaderCard(
-                        plan = displayPlan!!,
+                        plan = displayPlan,
                         isCurrentActive = isCurrentActivePlan,
                         onClearSelection = { selectedPlanId = null },
                         onStop = { viewModel.stopTask() }
@@ -98,9 +98,9 @@ fun PlanScreen(
                     )
                 }
 
-                items(displayPlan!!.steps, key = { it.stepId }) { step ->
+                items(displayPlan.steps, key = { it.stepId }) { step ->
                     val isStepEditable = isCurrentActivePlan &&
-                        displayPlan!!.status == PlanStatus.RUNNING &&
+                        displayPlan.status == PlanStatus.RUNNING &&
                         step.status == StepStatus.PENDING
                     PlanStepCard(
                         step = step,
@@ -221,7 +221,7 @@ fun PlanHeaderCard(
                 color = TextPrimary
             )
             Spacer(modifier = Modifier.height(12.dp))
-            Divider(color = BorderColor)
+            HorizontalDivider(color = BorderColor)
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -239,7 +239,7 @@ fun PlanHeaderCard(
 
             if (isCurrentActive && plan.status == PlanStatus.RUNNING) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Divider(color = BorderColor)
+                HorizontalDivider(color = BorderColor)
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = onStop,

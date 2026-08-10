@@ -201,6 +201,9 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.18.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    // Supplies androidx.lifecycle.compose.LocalLifecycleOwner, which replaces the
+    // deprecated compose-ui one.
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
     implementation 'androidx.activity:activity-compose:1.13.0'
 
     // Jetpack Compose

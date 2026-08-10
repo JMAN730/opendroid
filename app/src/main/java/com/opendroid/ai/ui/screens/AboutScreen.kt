@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -47,7 +48,7 @@ fun AboutScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = AccentNeonGreen
                         )
@@ -190,8 +191,8 @@ fun AboutScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        FeatureItem(Icons.Default.Chat, "Natural Language Control", "Speak or type commands in plain English")
-                        FeatureItem(Icons.Default.List, "Multi-Step Planning", "Automatically breaks complex tasks into executable steps")
+                        FeatureItem(Icons.AutoMirrored.Filled.Chat, "Natural Language Control", "Speak or type commands in plain English")
+                        FeatureItem(Icons.AutoMirrored.Filled.List, "Multi-Step Planning", "Automatically breaks complex tasks into executable steps")
                         FeatureItem(Icons.Default.Star, "Persistent Memory", "Remembers your preferences across sessions")
                         FeatureItem(Icons.Default.Build, "Custom Macros", "Record and replay complex workflows")
                         FeatureItem(Icons.Default.Accessibility, "App Automation", "Controls other apps via Accessibility Service")

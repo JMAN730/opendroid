@@ -138,7 +138,7 @@ fun MacrosScreen(
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor)
+                            HorizontalDivider(color = BorderColor)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Steps in custom macro
@@ -377,7 +377,7 @@ fun MacroCard(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Divider(color = BorderColor)
+            HorizontalDivider(color = BorderColor)
             Spacer(modifier = Modifier.height(10.dp))
             
             Row(
