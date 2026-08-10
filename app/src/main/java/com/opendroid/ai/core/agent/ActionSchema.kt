@@ -849,7 +849,9 @@ object ActionSchema {
         ActionDefinition(
             name = "CHECK_BALANCE",
             description = "Checks account balance",
-            params = emptyList(),
+            params = listOf(
+                ParamDefinition("app", ParamType.ENUM, false, "Payment app", listOf("gpay", "phonepe", "paytm"), "gpay")
+            ),
             examples = listOf("check my balance", "bank balance"),
             category = ActionCategory.FINANCE
         ),
