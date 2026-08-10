@@ -898,6 +898,22 @@ object ActionSchema {
             category = ActionCategory.MACRO,
             isSimple = false
         ),
+        ActionDefinition(
+            name = "DELETE_MACRO",
+            description = "Deletes a saved macro",
+            params = listOf(ParamDefinition("macroName", ParamType.STRING, true, "Macro name")),
+            examples = listOf("delete morning routine macro", "remove my macro"),
+            category = ActionCategory.MACRO,
+            isSimple = false,
+            neverAutoApprove = true
+        ),
+        ActionDefinition(
+            name = "LIST_MACROS",
+            description = "Lists saved macros",
+            params = emptyList(),
+            examples = listOf("what macros do I have", "list my macros"),
+            category = ActionCategory.MACRO
+        ),
 
         // ── ADVANCED (Files & Accessibility) ────────────
 

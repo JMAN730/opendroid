@@ -25,7 +25,9 @@ class MacroActions @Inject constructor(
     fun getActions(): List<Action> = listOf(
         RunMacroAction(macroDao, actionSequenceExecutor),
         CreateMacroAction(macroDao),
-        ScheduleMacroAction(macroDao)
+        ScheduleMacroAction(macroDao),
+        DeleteMacroAction(macroDao),
+        ListMacrosAction(macroDao)
     )
 
     private class RunMacroAction(
@@ -108,6 +110,51 @@ class MacroActions @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ScheduleMacro", "Schedule failed: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't schedule that macro.")
+            }
+        }
+    }
+
+    private class DeleteMacroAction(private val macroDao: MacroDao) : Action {
+        override val name: String = "DELETE_MACRO"
+
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val macroName = params["macroName"] ?: return ActionResult(false, null, "macroName parameter missing")
+            return try {
+                val macro = macroDao.getMacroByName(macroName)
+                    ?: return ActionResult(false, null, "Macro with name '$macroName' not found.")
+                if (macro.isSystem) {
+                    return ActionResult(false, null, "System macro '$macroName' cannot be deleted.")
+                }
+
+                macroDao.deleteMacro(macro.id)
+                if (macroDao.getMacroById(macro.id) != null) {
+                    return ActionResult(false, null, "Couldn't delete macro '$macroName'.")
+                }
+                ActionResult(true, "Macro '$macroName' deleted.", null)
+            } catch (e: Exception) {
+                Log.e("DeleteMacro", "Delete failed", e)
+                ActionResult(false, null, "Couldn't delete macro '$macroName'.")
+            }
+        }
+    }
+
+    private class ListMacrosAction(private val macroDao: MacroDao) : Action {
+        override val name: String = "LIST_MACROS"
+
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            return try {
+                val macroNames = macroDao.getAllMacros()
+                    .map { it.name }
+                    .sorted()
+                val message = if (macroNames.isEmpty()) {
+                    "No macros found."
+                } else {
+                    "Saved macros:\n${macroNames.joinToString("\n") { "- $it" }}"
+                }
+                ActionResult(true, message, null)
+            } catch (e: Exception) {
+                Log.e("ListMacros", "List failed", e)
+                ActionResult(false, null, "Couldn't list your macros.")
             }
         }
     }
