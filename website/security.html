@@ -182,7 +182,7 @@
       <h2>2. Key Security Features</h2>
       <h3>A. Local Key Storage</h3>
       <p>
-        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted with direct Android KeyStore AES-GCM envelopes.
+        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted using <code>EncryptedSharedPreferences</code> backed by the hardware-isolated Android KeyStore.
       </p>
 
       <h3>B. Intent &amp; Action Verification</h3>
@@ -224,11 +224,11 @@
         <tbody>
           <tr>
             <td>OpenDroid v1.x (Latest)</td>
-            <td>✅ Yes</td>
+            <td><span class="badge-supported">✓ Yes</span></td>
           </tr>
           <tr>
             <td>&lt; v1.0 Pre-releases</td>
-            <td>❌ No</td>
+            <td><span class="badge-unsupported">✗ No</span></td>
           </tr>
         </tbody>
       </table>
