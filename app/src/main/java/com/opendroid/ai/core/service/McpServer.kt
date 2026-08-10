@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.ActionSchema
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -116,7 +117,8 @@ class McpServer @Inject constructor(
             }
             writeResponse(socket.getOutputStream(), 200, dispatch(request))
         } catch (error: Exception) {
-            writeResponse(socket.getOutputStream(), 400, rpcError(null, -32600, error.message ?: "Invalid request"))
+            Log.w(TAG, "Rejected invalid MCP request", error)
+            writeResponse(socket.getOutputStream(), 400, rpcError(null, -32600, "Invalid request"))
         }
     }
 
@@ -148,7 +150,7 @@ class McpServer @Inject constructor(
             }
         } catch (failure: Exception) {
             Log.e(TAG, "MCP dispatch failed", failure)
-            response.put("error", error(-32603, failure.message ?: "Internal error"))
+            response.put("error", error(-32603, "Internal error"))
         }
     }
 
@@ -223,6 +225,10 @@ class McpServer @Inject constructor(
     private fun executeAction(arguments: JSONObject): String {
         val action = arguments.optString("action")
         require(action.isNotBlank()) { "action is required" }
+        val canonicalAction = actionDispatcher.canonicalActionName(action)
+        if (!McpActionAuthorization.canExecute(canonicalAction)) {
+            return resultToJson(ActionResult.Failure(McpActionAuthorization.REJECTION_MESSAGE))
+        }
         val rawParams = arguments.optJSONObject("params") ?: JSONObject()
         val params = rawParams.keys().asSequence().associateWith { key -> rawParams.optString(key) }
         return resultToJson(runBlocking { actionDispatcher.execute(action, params, context) })
@@ -326,4 +332,16 @@ class McpServer @Inject constructor(
         const val JOIN_TIMEOUT_MS = 2_000L
         const val THREAD_NAME = "OpenDroid-MCP"
     }
+}
+
+/**
+ * The loopback token authenticates an MCP client; it is not interactive user approval.
+ * Irreversible actions must continue through the in-app plan approval flow.
+ */
+internal object McpActionAuthorization {
+    const val REJECTION_MESSAGE =
+        "This action requires interactive approval and cannot be executed through MCP."
+
+    fun canExecute(canonicalAction: String): Boolean =
+        !ActionSchema.isNeverAutoApprove(canonicalAction)
 }

@@ -12,9 +12,9 @@ import kotlinx.coroutines.ensureActive
 /**
  * The common ordered action-dispatch seam used by Plans and saved Macros.
  *
- * Macro execution is deliberately linear: a failed step stops the sequence.
- * A step may run one configured fallback action, but a fallback never gets a
- * fallback of its own.
+ * Macro execution is ordered and dependency-aware. Independent steps continue
+ * after a failure; dependent steps are skipped. A step may run one configured
+ * fallback action, but a fallback never gets a fallback of its own.
  */
 class ActionSequenceExecutor(
     private val executeAction: suspend (String, Map<String, String>, Context) -> ActionResult,
@@ -111,8 +111,8 @@ class ActionSequenceExecutor(
             result !is ActionResult.UserActionRequired
 
     /**
-     * Runs a complete saved macro. Later steps are not dispatched after a
-     * failure, so the returned result cannot claim work that did not happen.
+     * Runs a complete saved macro and reports partial completion truthfully.
+     * A failed step blocks only steps that explicitly depend on it.
      */
     suspend fun execute(
         steps: List<PlanStep>,
@@ -124,9 +124,16 @@ class ActionSequenceExecutor(
 
         val orderedSteps = steps.sortedWith(compareBy<PlanStep> { it.order })
         val completedResults = linkedMapOf<String, String>()
+        val failedSummaries = mutableListOf<String>()
+        val skippedSummaries = mutableListOf<String>()
 
         orderedSteps.forEachIndexed { index, step ->
             currentCoroutineContext().ensureActive()
+            val unavailableDependencies = step.dependsOn.filterNot(completedResults::containsKey)
+            if (unavailableDependencies.isNotEmpty()) {
+                skippedSummaries += "step ${index + 1} (${step.action.ifBlank { "unknown action" }})"
+                return@forEachIndexed
+            }
             val execution = executeStep(step, completedResults, context)
             val result = execution.finalResult
             if (!result.success) {
@@ -135,12 +142,25 @@ class ActionSequenceExecutor(
                     ?.let(CrashLogRedactor::redact)
                     ?.takeIf { it.isNotBlank() }
                     ?: "Action execution failed."
-                return ActionResult.Failure(
-                    "Macro stopped at step ${index + 1} ($actionName): $detail"
-                )
+                failedSummaries += "step ${index + 1} ($actionName): $detail"
+                return@forEachIndexed
             }
 
             completedResults[step.stepId] = result.data ?: "Completed successfully."
+        }
+
+        if (failedSummaries.isNotEmpty() || skippedSummaries.isNotEmpty()) {
+            val summary = buildString {
+                append("Macro partially completed: ${completedResults.size} completed")
+                if (failedSummaries.isNotEmpty()) append(", ${failedSummaries.size} failed")
+                if (skippedSummaries.isNotEmpty()) append(", ${skippedSummaries.size} skipped")
+                append(". ")
+                if (failedSummaries.isNotEmpty()) append("Failed: ${failedSummaries.joinToString()}. ")
+                if (skippedSummaries.isNotEmpty()) {
+                    append("Skipped because dependencies did not complete: ${skippedSummaries.joinToString()}.")
+                }
+            }.trim()
+            return ActionResult.Failure(summary)
         }
 
         return ActionResult.Success(
