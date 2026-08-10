@@ -181,6 +181,14 @@ object AliasResolver {
         "what's in clipboard" to ActionHint("GET_CLIPBOARD", emptyMap()),
         "clipboard"         to ActionHint("GET_CLIPBOARD", emptyMap()),
 
+        // ── MACROS / NOTIFICATIONS ─────────────────────
+        "list macros"       to ActionHint("LIST_MACROS", emptyMap()),
+        "show macros"       to ActionHint("LIST_MACROS", emptyMap()),
+        "show my macros"    to ActionHint("LIST_MACROS", emptyMap()),
+        "dismiss notifications" to ActionHint("DISMISS_NOTIFICATION", emptyMap()),
+        "clear notifications" to ActionHint("DISMISS_NOTIFICATION", emptyMap()),
+        "dismiss all notifications" to ActionHint("DISMISS_NOTIFICATION", emptyMap()),
+
         // ── BROWSER ─────────────────────────────────────
         "open browser"      to ActionHint("OPEN_BROWSER", emptyMap()),
         "open chrome"       to ActionHint("OPEN_BROWSER", emptyMap()),
@@ -283,6 +291,8 @@ object AliasResolver {
         aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
 
+        resolveDeleteMacro(cleaned)?.let { return it }
+
         // 1b. YouTube search/play/watch extraction — routes straight to the working
         //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
         //     below (which would otherwise swallow this because it contains "search"
@@ -327,6 +337,15 @@ object AliasResolver {
             .filter { (key, _) -> cleaned.contains(key) || lower.contains(key) }
             .maxByOrNull { it.key.length }
             ?.value
+    }
+
+    private fun resolveDeleteMacro(input: String): ActionHint? {
+        val suffixMatch = Regex("^(?:delete|remove) (.+) macro$").matchEntire(input)
+        val prefixMatch = Regex("^(?:delete|remove) macro (.+)$").matchEntire(input)
+        val macroName = (suffixMatch ?: prefixMatch)?.groupValues?.get(1)?.trim().orEmpty()
+        return macroName.takeIf { it.isNotEmpty() }?.let {
+            ActionHint("DELETE_MACRO", mapOf("macroName" to it))
+        }
     }
 
     // ── Alarm shortcut helpers ──────────────────────────

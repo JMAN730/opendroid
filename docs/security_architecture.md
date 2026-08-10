@@ -213,3 +213,27 @@ graph TD
 
 ### 7.2. Intent Cascade Fallback Policy
 When direct permissions (e.g. `CALL_PHONE` or `SEND_SMS`) are missing, OpenDroid automatically degrades execution to native system Intent pickers (`Intent.ACTION_DIAL`, `Intent.ACTION_SENDTO`). This ensures full functionality without risking unauthorized runtime permission violations or app crashes.
+
+---
+
+## 8. Local MCP Trust Boundary
+
+`McpServer` is an app-local control surface bound only to `127.0.0.1:8765`. It starts and stops
+with `OpenDroidService`, rejects non-POST requests, caps request bodies and header lines, and
+requires an `X-OpenDroid-Token` on every request. The random token and configured endpoint
+headers are encrypted with the direct Android Keystore and are excluded from backup.
+
+Loopback is a network boundary, not a user-approval boundary: other apps on the device can attempt
+connections. Token checks therefore use digest comparison and token values are never logged.
+Authentication does not grant interactive approval. Actions marked `neverAutoApprove` are rejected
+by MCP after canonical action resolution and must run through OpenDroid's in-app approval flow.
+
+The privileged command and persistent terminal tools intentionally provide arbitrary shell access
+at the strongest available backend (Shizuku, root, then the app shell). They must only be exposed
+to a client that already possesses the per-installation token. Command length, captured output,
+execution time, request size, and terminal count are bounded. Protocol failures return stable,
+generic messages; implementation exception details remain in app-local logs.
+
+Operational rollback is to stop `OpenDroidService`, which closes the listener and all terminal
+sessions. Clearing the app's `opendroid_mcp` private preferences invalidates the stored token and
+endpoint configuration; a new token is generated on the next service start.

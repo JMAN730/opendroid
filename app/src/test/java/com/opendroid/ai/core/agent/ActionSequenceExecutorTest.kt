@@ -84,12 +84,13 @@ class ActionSequenceExecutorTest {
     }
 
     @Test
-    fun `failed fallback stops the macro and does not claim later steps ran`() = runBlocking {
+    fun `failed fallback does not stop an independent later step`() = runBlocking {
         val calls = mutableListOf<String>()
         val executor = ActionSequenceExecutor(
             executeAction = { action, _, _ ->
                 calls += action
-                ActionResult.Failure("$action failed")
+                if (action == "LATER") ActionResult.Success(mapOf("message" to "later completed"))
+                else ActionResult.Failure("$action failed")
             },
             hasAction = { it == "FALLBACK" }
         )
@@ -103,10 +104,35 @@ class ActionSequenceExecutorTest {
         )
 
         assertFalse(result.success)
-        assertTrue(result.error!!.contains("step 1"))
+        assertTrue(result.error!!.contains("1 completed"))
+        assertTrue(result.error!!.contains("1 failed"))
         assertTrue(result.error!!.contains("FALLBACK"))
-        assertFalse(result.error!!.contains("LATER"))
-        assertEquals(listOf("PRIMARY", "FALLBACK"), calls)
+        assertEquals(listOf("PRIMARY", "FALLBACK", "LATER"), calls)
+    }
+
+    @Test
+    fun `failed step skips dependents but continues independent work`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val executor = executor { action, _, _ ->
+            calls += action
+            if (action == "PRIMARY") ActionResult.Failure("failed")
+            else ActionResult.Success(mapOf("message" to "done"))
+        }
+
+        val result = executor.execute(
+            steps = listOf(
+                step("primary", order = 1, action = "PRIMARY"),
+                step("dependent", order = 2, action = "DEPENDENT", dependsOn = listOf("primary")),
+                step("independent", order = 3, action = "INDEPENDENT")
+            ),
+            context = context
+        )
+
+        assertFalse(result.success)
+        assertEquals(listOf("PRIMARY", "INDEPENDENT"), calls)
+        assertTrue(result.error!!.contains("1 failed"))
+        assertTrue(result.error!!.contains("1 skipped"))
+        assertTrue(result.error!!.contains("dependencies"))
     }
 
     private fun executor(
@@ -118,6 +144,7 @@ class ActionSequenceExecutorTest {
         order: Int,
         action: String,
         params: Map<String, String> = emptyMap(),
+        dependsOn: List<String> = emptyList(),
         fallback: String = ""
     ) = PlanStep(
         stepId = id,
@@ -125,6 +152,7 @@ class ActionSequenceExecutorTest {
         description = action,
         action = action,
         params = params,
+        dependsOn = dependsOn,
         fallback = fallback
     )
 }

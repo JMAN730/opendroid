@@ -109,6 +109,23 @@ class AliasResolverTest {
         assertNull(AliasResolver.resolve("what is the meaning of life"))
     }
 
+    @Test
+    fun `macro and notification commands resolve with required parameters`() {
+        assertEquals("LIST_MACROS", AliasResolver.resolve("show my macros")?.action)
+        assertEquals(
+            "morning routine",
+            AliasResolver.resolve("delete morning routine macro")?.baseParams?.get("macroName")
+        )
+        assertEquals(
+            "travel",
+            AliasResolver.resolve("remove macro travel")?.baseParams?.get("macroName")
+        )
+        assertEquals(
+            "DISMISS_NOTIFICATION",
+            AliasResolver.resolve("clear notifications")?.action
+        )
+    }
+
     // ── Alarm helpers ───────────────────────────────────────────────────
 
     @Test
