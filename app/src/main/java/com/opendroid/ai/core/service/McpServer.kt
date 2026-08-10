@@ -3,6 +3,7 @@ package com.opendroid.ai.core.service
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import com.opendroid.ai.BuildConfig
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.base.ActionResult
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -155,7 +156,7 @@ class McpServer @Inject constructor(
     private fun initializeResult(): JSONObject = JSONObject()
         .put("protocolVersion", "2024-11-05")
         .put("capabilities", JSONObject().put("tools", JSONObject()))
-        .put("serverInfo", JSONObject().put("name", "opendroid").put("version", "1.0.3"))
+        .put("serverInfo", JSONObject().put("name", "opendroid").put("version", BuildConfig.VERSION_NAME))
 
     private fun tools(): JSONArray = JSONArray()
         .put(tool("device_info", "Return OpenDroid and privileged-backend status", JSONObject()))
