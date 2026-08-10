@@ -18,7 +18,11 @@ local.properties
 # Signing credentials — never commit to public repos
 *.keystore
 *.jks
-gradle.properties
+
+# gradle.properties IS tracked: it holds build settings the project cannot
+# build without (android.useAndroidX and friends). Signing credentials must
+# never go in it — put them in ~/.gradle/gradle.properties or pass them as
+# ORG_GRADLE_PROJECT_* environment variables. See gradle.properties.example.
 
 # Local AI assistant guidance — not tracked
 CLAUDE.md

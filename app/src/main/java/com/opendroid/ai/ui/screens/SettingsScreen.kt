@@ -39,6 +39,10 @@ import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
+import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.error.LLMError
+import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
+import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
 import com.opendroid.ai.ui.theme.*
@@ -57,6 +61,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,13 +76,16 @@ fun SettingsScreen(
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
+    onNavigateToCrashLog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
+    val connectionResults by viewModel.connectionResults.collectAsState()
     val dbModels by viewModel.allModels.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
     val hfToken by viewModel.huggingFaceToken.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
+    val providerCredentialRecoveryState by viewModel.providerCredentialRecoveryState.collectAsState()
+    val providerCredentialPersistenceState by viewModel.providerCredentialPersistenceState.collectAsState()
 
     val providers = listOf(
         "Google Gemini",
@@ -98,18 +106,25 @@ fun SettingsScreen(
     var providerDropdownExpanded by remember { mutableStateOf(false) }
     var keysSectionExpanded by remember { mutableStateOf(false) }
     var voiceSectionExpanded by remember { mutableStateOf(false) }
+    var planningSectionExpanded by remember { mutableStateOf(false) }
 
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
+    var importAsCustomModel by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (uri != null && activeImportModelId != null) {
-            viewModel.importLocalModel(activeImportModelId!!, uri)
+        if (uri != null) {
+            when {
+                importAsCustomModel -> viewModel.importCustomLocalModel(uri)
+                activeImportModelId != null -> viewModel.importLocalModel(activeImportModelId!!, uri)
+            }
         }
         activeImportModelId = null
+        importAsCustomModel = false
     }
 
     Scaffold(
@@ -135,10 +150,77 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
+            if (providerCredentialRecoveryState == ProviderCredentialRecoveryState.CredentialsMustBeReentered) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "CREDENTIALS MUST BE RE-ENTERED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Saved provider credentials cannot be read on this device. " +
+                                    "Clear unavailable records, then enter your API keys again.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = viewModel::resetProviderCredentialsForReentry,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                            ) {
+                                Text("Clear unavailable credentials", color = DarkBackground)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (providerCredentialPersistenceState ==
+                ProviderCredentialPersistenceState.StorageUnavailable
+            ) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "CREDENTIALS WERE NOT SAVED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Secure credential storage is unavailable. Existing settings " +
+                                    "were preserved; check device storage and try again.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
             // Active LLM Provider Selection Card
             item {
                 Card(
@@ -250,6 +332,7 @@ fun SettingsScreen(
                         }
 
                         val modelsLoading by viewModel.modelsLoading.collectAsState()
+                        val modelFetchNotice by viewModel.modelFetchNotice.collectAsState()
                         val fetchedModels = config.modelCache[config.activeProvider] ?: emptyList()
                         var modelDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -314,7 +397,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            if (fetchedModels.isNotEmpty()) {
+                        if (fetchedModels.isNotEmpty()) {
                                 DropdownMenu(
                                     expanded = modelDropdownExpanded,
                                     onDismissRequest = { modelDropdownExpanded = false },
@@ -402,6 +485,59 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "EXPLICIT PLANNING FALLBACKS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Text(
+                            text = "Only selected providers may receive a retry after an unusable low-impact local plan. High-impact plans never switch automatically.",
+                            fontSize = 10.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        )
+                        providers
+                            .filter { it != config.activeProvider && it != "On-Device AI" }
+                            .forEach { fallbackProvider ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = config.fallbackProviders.contains(fallbackProvider),
+                                        onCheckedChange = { enabled ->
+                                            viewModel.updateFallbackProvider(fallbackProvider, enabled)
+                                        },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = AccentNeonGreen,
+                                            uncheckedColor = BorderColor,
+                                            checkmarkColor = DarkBackground
+                                        )
+                                    )
+                                    Text(
+                                        text = fallbackProvider,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                        // Model names are never bundled with the app, so when the
+                        // live list is unavailable the reason is shown rather than
+                        // a list that quietly went out of date.
+                        modelFetchNotice?.let { notice ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = notice,
+                                fontSize = 11.sp,
+                                color = AccentRed,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -674,7 +810,7 @@ fun SettingsScreen(
 
                             // ─── Hugging Face Section ───
                             Text(
-                                text = "HUGGING FACE AUTHENTICATION",
+                                text = "HUGGING FACE TOKEN (GATED MODELS ONLY)",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
@@ -682,7 +818,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Required only for downloading gated LiteRT models from Hugging Face. Cloud AI providers are NOT affected.",
+                                text = "Needed only for gated Hugging Face downloads (the Google-hosted Gemma 3n LiteRT builds). Public models such as Qwen 2.5 and the Gemma 4 community mirrors download without a token. Not used for cloud API providers.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -826,7 +962,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Runs without Google AI Core. Works on any Android 12+ device.",
+                                text = "Runs without Google AI Core. Models tagged PUBLIC (Qwen, the Gemma 4 community mirrors) need no HF token; models tagged GATED (the Google-hosted Gemma 3n builds) do. Or import your own .task / .litertlm file.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -845,6 +981,7 @@ fun SettingsScreen(
                                 
                                 var expanded by remember { mutableStateOf(false) }
                                 val isApiCompatible = android.os.Build.VERSION.SDK_INT >= spec.minSdk
+                                val managedDownloadAvailable = spec.isManagedDownloadAvailable
                                 
                                 Card(
                                     modifier = Modifier
@@ -889,9 +1026,34 @@ fun SettingsScreen(
                                                             )
                                                         }
                                                     }
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(
+                                                                if (spec.authRequired) Color(0xFFFF9800).copy(alpha = 0.12f)
+                                                                else AccentCyan.copy(alpha = 0.12f),
+                                                                RoundedCornerShape(4.dp)
+                                                            )
+                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = if (spec.authRequired) "GATED · HF TOKEN" else "PUBLIC · NO TOKEN",
+                                                            color = if (spec.authRequired) Color(0xFFFF9800) else AccentCyan,
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
                                                 }
                                                 Text(
-                                                    text = "Backend: LiteRT-LM · Context: 32K · RAM: 6GB+",
+                                                    text = if (managedDownloadAvailable) {
+                                                        if (spec.authRequired) {
+                                                            "Backend: LiteRT-LM · Gated Hugging Face download"
+                                                        } else {
+                                                            "Backend: LiteRT-LM · Public download (no token)"
+                                                        }
+                                                    } else {
+                                                        "Backend: LiteRT-LM · In-app download unavailable; local import only"
+                                                    },
                                                     fontSize = 10.sp,
                                                     color = TextSecondary
                                                 )
@@ -909,6 +1071,7 @@ fun SettingsScreen(
                                             val statusText = when {
                                                 !isApiCompatible -> "API ${spec.minSdk}+ Req"
                                                 status == ModelStatus.READY -> "Downloaded"
+                                                !managedDownloadAvailable -> "In-app unavailable"
                                                 status == ModelStatus.DOWNLOADING -> "${progress}%"
                                                 status == ModelStatus.PAUSED -> "Paused"
                                                 status == ModelStatus.LOADING -> "Loading..."
@@ -1031,25 +1194,28 @@ fun SettingsScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     if (status == ModelStatus.NOT_DOWNLOADED || status == ModelStatus.FAILED) {
-                                                        Button(
-                                                            onClick = {
-                                                                val hfTokenVal = hfToken
-                                                                if (spec.authRequired && hfTokenVal.isBlank()) {
-                                                                    showAuthRequiredDialog = spec.displayName
-                                                                    licenseUrlForDialog = spec.licenseUrl
-                                                                } else {
-                                                                    viewModel.downloadModel(spec.id)
-                                                                }
-                                                            },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
-                                                            modifier = Modifier.weight(1f).height(32.dp),
-                                                            contentPadding = PaddingValues(horizontal = 4.dp)
-                                                        ) {
-                                                            Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                        if (managedDownloadAvailable) {
+                                                            Button(
+                                                                onClick = {
+                                                                    val hfTokenVal = hfToken
+                                                                    if (spec.authRequired && hfTokenVal.isBlank()) {
+                                                                        showAuthRequiredDialog = spec.displayName
+                                                                        licenseUrlForDialog = spec.licenseUrl
+                                                                    } else {
+                                                                        viewModel.downloadModel(spec.id)
+                                                                    }
+                                                                },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                                                modifier = Modifier.weight(1f).height(32.dp),
+                                                                contentPadding = PaddingValues(horizontal = 4.dp)
+                                                            ) {
+                                                                Text("Download", fontSize = 11.sp, color = DarkBackground)
+                                                            }
                                                         }
 
                                                         Button(
                                                             onClick = {
+                                                                importAsCustomModel = false
                                                                 activeImportModelId = spec.id
                                                                 importLauncher.launch("*/*")
                                                             },
@@ -1099,6 +1265,135 @@ fun SettingsScreen(
                                                         contentPadding = PaddingValues(horizontal = 8.dp)
                                                     ) {
                                                         Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = TextSecondary)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ─── Custom LiteRT imports ───
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Divider(color = BorderColor, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "CUSTOM LITERT MODELS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Import any .task or .litertlm file as its own model (not tied to a catalog slot). GGUF is not supported yet.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    importAsCustomModel = true
+                                    activeImportModelId = null
+                                    importLauncher.launch("*/*")
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                modifier = Modifier.fillMaxWidth().height(36.dp)
+                            ) {
+                                Text("Import custom LiteRT model", fontSize = 12.sp, color = DarkBackground)
+                            }
+
+                            val customModels = dbModels.filter {
+                                OnDeviceModelRegistry.isCustomId(it.id) &&
+                                    it.status == ModelStatus.READY
+                            }
+                            customModels.forEach { entity ->
+                                var expanded by remember(entity.id) { mutableStateOf(false) }
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp)
+                                        .border(
+                                            1.dp,
+                                            if (config.activeModel == entity.id) AccentNeonGreen.copy(alpha = 0.5f) else BorderColor,
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { expanded = !expanded },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (config.activeModel == entity.id) {
+                                            CardBackground.copy(alpha = 0.8f)
+                                        } else {
+                                            CardBackground.copy(alpha = 0.3f)
+                                        }
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = entity.name,
+                                                    fontSize = 13.sp,
+                                                    color = TextPrimary,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = "Custom LiteRT · ${formatBytes(entity.size)} · no token",
+                                                    fontSize = 10.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                            Text(
+                                                text = if (config.activeModel == entity.id) "Active" else "Ready",
+                                                fontSize = 10.sp,
+                                                color = AccentNeonGreen,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        AnimatedVisibility(visible = expanded) {
+                                            Column {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = { viewModel.loadModel(entity.id) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = if (config.activeModel == entity.id) {
+                                                                AccentNeonGreen
+                                                            } else {
+                                                                AccentCyan
+                                                            }
+                                                        ),
+                                                        modifier = Modifier.weight(1f).height(32.dp),
+                                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                                    ) {
+                                                        Text(
+                                                            if (config.activeModel == entity.id) "Active" else "Load Model",
+                                                            fontSize = 11.sp,
+                                                            color = DarkBackground
+                                                        )
+                                                    }
+                                                    Button(
+                                                        onClick = { viewModel.deleteModel(entity.id) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = Color.Red.copy(alpha = 0.2f)
+                                                        ),
+                                                        modifier = Modifier.height(32.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Delete,
+                                                            contentDescription = "Delete",
+                                                            modifier = Modifier.size(14.dp),
+                                                            tint = Color.Red
+                                                        )
                                                     }
                                                 }
                                             }
@@ -1293,10 +1588,34 @@ fun SettingsScreen(
                                 val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
+                                    val connectionState = connectionResults[providerName]
                                     SecureApiKeyField(
                                         value = keyVal,
                                         onValueChange = { viewModel.updateApiKey(providerName, it) },
                                         label = "$providerName API Key"
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = connectionStatusLabel(connectionState),
+                                            fontSize = 10.sp,
+                                            color = TextSecondary,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { viewModel.testConnection(providerName) }
+                                        ) {
+                                            Text("Test connection", fontSize = 11.sp)
+                                        }
+                                    }
+                                    Text(
+                                        text = "Sends one minimal request to $providerName; provider charges may apply.",
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
                                     )
                                 }
                             }
@@ -1378,14 +1697,29 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = CardBackground)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "PLANNING & AUTOMATION",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = AccentCyan
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { planningSectionExpanded = !planningSectionExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "PLANNING & AUTOMATION",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Icon(
+                                imageVector = if (planningSectionExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Toggle Planning Section",
+                                tint = AccentCyan
+                            )
+                        }
+
+                        AnimatedVisibility(visible = planningSectionExpanded) {
+                        Column(modifier = Modifier.padding(top = 16.dp)) {
 
                         var showYoloWarning by remember { mutableStateOf(false) }
                         val autoMode = config.resolvedAutoMode()
@@ -1440,7 +1774,7 @@ fun SettingsScreen(
                                         "YOLO runs EVERY plan without asking — including actions that " +
                                         "spend money (UPI payments, food and cab orders) and irreversible " +
                                         "ones (installing apps, deleting files, restarting the device). " +
-                                        "Only per-action safety confirmations remain.",
+                                        "No approval gate remains.",
                                         color = TextPrimary
                                     )
                                 },
@@ -1459,15 +1793,16 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        val grantedActions = config.effectiveGrantedActions()
                         Text(
-                            text = "ALLOWED ACTIONS (${config.effectiveGrantedActions().size})",
+                            text = "ALLOWED ACTIONS (${grantedActions.size})",
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             color = AccentCyan
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         val dateFormat = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()) }
-                        config.effectiveGrantedActions().entries
+                        grantedActions.entries
                             .sortedBy { it.key }
                             .forEach { (action, grantedAt) ->
                                 Row(
@@ -1599,6 +1934,8 @@ fun SettingsScreen(
                                 )
                             )
                         }
+                        }
+                        }
                     }
                 }
             }
@@ -1718,6 +2055,47 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Review and grant microphone, storage, accessibility & other permissions.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Crash Log link card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentRed.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToCrashLog() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💥", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "CRASH LOG",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentRed
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "View and share crashes recorded on this device.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
@@ -1997,7 +2375,9 @@ fun SettingsScreen(
             title = { Text("Authentication Required", color = TextPrimary) },
             text = {
                 Text(
-                    text = "This model requires a Hugging Face Access Token to download.\n\nPlease add your token in the Hugging Face Authentication section of Settings.",
+                    text = "This model is gated on Hugging Face and needs an Access Token to download.\n\n" +
+                        "Models tagged PUBLIC (for example Qwen 2.5 and the Gemma 4 community mirrors) do not need a token — only the ones tagged GATED do. " +
+                        "Add a read-only token in the Hugging Face section above, or pick a PUBLIC model.",
                     color = TextSecondary
                 )
             },
@@ -2077,11 +2457,35 @@ fun SettingsScreen(
     }
 }
 
+private fun connectionStatusLabel(state: ConnectionTestState?): String = when (state) {
+    is ConnectionTestState.Testing -> "Testing…"
+    is ConnectionTestState.Connected ->
+        "Connected with ${state.model} · ${state.latencyMs} ms"
+    is ConnectionTestState.Failed -> when (state.error) {
+        LLMError.AuthInvalid -> "Key rejected"
+        LLMError.AuthMissing -> "Key required"
+        LLMError.QuotaExhausted -> "Quota exhausted"
+        LLMError.RateLimited -> "Rate limited"
+        LLMError.Network -> "Network error"
+        else -> "Connection failed"
+    }
+    is ConnectionTestState.ConfigMissing -> when (state.reason) {
+        LLMError.AuthMissing -> "Key required"
+        else -> "Configuration required"
+    }
+    else -> "Not tested"
+}
+
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-    return String.format("%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+    return String.format(
+        Locale.getDefault(),
+        "%.1f %s",
+        bytes / Math.pow(1024.0, digitGroups.toDouble()),
+        units[digitGroups]
+    )
 }
 
 @Composable

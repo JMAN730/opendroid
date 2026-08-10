@@ -35,11 +35,25 @@ fun LogsScreen(
     viewModel: HistoryViewModel,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Execution Logs", "Action Errors")
 
     val history by viewModel.taskHistory.collectAsState()
     val actionErrors by viewModel.unknownActions.collectAsState()
+    var selectedPlanForMacro by remember { mutableStateOf<String?>(null) }
+    var macroName by remember { mutableStateOf("") }
+    var macroSaveError by remember { mutableStateOf<String?>(null) }
+
+    val saveableLogIds = remember(history) {
+        history.groupBy { it.planId }
+            .filter { (planId, entries) ->
+                planId.isNotBlank() && planId != "n/a" && entries.isNotEmpty() && entries.all { it.success }
+            }
+            .mapNotNull { (_, entries) ->
+                entries.minWithOrNull(compareBy<TaskHistoryEntity> { it.timestamp }.thenBy { it.id })?.id
+            }
+            .toSet()
+    }
 
     Scaffold(
         topBar = {
@@ -129,7 +143,18 @@ fun LogsScreen(
                             contentPadding = PaddingValues(bottom = 24.dp)
                         ) {
                             items(history) { log ->
-                                HistoryLogCard(log = log)
+                                HistoryLogCard(
+                                    log = log,
+                                    onSaveAsMacro = if (log.id in saveableLogIds) {
+                                        {
+                                            selectedPlanForMacro = log.planId
+                                            macroName = "${log.description.take(40).ifBlank { "Completed task" }} macro"
+                                            macroSaveError = null
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                )
                             }
                         }
                     } else {
@@ -161,6 +186,62 @@ fun LogsScreen(
                 }
             }
         }
+    }
+
+    if (selectedPlanForMacro != null) {
+        AlertDialog(
+            onDismissRequest = {
+                selectedPlanForMacro = null
+                macroSaveError = null
+            },
+            title = { Text("Save completed task as macro") },
+            text = {
+                Column {
+                    Text(
+                        "Only successful steps will be recorded. Credential, API-key, and token values are removed.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = macroName,
+                        onValueChange = { macroName = it },
+                        label = { Text("Macro name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    macroSaveError?.let { error ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(error, color = AccentRed, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.saveCompletedTaskAsMacro(
+                            planId = selectedPlanForMacro!!,
+                            name = macroName
+                        ) { error ->
+                            if (error == null) {
+                                selectedPlanForMacro = null
+                                macroSaveError = null
+                            } else {
+                                macroSaveError = error
+                            }
+                        }
+                    },
+                    enabled = macroName.isNotBlank()
+                ) {
+                    Text("Save macro")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedPlanForMacro = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -332,7 +413,10 @@ fun UnknownActionCard(error: UnknownActionEntity) {
 }
 
 @Composable
-fun HistoryLogCard(log: TaskHistoryEntity) {
+fun HistoryLogCard(
+    log: TaskHistoryEntity,
+    onSaveAsMacro: (() -> Unit)? = null
+) {
     var expanded by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
 
@@ -397,6 +481,17 @@ fun HistoryLogCard(log: TaskHistoryEntity) {
                 color = AccentPurple,
                 fontFamily = FontFamily.Monospace
             )
+
+            onSaveAsMacro?.let { save ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = save,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Save completed task as macro", fontSize = 11.sp)
+                }
+            }
 
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {

@@ -46,6 +46,33 @@ sealed class ActionResult {
         override val error: String? get() = "Needs user input: $question"
     }
 
+    /**
+     * A user-mediated flow is underway, but the requested operation is not
+     * complete. Carries metadata so the agent can drive the follow-up
+     * verification step (e.g. the dialer call flow).
+     */
+    @Serializable
+    data class PendingUserAction(
+        val message: String,
+        val metadata: Map<String, String> = emptyMap()
+    ) : ActionResult() {
+        override val success: Boolean get() = false
+        override val data: String? get() = message
+        override val error: String? get() = message
+    }
+
+    /**
+     * The action started a user-facing flow, but the requested operation has
+     * not completed. This is deliberately non-success so callers cannot
+     * report an unverified side effect as completed.
+     */
+    @Serializable
+    data class UserActionRequired(val message: String) : ActionResult() {
+        override val success: Boolean get() = false
+        override val data: String? get() = null
+        override val error: String? get() = message
+    }
+
     companion object {
         operator fun invoke(
             success: Boolean,

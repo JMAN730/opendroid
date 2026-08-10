@@ -4,6 +4,7 @@ import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,6 +16,8 @@ import android.net.wifi.WifiManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
+import androidx.annotation.RequiresPermission
+import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
@@ -22,6 +25,129 @@ import com.opendroid.ai.core.agent.AgentLoop
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+
+internal interface BluetoothController {
+    fun isEnabled(): Boolean
+    fun requestState(enabled: Boolean): Boolean
+}
+
+private class AndroidBluetoothController(
+    private val adapter: BluetoothAdapter
+) : BluetoothController {
+    override fun isEnabled(): Boolean = adapter.isEnabled
+
+    // BLUETOOTH_CONNECT is a runtime permission on API 31+, so enable()/disable() can
+    // throw SecurityException. Callers of BluetoothController handle that and report it
+    // as a permission failure instead of claiming the state changed.
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    override fun requestState(enabled: Boolean): Boolean {
+        @Suppress("DEPRECATION")
+        return if (enabled) adapter.enable() else adapter.disable()
+    }
+}
+
+private fun bluetoothController(context: Context): BluetoothController? {
+    val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    return manager?.adapter?.let(::AndroidBluetoothController)
+}
+
+private suspend fun waitForBluetoothState(
+    controller: BluetoothController,
+    targetOn: Boolean
+): Boolean {
+    val deadline = System.currentTimeMillis() + 2_000L
+    do {
+        if (controller.isEnabled() == targetOn) return true
+        if (System.currentTimeMillis() >= deadline) return false
+        kotlinx.coroutines.delay(100L)
+    } while (true)
+}
+
+internal class ToggleBluetoothAction(
+    private val controllerProvider: (Context) -> BluetoothController? = ::bluetoothController,
+    private val waitForState: suspend (BluetoothController, Boolean) -> Boolean = ::waitForBluetoothState,
+    private val launchIntent: (Context, Intent) -> Unit = { context, intent -> context.startActivity(intent) }
+) : Action {
+    override val name: String = "TOGGLE_BLUETOOTH"
+
+    override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+        val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+            .lowercase().trim()
+
+        val controller = try {
+            controllerProvider(context)
+        } catch (_: SecurityException) {
+            return ActionResult(false, null, "Bluetooth permission is required to change its state.")
+        }
+            ?: return ActionResult(false, null, "Device doesn't have Bluetooth hardware.")
+
+        val currentlyOn = try {
+            controller.isEnabled()
+        } catch (_: SecurityException) {
+            return ActionResult(false, null, "Bluetooth permission is required to read its state.")
+        }
+        val targetOn = when (requestedState) {
+            "on", "true", "enable", "yes" -> true
+            "off", "false", "disable", "no" -> false
+            else -> !currentlyOn
+        }
+        val stateWord = if (targetOn) "on" else "off"
+
+        if (targetOn == currentlyOn) {
+            return ActionResult(true, "Bluetooth is already $stateWord!", null)
+        }
+
+        val directRequestAccepted = try {
+            controller.requestState(targetOn)
+        } catch (_: SecurityException) {
+            return ActionResult(false, null, "Bluetooth permission is required to change its state.")
+        }
+
+        val stateVerified = try {
+            directRequestAccepted && waitForState(controller, targetOn)
+        } catch (_: SecurityException) {
+            return ActionResult(false, null, "Bluetooth permission is required to verify its state.")
+        }
+        if (stateVerified) {
+            return ActionResult(true, "Bluetooth turned $stateWord!", null)
+        }
+
+        // Android may reject direct adapter control or require user confirmation.
+        // Opening an intent is only a fallback; it is never proof that the state changed.
+        val fallbackDescription = if (targetOn) {
+            "the Bluetooth enable prompt"
+        } else {
+            "Bluetooth settings"
+        }
+        val intent = if (targetOn) {
+            Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+        } else {
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+        }.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        return try {
+            launchIntent(context, intent)
+            val observedAfterFallback = try {
+                controller.isEnabled() == targetOn
+            } catch (_: SecurityException) {
+                null
+            }
+            if (observedAfterFallback == true) {
+                ActionResult(true, "Bluetooth turned $stateWord!", null)
+            } else {
+                ActionResult(
+                    false,
+                    null,
+                    "Bluetooth state was not changed. I opened $fallbackDescription; please turn it $stateWord and try again."
+                )
+            }
+        } catch (_: Exception) {
+            ActionResult(false, null, "Couldn't open $fallbackDescription to turn Bluetooth $stateWord.")
+        }
+    }
+}
 
 @Singleton
 class SystemActions @Inject constructor(
@@ -245,7 +371,7 @@ class SystemActions @Inject constructor(
                     ActionResult(true, "Done! Brightness is set to $level%.", null)
                 } else {
                     val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
+                        data = "package:${context.packageName}".toUri()
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -308,6 +434,9 @@ class SystemActions @Inject constructor(
     private class LockScreenAction : Action {
         override val name: String = "LOCK_SCREEN"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+                return ActionResult(false, null, "Locking the screen requires Android 9 or newer.")
+            }
             val service = OpenDroidAccessibilityService.getInstance()
             return if (service != null) {
                 val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
@@ -327,67 +456,6 @@ class SystemActions @Inject constructor(
                 ActionResult(success, if (success) "Power dialog opened. Action pending user touch." else "Failed to open dialog", null)
             } else {
                 ActionResult(false, null, "Accessibility Service not running to trigger power dialog.")
-            }
-        }
-    }
-
-    private class ToggleBluetoothAction : Action {
-        override val name: String = "TOGGLE_BLUETOOTH"
-        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
-                .lowercase().trim()
-
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-                ?: return ActionResult(false, null, "Device doesn't have Bluetooth hardware.")
-
-            val currentlyOn = try { adapter.isEnabled } catch (_: SecurityException) { false }
-            val targetOn = when (requestedState) {
-                "on", "true", "enable", "yes"    -> true
-                "off", "false", "disable", "no"  -> false
-                "toggle"                         -> !currentlyOn
-                else                             -> !currentlyOn
-            }
-
-            if (targetOn == currentlyOn) {
-                val stateWord = if (currentlyOn) "on" else "off"
-                return ActionResult(true, "Bluetooth is already $stateWord!", null)
-            }
-
-            val stateWord = if (targetOn) "on" else "off"
-
-            // Method 1: Direct adapter toggle (all API levels)
-            try {
-                @Suppress("DEPRECATION")
-                val result = if (targetOn) adapter.enable() else adapter.disable()
-                if (result) return ActionResult(true, "Bluetooth turned $stateWord!", null)
-            } catch (e: SecurityException) {
-                Log.w("ToggleBluetooth", "Direct denied: ${e.message}")
-            } catch (e: Exception) {
-                Log.w("ToggleBluetooth", "Direct failed: ${e.message}")
-            }
-
-            // Method 2: Enable request intent (for turning ON)
-            if (targetOn) {
-                try {
-                    val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    return ActionResult(true, "Bluetooth turned $stateWord!", null)
-                } catch (e: Exception) {
-                    Log.w("ToggleBluetooth", "Enable intent failed: ${e.message}")
-                }
-            }
-
-            // Method 3: Bluetooth settings (last resort)
-            return try {
-                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "Bluetooth turned $stateWord!", null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't toggle Bluetooth.")
             }
         }
     }
@@ -438,6 +506,9 @@ class SystemActions @Inject constructor(
     private class TakeScreenshotAction : Action {
         override val name: String = "TAKE_SCREENSHOT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+                return ActionResult(false, null, "Taking a screenshot requires Android 9 or newer.")
+            }
             val service = OpenDroidAccessibilityService.getInstance()
             return if (service != null) {
                 val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT)
@@ -673,14 +744,14 @@ class SystemActions @Inject constructor(
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val appName = params["appName"] ?: return ActionResult(false, null, "appName parameter missing")
             return try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=${Uri.encode(appName)}")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "market://search?q=${Uri.encode(appName)}".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
                 ActionResult(true, "Opening Play Store to get '$appName' for you.", null)
             } catch (e: Exception) {
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=${Uri.encode(appName)}")).apply {
+                    val intent = Intent(Intent.ACTION_VIEW, "https://play.google.com/store/search?q=${Uri.encode(appName)}".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -763,6 +834,9 @@ class SystemActions @Inject constructor(
 
     private class VerifyContactAction : Action {
         override val name: String = "VERIFY_CONTACT"
+        // lint false positive: the cursor is closed by `?.use { }` on every path,
+        // but the Recycle detector does not model Kotlin's use() inlining. See #67.
+        @Suppress("Recycle")
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contactName = params["contactName"] ?: params["contact"]
                 ?: return ActionResult(false, null, "contactName parameter is missing")
@@ -1085,7 +1159,7 @@ class SystemActions @Inject constructor(
                     chromeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(chromeIntent)
                 } else {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                    val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -1108,7 +1182,7 @@ class SystemActions @Inject constructor(
                     "https://$url"
                 } else url
 
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fullUrl)).apply {
+                val intent = Intent(Intent.ACTION_VIEW, fullUrl.toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -1125,7 +1199,7 @@ class SystemActions @Inject constructor(
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 // Chrome incognito intent
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                     setPackage("com.android.chrome")
                     putExtra("com.android.browser.application_id", "com.android.chrome")
                     putExtra("create_new_tab", true)
@@ -1139,7 +1213,7 @@ class SystemActions @Inject constructor(
                     ActionResult(true, "Opened Chrome in incognito mode!", null)
                 } else {
                     // Fallback: try to open any browser and tell user
-                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                    val fallback = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(fallback)
@@ -1165,7 +1239,7 @@ class SystemActions @Inject constructor(
                 val chromeSettingsIntent = Intent().apply {
                     action = Intent.ACTION_VIEW
                     setPackage("com.android.chrome")
-                    data = Uri.parse("chrome://settings/clearBrowserData")
+                    data = "chrome://settings/clearBrowserData".toUri()
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
 
@@ -1179,7 +1253,7 @@ class SystemActions @Inject constructor(
                 } catch (_: Exception) {
                     // Fallback: open app info for Chrome
                     val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:com.android.chrome")
+                        data = "package:com.android.chrome".toUri()
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     try {

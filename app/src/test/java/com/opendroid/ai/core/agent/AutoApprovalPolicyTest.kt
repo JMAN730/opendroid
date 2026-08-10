@@ -50,8 +50,13 @@ class AutoApprovalPolicyTest {
     }
 
     @Test
-    fun `YOLO approves everything including neverAutoApprove actions`() {
+    fun `YOLO auto-approves even neverAutoApprove actions`() {
         assertTrue(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("PAY_UPI", "DELETE_FILE")))
+    }
+
+    @Test
+    fun `YOLO approves safe actions without an allowlist grant`() {
+        assertTrue(AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("WEB_SEARCH")))
     }
 
     @Test
@@ -97,5 +102,14 @@ class AutoApprovalPolicyTest {
         assertTrue(
             AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted, Plan("p1", "test", "1m", 1, steps))
         )
+    }
+
+    @Test
+    fun `blank primary action is ignored`() {
+        val steps = listOf(step("s0", "   "))
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, emptySet(), Plan("p1", "test", "1m", 1, steps))
+        )
+        assertEquals(emptyList<String>(), AutoApprovalPolicy.blockedActions(emptySet(), steps))
     }
 }

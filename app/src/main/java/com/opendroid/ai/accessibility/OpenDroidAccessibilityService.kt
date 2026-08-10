@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -21,6 +20,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.graphics.toColorInt
 import com.opendroid.ai.R
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
@@ -51,9 +51,13 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var nodeTraversal: AccessibilityNodeTraversal
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var windowManager: WindowManager? = null
     private var floatingView: FloatingWidgetView? = null
+    private var touchTargetView: TouchTargetView? = null
     private var isButtonAdded = false
     private var isDeviceLocked = false
     private var showFloatingButtonSetting = false
@@ -162,11 +166,18 @@ class OpenDroidAccessibilityService : AccessibilityService() {
         view.updateState(agentLoop.agentState.value)
         floatingView = view
 
+        // Draw layer: renders the icon, including its animated glow, which can reach the
+        // full edge of this 64dp box. It is deliberately not touchable (FLAG_NOT_TOUCHABLE):
+        // without that, the transparent margin around the visible icon (the box is a square,
+        // the icon is a circle inscribed in it) would swallow taps meant for whatever app is
+        // underneath. See #107.
         val params = WindowManager.LayoutParams(
             dpToPx(64),
             dpToPx(64),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -174,7 +185,29 @@ class OpenDroidAccessibilityService : AccessibilityService() {
             y = 300
         }
 
-        view.setOnTouchListener(object : View.OnTouchListener {
+        // Touch layer: an invisible window sized and centered to match the icon's static
+        // footprint (matches the inset used in FloatingWidgetView.onDraw's radius calc), kept
+        // in lockstep with the draw layer's position. This is the only part of the widget that
+        // is actually touchable, so a tap or drag has to land on the visible icon to be caught
+        // by the widget at all — everywhere else in the old 64dp square now falls through to
+        // whatever is underneath, same as if the widget weren't there.
+        val touchTarget = TouchTargetView(this)
+        touchTargetView = touchTarget
+
+        val touchInset = dpToPx(8)
+        val touchParams = WindowManager.LayoutParams(
+            dpToPx(64) - 2 * touchInset,
+            dpToPx(64) - 2 * touchInset,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = params.x + touchInset
+            y = params.y + touchInset
+        }
+
+        touchTarget.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
@@ -194,7 +227,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         isClick = true
-                        view.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                        touchTarget.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -203,7 +236,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) {
                             if (isClick) {
                                 isClick = false
-                                view.removeCallbacks(longPressRunnable)
+                                touchTarget.removeCallbacks(longPressRunnable)
                             }
                         }
                         params.x = initialX + dx.toInt()
@@ -215,22 +248,26 @@ class OpenDroidAccessibilityService : AccessibilityService() {
                         params.x = params.x.coerceIn(0, screenWidth - params.width)
                         params.y = params.y.coerceIn(0, screenHeight - params.height)
 
+                        touchParams.x = params.x + touchInset
+                        touchParams.y = params.y + touchInset
+
                         try {
                             windowManager?.updateViewLayout(view, params)
+                            windowManager?.updateViewLayout(touchTarget, touchParams)
                         } catch (e: Exception) {
                             // View might have been removed
                         }
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        view.removeCallbacks(longPressRunnable)
+                        touchTarget.removeCallbacks(longPressRunnable)
                         if (isClick) {
-                            openMainActivityAction()
+                            touchTarget.performClick()
                         }
                         return true
                     }
                     MotionEvent.ACTION_CANCEL -> {
-                        view.removeCallbacks(longPressRunnable)
+                        touchTarget.removeCallbacks(longPressRunnable)
                         return true
                     }
                 }
@@ -240,9 +277,22 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
         try {
             windowManager?.addView(view, params)
+            windowManager?.addView(touchTarget, touchParams)
             isButtonAdded = true
         } catch (e: Exception) {
             e.printStackTrace()
+            try {
+                windowManager?.removeView(view)
+            } catch (removeError: Exception) {
+                // Ignore: view may not have been added.
+            }
+            try {
+                windowManager?.removeView(touchTarget)
+            } catch (removeError: Exception) {
+                // Ignore: view may not have been added.
+            }
+            floatingView = null
+            touchTargetView = null
         }
     }
 
@@ -250,10 +300,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
         if (!isButtonAdded) return
         try {
             floatingView?.let { windowManager?.removeView(it) }
+            touchTargetView?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
             floatingView = null
+            touchTargetView = null
             isButtonAdded = false
         }
     }
@@ -286,6 +338,20 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     private fun dpToPx(dp: Int): Int {
         return Math.round(dp * resources.displayMetrics.density)
+    }
+
+    /**
+     * The invisible window that actually receives touches for the floating widget, sized to
+     * just the icon's footprint (see [addFloatingButton]). Given its own named type — rather
+     * than plain [android.view.View] — so it draws the same treatment [FloatingWidgetView]
+     * already gets from the Lint `StaticFieldLeak` check.
+     */
+    private inner class TouchTargetView(context: Context) : View(context) {
+        override fun performClick(): Boolean {
+            super.performClick()
+            openMainActivityAction()
+            return true
+        }
     }
 
     inner class FloatingWidgetView(context: Context) : android.widget.ImageView(context) {
@@ -360,7 +426,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
             val radius = (width / 2f) - dpToPx(8f)
 
             // Draw cyber grey background circle
-            paint.color = Color.parseColor("#121216")
+            paint.color = "#121216".toColorInt()
             paint.style = Paint.Style.FILL
             canvas.drawCircle(cx, cy, radius, paint)
 
@@ -369,12 +435,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
             // Draw glow border
             val color = when (state) {
-                is AgentState.Idle -> Color.parseColor("#00FF66") // Neon green
-                is AgentState.Listening -> Color.parseColor("#FF3B30") // Pulsing red
-                is AgentState.Thinking -> Color.parseColor("#00F0FF") // Cyan
-                is AgentState.Speaking -> Color.parseColor("#007AFF") // Neon blue
-                is AgentState.ExecutingPlan -> Color.parseColor("#00FFCC") // Cyan-green
-                else -> Color.parseColor("#00FF66")
+                is AgentState.Idle -> "#00FF66".toColorInt() // Neon green
+                is AgentState.Listening -> "#FF3B30".toColorInt() // Pulsing red
+                is AgentState.Thinking -> "#00F0FF".toColorInt() // Cyan
+                is AgentState.Speaking -> "#007AFF".toColorInt() // Neon blue
+                is AgentState.ExecutingPlan -> "#00FFCC".toColorInt() // Cyan-green
+                else -> "#00FF66".toColorInt()
             }
 
             paint.color = color
@@ -400,27 +466,7 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     fun findAndClick(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-        for (node in nodes) {
-            if (node.isClickable) {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                node.recycle()
-                return true
-            }
-            // Try parent node if the leaf is not clickable
-            var parent = node.parent
-            while (parent != null) {
-                if (parent.isClickable) {
-                    parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    parent.recycle()
-                    node.recycle()
-                    return true
-                }
-                parent = parent.parent
-            }
-            node.recycle()
-        }
-        return false
+        return nodeTraversal.findAndClick(rootNode, text)
     }
 
     fun findAndClickById(viewId: String): Boolean {
@@ -509,26 +555,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     private fun performSubmitFallback(): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val result = findSubmitNode(rootNode, imeSubmitLabels)
+        val result = nodeTraversal.findAndClickSubmitControl(rootNode, imeSubmitLabels)
         rootNode.recycle()
         return result
-    }
-
-    private fun findSubmitNode(node: AccessibilityNodeInfo, labels: List<String>): Boolean {
-        val text = node.text?.toString()?.lowercase()
-        val contentDesc = node.contentDescription?.toString()?.lowercase()
-        if (node.isClickable && (labels.contains(text) || labels.contains(contentDesc))) {
-            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            if (findSubmitNode(child, labels)) {
-                child.recycle()
-                return true
-            }
-            child.recycle()
-        }
-        return false
     }
 
     fun performScroll(forward: Boolean): Boolean {
@@ -572,27 +601,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
     fun getScreenText(): String {
         val rootNode = rootInActiveWindow ?: return ""
-        val sb = StringBuilder()
-        extractTextFromNode(rootNode, sb)
+        val text = nodeTraversal.screenText(rootNode)
         rootNode.recycle()
-        return sb.toString()
-    }
-
-    private fun extractTextFromNode(node: AccessibilityNodeInfo, sb: StringBuilder) {
-        val nodeText = node.text?.toString()
-        val contentDesc = node.contentDescription?.toString()
-        
-        if (!nodeText.isNullOrEmpty()) {
-            sb.append(nodeText).append("\n")
-        } else if (!contentDesc.isNullOrEmpty()) {
-            sb.append(contentDesc).append("\n")
-        }
-        
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            extractTextFromNode(child, sb)
-            child.recycle()
-        }
+        return text
     }
 
     suspend fun takeScreenshotAndEncode(): String? {

@@ -9,7 +9,9 @@ data class ActionDefinition(
     val isSimple: Boolean = true,
     // Moves money or has irreversible/destructive consequence: always show the
     // approval modal in Auto mode, never offer an "Always allow" grant.
-    val neverAutoApprove: Boolean = false
+    val neverAutoApprove: Boolean = false,
+    /** Optional explicit routing risk; unspecified values use catalog policy. */
+    val risk: ActionRisk = ActionRisk.UNSPECIFIED
 )
 
 data class ParamDefinition(
@@ -351,7 +353,7 @@ object ActionSchema {
         ),
         ActionDefinition(
             name = "SEND_EMAIL",
-            description = "Sends an email",
+            description = "Opens a pre-filled email draft; the user must review and send it. Sending is not verified.",
             params = listOf(
                 ParamDefinition("to", ParamType.STRING, true, "Recipient email or contact name"),
                 ParamDefinition("subject", ParamType.STRING, true, "Email subject"),
@@ -847,7 +849,9 @@ object ActionSchema {
         ActionDefinition(
             name = "CHECK_BALANCE",
             description = "Checks account balance",
-            params = emptyList(),
+            params = listOf(
+                ParamDefinition("app", ParamType.ENUM, false, "Payment app", listOf("gpay", "phonepe", "paytm"), "gpay")
+            ),
             examples = listOf("check my balance", "bank balance"),
             category = ActionCategory.FINANCE
         ),
@@ -893,6 +897,22 @@ object ActionSchema {
             examples = listOf("schedule morning routine at 7am daily"),
             category = ActionCategory.MACRO,
             isSimple = false
+        ),
+        ActionDefinition(
+            name = "DELETE_MACRO",
+            description = "Deletes a saved macro",
+            params = listOf(ParamDefinition("macroName", ParamType.STRING, true, "Macro name")),
+            examples = listOf("delete morning routine macro", "remove my macro"),
+            category = ActionCategory.MACRO,
+            isSimple = false,
+            neverAutoApprove = true
+        ),
+        ActionDefinition(
+            name = "LIST_MACROS",
+            description = "Lists saved macros",
+            params = emptyList(),
+            examples = listOf("what macros do I have", "list my macros"),
+            category = ActionCategory.MACRO
         ),
 
         // ── ADVANCED (Files & Accessibility) ────────────
@@ -1107,6 +1127,17 @@ object ActionSchema {
             ),
             examples = listOf("turn on auto reply", "disable auto reply for whatsapp", "enable auto reply"),
             category = ActionCategory.NOTIFICATION
+        ),
+        ActionDefinition(
+            name = "DISMISS_NOTIFICATION",
+            description = "Removes saved notification history for an app, by ID, or for all apps",
+            params = listOf(
+                ParamDefinition("app", ParamType.STRING, false, "App name or package to filter", defaultValue = ""),
+                ParamDefinition("notificationId", ParamType.STRING, false, "Specific saved notification ID")
+            ),
+            examples = listOf("dismiss the WhatsApp notification", "clear all notifications", "dismiss notification 42"),
+            category = ActionCategory.NOTIFICATION,
+            neverAutoApprove = true
         )
     )
 
@@ -1119,6 +1150,12 @@ object ActionSchema {
     /** Get action by name */
     fun getAction(name: String): ActionDefinition? =
         ALL_ACTIONS.find { it.name == name }
+
+    fun riskForAction(actionName: String): ActionRisk =
+        getAction(actionName)?.let(ActionRiskPolicy::forDefinition) ?: ActionRisk.SENSITIVE
+
+    fun highestRisk(actionNames: Iterable<String>): ActionRisk =
+        ActionRiskPolicy.highest(actionNames.map(::riskForAction))
 
     /** Check if action exists in schema */
     fun isValid(name: String): Boolean =

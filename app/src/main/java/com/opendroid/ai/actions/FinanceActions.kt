@@ -2,11 +2,12 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,18 +30,12 @@ class FinanceActions @Inject constructor() {
             
             return try {
                 val encNote = URLEncoder.encode(note, "UTF-8")
-                val upiUri = Uri.parse("upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR")
+                val upiUri = "upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 
-                val appPackage = when (app.lowercase()) {
-                    "phonepe" -> "com.phonepe.app"
-                    "paytm" -> "net.one97.paytm"
-                    else -> "com.google.android.apps.nbu.paisa.user" // Google Pay
-                }
-                
-                intent.setPackage(appPackage)
+                intent.setPackage(paymentApp(app).packageName)
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
@@ -65,16 +60,16 @@ class FinanceActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 // Cannot fetch balance programmatically due to bank NPCI/UPI pin constraints.
-                // Open default UPI app (Google Pay) for the user to authenticate and check balance.
+                // Open the selected UPI app for the user to authenticate and check balance.
+                val selectedApp = paymentApp(params["app"] ?: "gpay")
                 val pm = context.packageManager
-                val gpayPackage = "com.google.android.apps.nbu.paisa.user"
-                val intent = pm.getLaunchIntentForPackage(gpayPackage)
+                val intent = pm.getLaunchIntentForPackage(selectedApp.packageName)
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                    ActionResult(true, "I opened Google Pay — you'll need to check your balance there with your PIN.", null, true)
+                    ActionResult(true, "I opened ${selectedApp.displayName} — you'll need to check your balance there with your PIN.", null, true)
                 } else {
-                    ActionResult(false, null, "Google Pay isn't installed. Check your balance in your banking app.")
+                    ActionResult(false, null, "${selectedApp.displayName} isn't installed. Check your balance in your banking app.")
                 }
             } catch (e: Exception) {
                 Log.e("CheckBalance", "Balance check failed: ${e.localizedMessage}")
@@ -115,7 +110,7 @@ class FinanceActions @Inject constructor() {
                 }
                 
                 val share = total / numPeople
-                val formattedShare = String.format("%.2f", share)
+                val formattedShare = String.format(Locale.getDefault(), "%.2f", share)
                 
                 val summary = if (peopleList.firstOrNull()?.startsWith("Person ") == true) {
                     "Total: $totalAmountStr divided among $numPeople people. " +
@@ -132,4 +127,15 @@ class FinanceActions @Inject constructor() {
             }
         }
     }
+}
+
+private data class PaymentApp(
+    val packageName: String,
+    val displayName: String
+)
+
+private fun paymentApp(app: String): PaymentApp = when (app.lowercase(Locale.ROOT)) {
+    "phonepe" -> PaymentApp("com.phonepe.app", "PhonePe")
+    "paytm" -> PaymentApp("net.one97.paytm", "Paytm")
+    else -> PaymentApp("com.google.android.apps.nbu.paisa.user", "Google Pay")
 }

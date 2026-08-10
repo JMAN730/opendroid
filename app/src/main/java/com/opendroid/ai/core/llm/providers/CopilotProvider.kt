@@ -3,7 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
-import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,10 @@ class CopilotProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = UrlUtils.formatBaseUrl(config.copilotUrl, "")
+        val baseUrl = UrlUtils.formatBaseUrl(
+            request.providerConfig?.endpoint?.takeIf { it.isNotBlank() } ?: config.copilotUrl,
+            ""
+        )
         if (baseUrl.isEmpty()) {
             throw IllegalStateException("Copilot server URL is not configured. Set it in Settings.")
         }
@@ -45,7 +49,7 @@ class CopilotProvider @Inject constructor(
 
         val startTime = System.currentTimeMillis()
 
-        val selectedModel = if (config.activeModel.isNotBlank()) config.activeModel else "gpt-4o"
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: "gpt-4o"
 
         // Build messages payload
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
@@ -66,18 +70,22 @@ class CopilotProvider @Inject constructor(
             .url(endpoint)
             .post(bodyJson.toRequestBody(mediaType))
 
-        val apiKey = config.apiKeys[name]
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() } ?: config.apiKeys[name]
         if (!apiKey.isNullOrBlank()) {
             requestBuilder.header("Authorization", "Bearer $apiKey")
         }
 
         return withContext(Dispatchers.IO) {
         client.newCall(requestBuilder.build()).execute().use { response ->
-            val responseBody = response.body?.string()
             if (!response.isSuccessful) {
-                throw IOException("Copilot API request failed: Code ${response.code} - $responseBody")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.COPILOT,
+                    request = request,
+                    knownSecrets = listOfNotNull(apiKey)
+                )
             }
-            if (responseBody == null) {
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) {
                 throw IOException("Empty response body from Copilot API")
             }
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
@@ -100,15 +108,11 @@ class CopilotProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        try {
-            val response = complete(request)
-            val words = response.content.split(" ")
-            for (word in words) {
-                emit("$word ")
-                kotlinx.coroutines.delay(50)
-            }
-        } catch (e: Exception) {
-            emit("Error streaming Copilot API: ${NetworkErrorFormatter.toUserMessage(e)}")
+        val response = complete(request)
+        val words = response.content.split(" ")
+        for (word in words) {
+            emit("$word ")
+            kotlinx.coroutines.delay(50)
         }
     }
 

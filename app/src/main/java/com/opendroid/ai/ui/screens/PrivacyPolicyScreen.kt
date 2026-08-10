@@ -173,6 +173,8 @@ fun PrivacyPolicyScreen(
                     title = "5. DATA STORAGE & RETENTION",
                     content = "• All conversation history, memory facts, and task logs are stored in a local SQLite database on your device.\n" +
                             "• Memory entries support time-to-live (TTL) and are automatically cleaned on expiration.\n" +
+                            "• Execution history remains until you clear it from System Logs or uninstall the app.\n" +
+                            "• Saving a completed task as a macro is an explicit user action; API keys, tokens, passwords, and recognized credentials are replaced with [REDACTED] before recording.\n" +
                             "• You can clear any memory type (Working, Episodic, Semantic, Procedural) from the Memory screen.\n" +
                             "• Uninstalling the app removes all stored data permanently."
                 )
@@ -195,7 +197,11 @@ fun PrivacyPolicyScreen(
             item {
                 PolicySection(
                     title = "7. SECURITY",
-                    content = "• API keys are stored using Android EncryptedSharedPreferences (AES-256 encryption) on your device.\n" +
+                    content = "• API keys are stored with Android Keystore AES-256-GCM encryption on your device.\n" +
+                            "• Your profile name and birth date are encrypted the same way, with a separate device key.\n" +
+                            "• Encryption keys never leave the device's hardware-backed keystore, so encrypted values cannot be read on another device or restored from a backup.\n" +
+                            "• If a key is invalidated, the affected values are not recoverable and are never rewritten unencrypted; the app asks you to enter them again.\n" +
+                            "• Ordinary non-personal settings, such as whether onboarding is complete, are stored unencrypted in app-private storage.\n" +
                             "• All LLM API communication uses HTTPS encryption.\n" +
                             "• The accessibility service only activates when explicitly enabled by you.\n" +
                             "• Destructive actions (device restart, file deletion) require user confirmation."

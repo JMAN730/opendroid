@@ -2,8 +2,8 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import java.net.URLEncoder
@@ -32,7 +32,7 @@ class TransportActions @Inject constructor() {
                 // Try Uber deep link
                 val encPickup = URLEncoder.encode(pickup, "UTF-8")
                 val encDest = URLEncoder.encode(destination, "UTF-8")
-                val uri = Uri.parse("uber://?action=setPickup&pickup[formatted_address]=$encPickup&dropoff[formatted_address]=$encDest&product_id=$rideType")
+                val uri = "uber://?action=setPickup&pickup[formatted_address]=$encPickup&dropoff[formatted_address]=$encDest&product_id=$rideType".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -42,7 +42,7 @@ class TransportActions @Inject constructor() {
                     ActionResult(true, "Getting you an Uber to $destination!", null)
                 } else {
                     // Fallback to web link
-                    val webUri = Uri.parse("https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=$encPickup&dropoff[formatted_address]=$encDest")
+                    val webUri = "https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=$encPickup&dropoff[formatted_address]=$encDest".toUri()
                     val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
@@ -62,7 +62,7 @@ class TransportActions @Inject constructor() {
             val destination = params["destination"] ?: return ActionResult(false, null, "destination is missing")
             return try {
                 val encDest = URLEncoder.encode(destination, "UTF-8")
-                val uri = Uri.parse("olacabs://app/launch?lat=&lng=&utm_source=opendroid&drop_desc=$encDest")
+                val uri = "olacabs://app/launch?lat=&lng=&utm_source=opendroid&drop_desc=$encDest".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -70,7 +70,7 @@ class TransportActions @Inject constructor() {
                     context.startActivity(intent)
                     ActionResult(true, "Getting you an Ola to $destination!", null)
                 } else {
-                    val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.olacabs.customer")).apply {
+                    val storeIntent = Intent(Intent.ACTION_VIEW, "market://details?id=com.olacabs.customer".toUri()).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(storeIntent)
@@ -101,9 +101,9 @@ class TransportActions @Inject constructor() {
                 val encTo = URLEncoder.encode(to, "UTF-8")
                 val encFrom = URLEncoder.encode(from, "UTF-8")
                 val uri = if (from.isNotEmpty()) {
-                    Uri.parse("https://www.google.com/maps/dir/?api=1&origin=$encFrom&destination=$encTo&travelmode=$travelMode")
+                    "https://www.google.com/maps/dir/?api=1&origin=$encFrom&destination=$encTo&travelmode=$travelMode".toUri()
                 } else {
-                    Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$encTo&travelmode=$travelMode")
+                    "https://www.google.com/maps/dir/?api=1&destination=$encTo&travelmode=$travelMode".toUri()
                 }
                 
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
@@ -136,9 +136,9 @@ class TransportActions @Inject constructor() {
             return try {
                 val encRoute = URLEncoder.encode(route, "UTF-8")
                 val uri = if (route.isNotEmpty()) {
-                    Uri.parse("geo:0,0?q=$encRoute&z=10")
+                    "geo:0,0?q=$encRoute&z=10".toUri()
                 } else {
-                    Uri.parse("geo:0,0?q=traffic")
+                    "geo:0,0?q=traffic".toUri()
                 }
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     setPackage("com.google.android.apps.maps")
@@ -159,7 +159,7 @@ class TransportActions @Inject constructor() {
             val flightNumber = params["flightNumber"] ?: return ActionResult(false, null, "flightNumber parameter missing")
             return try {
                 val query = URLEncoder.encode("flight status $flightNumber", "UTF-8")
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$query")).apply {
+                val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
@@ -184,7 +184,7 @@ class TransportActions @Inject constructor() {
                     "dhl" -> "https://www.dhl.com/en/express/tracking.html?AWB=$trackingNumber"
                     else -> "https://www.google.com/search?q=${URLEncoder.encode("$courier track $trackingNumber", "UTF-8")}"
                 }
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
+                val intent = Intent(Intent.ACTION_VIEW, searchUrl.toUri()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)

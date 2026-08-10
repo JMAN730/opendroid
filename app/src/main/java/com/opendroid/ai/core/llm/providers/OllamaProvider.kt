@@ -3,6 +3,8 @@ package com.opendroid.ai.core.llm.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.ProviderErrorDetail
+import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.util.NetworkErrorFormatter
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -33,7 +35,11 @@ class OllamaProvider @Inject constructor(
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
-        val baseUrl = UrlUtils.formatBaseUrl(config.ollamaUrl, "")
+        val selectedModel = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
+        val baseUrl = UrlUtils.formatBaseUrl(
+            request.providerConfig?.endpoint?.takeIf { it.isNotBlank() } ?: config.ollamaUrl,
+            ""
+        )
         if (baseUrl.isEmpty()) {
             throw IllegalStateException("Ollama server URL is not configured. Set it in Settings.")
         }
@@ -44,7 +50,7 @@ class OllamaProvider @Inject constructor(
         val messagesList = request.messages.toOpenAIMessages(request.systemPrompt)
 
         val requestBodyMap = mutableMapOf<String, Any>(
-            "model" to config.activeModel,
+            "model" to selectedModel,
             "messages" to messagesList,
             "stream" to false,
             "options" to mapOf(
@@ -59,7 +65,7 @@ class OllamaProvider @Inject constructor(
             .post(bodyJson.toRequestBody(mediaType))
 
         // Add optional authorization if a bearer token key is configured
-        val apiKey = config.apiKeys[name]
+        val apiKey = request.providerConfig?.apiKey?.takeIf { it.isNotBlank() } ?: config.apiKeys[name]
         if (!apiKey.isNullOrBlank()) {
             requestBuilder.header("Authorization", "Bearer $apiKey")
         }
@@ -67,9 +73,14 @@ class OllamaProvider @Inject constructor(
         return withContext(Dispatchers.IO) {
         client.newCall(requestBuilder.build()).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Ollama request failed: Code ${response.code} - ${response.body?.string()}")
+                throw response.toSafeProviderException(
+                    provider = ProviderErrorDetail.Provider.OLLAMA,
+                    request = request,
+                    knownSecrets = listOfNotNull(apiKey)
+                )
             }
-            val responseBody = response.body?.string() ?: throw IOException("Empty response body from Ollama")
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) throw IOException("Empty response body from Ollama")
             val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
             val messageObj = jsonResponse.getAsJsonObject("message")
             val content = messageObj.get("content").asString
@@ -80,7 +91,7 @@ class OllamaProvider @Inject constructor(
             LLMResponse(
                 content = content,
                 tokensUsed = promptEvalCount + evalCount,
-                model = config.activeModel,
+                model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
             )

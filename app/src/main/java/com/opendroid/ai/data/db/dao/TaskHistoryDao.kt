@@ -9,6 +9,9 @@ interface TaskHistoryDao {
     @Query("SELECT * FROM task_history ORDER BY timestamp DESC")
     fun getTaskHistoryFlow(): Flow<List<TaskHistoryEntity>>
 
+    @Query("SELECT * FROM task_history WHERE planId = :planId ORDER BY timestamp ASC, id ASC")
+    suspend fun getTaskHistoryForPlan(planId: String): List<TaskHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(task: TaskHistoryEntity)
 

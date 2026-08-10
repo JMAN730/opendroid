@@ -19,6 +19,8 @@ data class OpenDroidColors(
     val textPrimary: Color,
     val textSecondary: Color,
     val accentNeonGreen: Color,
+    /** Calmer green for large filled button surfaces (neon is for thin marks only). */
+    val accentGreenButton: Color,
     val accentPurple: Color,
     val accentCyan: Color,
     val accentRed: Color,
@@ -34,6 +36,7 @@ val DarkPalette = OpenDroidColors(
     textPrimary = Color(0xFFF0F6FC),
     textSecondary = Color(0xFF8B949E),
     accentNeonGreen = Color(0xFF00FF88),
+    accentGreenButton = Color(0xFF00C46A),
     accentPurple = Color(0xFF8A2BE2),
     accentCyan = Color(0xFF00F0FF),
     accentRed = Color(0xFFFF3B30),
@@ -49,6 +52,7 @@ val LightPalette = OpenDroidColors(
     textPrimary = Color(0xFF1F2328),
     textSecondary = Color(0xFF656D76),
     accentNeonGreen = Color(0xFF1A7F37),
+    accentGreenButton = Color(0xFF1A7F37),
     accentPurple = Color(0xFF8250DF),
     accentCyan = Color(0xFF0969DA),
     accentRed = Color(0xFFCF222E),
@@ -79,6 +83,7 @@ val BorderColor = DarkPalette.borderColor
 val TextPrimary = DarkPalette.textPrimary
 val TextSecondary = DarkPalette.textSecondary
 val AccentNeonGreen = DarkPalette.accentNeonGreen
+val AccentGreenButton = DarkPalette.accentGreenButton
 val AccentPurple = DarkPalette.accentPurple
 val AccentCyan = DarkPalette.accentCyan
 val AccentRed = DarkPalette.accentRed

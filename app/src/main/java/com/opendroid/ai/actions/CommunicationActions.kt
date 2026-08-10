@@ -4,19 +4,19 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
-import com.opendroid.ai.accessibility.CallAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ContactResolution
 import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.maskPhone
+import com.opendroid.ai.core.util.DeviceCapabilities
 import android.provider.ContactsContract
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -24,9 +24,42 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal enum class EmailComposeOutcome {
+    COMPOSED,
+    VERIFIED_SENT,
+    UNAVAILABLE
+}
+
+internal fun interface EmailComposer {
+    fun open(context: Context, to: String, subject: String, body: String): EmailComposeOutcome
+}
+
+private class AndroidEmailComposer : EmailComposer {
+    override fun open(
+        context: Context,
+        to: String,
+        subject: String,
+        body: String
+    ): EmailComposeOutcome {
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = "mailto:".toUri()
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            return EmailComposeOutcome.UNAVAILABLE
+        }
+        context.startActivity(intent)
+        return EmailComposeOutcome.COMPOSED
+    }
+}
+
 @Singleton
 class CommunicationActions @Inject constructor(
-    private val contactResolver: ContactResolver
+    private val contactResolver: ContactResolver,
+    private val callFlowExecutor: CallFlowExecutor
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -102,7 +135,7 @@ class CommunicationActions @Inject constructor(
                 ?: return ActionResult(false, null, "contact or number parameter missing")
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
-                is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, contact, context)
+                is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, context)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_CALL")
                 is ContactResolution.NotFound -> ActionResult.NeedsInput(
                     question = "I couldn't find '$contact' in your contacts. What's their number?",
@@ -164,63 +197,16 @@ class CommunicationActions @Inject constructor(
 
     // ── Execution helpers ────────────────────────────────────
 
-    private suspend fun executeCall(phone: String, contactLabel: String, context: Context): ActionResult {
-        val cleanPhone = phone.replace(Regex("[\\s\\-()]"), "").trim()
-        return try {
-            val callUri = Uri.parse("tel:$cleanPhone")
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                val intent = Intent(Intent.ACTION_CALL, callUri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "Calling $contactLabel now!", null)
-            } else {
-                val intent = Intent(Intent.ACTION_DIAL, callUri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                
-                val service = OpenDroidAccessibilityService.getInstance()
-                if (service != null) {
-                    val clicked = CallAutomator.automateCall()
-                    if (clicked) {
-                        return ActionResult(true, "Calling $contactLabel now!", null)
-                    }
-                }
-                ActionResult(false, null, "I've opened the dialer for $contactLabel — please tap call.", true)
-            }
-        } catch (e: SecurityException) {
-            try {
-                val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(dialIntent)
-                
-                val service = OpenDroidAccessibilityService.getInstance()
-                if (service != null) {
-                    val clicked = CallAutomator.automateCall()
-                    if (clicked) {
-                        return ActionResult(true, "Calling $contactLabel now!", null)
-                    }
-                }
-                ActionResult(false, null, "Dialer is open for $contactLabel — please tap call to connect.", true)
-            } catch (e2: Exception) {
-                Log.e("MakeCall", "Call failed: ${e2.localizedMessage}")
-                ActionResult(false, null, "Couldn't make that call. Want to try again?")
-            }
-        } catch (e: Exception) {
-            Log.e("MakeCall", "Call failed: ${e.localizedMessage}")
-            ActionResult(false, null, "Something went wrong with the call. Try again?")
-        }
-    }
+    private suspend fun executeCall(phone: String, context: Context): ActionResult =
+        callFlowExecutor.execute(phone, context)
 
     private suspend fun executeWhatsApp(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
         return try {
             val encodedMsg = URLEncoder.encode(message, "UTF-8")
             val whatsappUri = if (phone.matches(Regex("\\+?[0-9]+"))) {
-                Uri.parse("https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg")
+                "https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg".toUri()
             } else {
-                Uri.parse("whatsapp://send?text=$encodedMsg")
+                "whatsapp://send?text=$encodedMsg".toUri()
             }
             val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
                 setPackage("com.whatsapp")
@@ -295,7 +281,8 @@ class CommunicationActions @Inject constructor(
 
     private suspend fun executeSms(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
         return try {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+            if (DeviceCapabilities.canSendSms(context) &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                 try {
                     val smsManager = context.getSystemService(SmsManager::class.java)
                     if (smsManager != null) {
@@ -307,9 +294,14 @@ class CommunicationActions @Inject constructor(
                 }
             }
             val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = Uri.parse("smsto:$phone")
+                data = "smsto:$phone".toUri()
                 putExtra("sms_body", message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // Telephony is optional: a device with no radio and no messaging app
+            // would throw ActivityNotFoundException here.
+            if (intent.resolveActivity(context.packageManager) == null) {
+                return ActionResult(false, null, "This device can't send text messages — there's no messaging app or phone hardware. Want me to use WhatsApp?")
             }
             context.startActivity(intent)
 
@@ -326,7 +318,7 @@ class CommunicationActions @Inject constructor(
         } catch (e: Exception) {
             try {
                 val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("sms:$phone")
+                    data = "sms:$phone".toUri()
                     putExtra("sms_body", message)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -350,24 +342,27 @@ class CommunicationActions @Inject constructor(
 
     // ── Non-disambiguated actions (unchanged) ────────────────
 
-    private class SendEmailAction : Action {
+    internal class SendEmailAction(
+        private val emailComposer: EmailComposer = AndroidEmailComposer()
+    ) : Action {
         override val name: String = "SEND_EMAIL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val to = params["to"] ?: return ActionResult(false, null, "to email is missing")
             val subject = params["subject"] ?: ""
             val body = params["body"] ?: ""
             return try {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("mailto:")
-                    putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-                    putExtra(Intent.EXTRA_SUBJECT, subject)
-                    putExtra(Intent.EXTRA_TEXT, body)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                when (emailComposer.open(context, to, subject, body)) {
+                    EmailComposeOutcome.VERIFIED_SENT ->
+                        ActionResult(true, "Email sent successfully.", null)
+                    EmailComposeOutcome.COMPOSED ->
+                        ActionResult.UserActionRequired(
+                            "Email draft opened. Review it and tap Send; sending was not verified."
+                        )
+                    EmailComposeOutcome.UNAVAILABLE ->
+                        ActionResult(false, null, "Couldn't open the email app. Is one installed?")
                 }
-                context.startActivity(intent)
-                ActionResult(true, "Email to $to is ready — just review and send!", null)
             } catch (e: Exception) {
-                Log.e("SendEmail", "Email failed: ${e.localizedMessage}")
+                Log.e("SendEmail", "Email compose launch failed")
                 ActionResult(false, null, "Couldn't open the email app. Is one installed?")
             }
         }
@@ -401,7 +396,7 @@ class CommunicationActions @Inject constructor(
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$phone")).apply {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=$phone".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -416,8 +411,13 @@ class CommunicationActions @Inject constructor(
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
                         } else {
-                            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
+                            val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$phone".toUri()).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            // Telephony is optional — a device with no radio and no
+                            // dialer app has nothing left to fall back to.
+                            if (dialIntent.resolveActivity(context.packageManager) == null) {
+                                return ActionResult(false, null, "No video call app is installed, and this device can't place phone calls. Try WhatsApp?")
                             }
                             context.startActivity(dialIntent)
                         }

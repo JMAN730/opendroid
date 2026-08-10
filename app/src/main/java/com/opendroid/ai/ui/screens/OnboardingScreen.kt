@@ -10,20 +10,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.opendroid.ai.ui.theme.*
+import com.opendroid.ai.ui.viewmodel.OnboardingViewModel
 
 enum class OnboardingStage {
     INTRODUCTION,
@@ -33,22 +36,21 @@ enum class OnboardingStage {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OnboardingScreen(onFinished: () -> Unit) {
-    val context = LocalContext.current
-    val sharedPrefs = remember { com.opendroid.ai.core.security.SecurePrefs.get(context) }
+fun OnboardingScreen(
+    onFinished: () -> Unit,
+    viewModel: OnboardingViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
 
-    var name by remember { mutableStateOf(sharedPrefs.getString("user_name", "") ?: "") }
-    var dob by remember { mutableStateOf(sharedPrefs.getString("user_dob", "") ?: "") }
-    var stage by remember {
-        mutableStateOf(
-            if (name.isNotBlank() && dob.isNotBlank()) {
-                OnboardingStage.PERMISSION_PROMPT
-            } else {
-                OnboardingStage.INTRODUCTION
-            }
-        )
-    }
+    var stage by remember { mutableStateOf(OnboardingStage.INTRODUCTION) }
     var showError by remember { mutableStateOf(false) }
+
+    // A user returning to a stored profile skips straight past the introduction, as before.
+    LaunchedEffect(uiState.isLoading) {
+        if (!uiState.isLoading && uiState.name.isNotBlank() && uiState.dateOfBirth.isNotBlank()) {
+            stage = OnboardingStage.PERMISSION_PROMPT
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -69,20 +71,19 @@ fun OnboardingScreen(onFinished: () -> Unit) {
         when (stage) {
             OnboardingStage.INTRODUCTION -> {
                 IntroductionPanel(
-                    name = name,
-                    onNameChange = { name = it; showError = false },
-                    dob = dob,
-                    onDobChange = { dob = it; showError = false },
+                    name = uiState.name,
+                    onNameChange = { viewModel.onNameChange(it); showError = false },
+                    dob = uiState.dateOfBirth,
+                    onDobChange = { viewModel.onDateOfBirthChange(it); showError = false },
                     showError = showError,
+                    profileMustBeReentered = uiState.profileMustBeReentered,
+                    storageError = uiState.storageError,
                     onContinue = {
-                        if (name.isBlank() || dob.isBlank()) {
+                        if (uiState.name.isBlank() || uiState.dateOfBirth.isBlank()) {
                             showError = true
                         } else {
-                            sharedPrefs.edit()
-                                .putString("user_name", name)
-                                .putString("user_dob", dob)
-                                .apply()
-                            stage = OnboardingStage.PERMISSION_PROMPT
+                            // The stage only advances once the profile is encrypted at rest.
+                            viewModel.saveProfile { stage = OnboardingStage.PERMISSION_PROMPT }
                         }
                     },
                     modifier = Modifier.padding(padding)
@@ -99,10 +100,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
             OnboardingStage.PERMISSIONS -> {
                 PermissionsPanel(
                     padding = padding,
-                    onFinished = {
-                        sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
-                        onFinished()
-                    }
+                    onFinished = { viewModel.completeOnboarding(onFinished) }
                 )
             }
         }
@@ -118,7 +116,9 @@ fun IntroductionPanel(
     onDobChange: (String) -> Unit,
     showError: Boolean,
     onContinue: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    profileMustBeReentered: Boolean = false,
+    storageError: Boolean = false
 ) {
     Column(
         modifier = modifier
@@ -161,6 +161,18 @@ fun IntroductionPanel(
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
 
+        if (profileMustBeReentered) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Your saved details could not be unlocked on this device, so they were " +
+                        "not kept. Nothing was stored unencrypted - please enter them again.",
+                color = AccentRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+
         Spacer(modifier = Modifier.height(28.dp))
 
         OutlinedTextField(
@@ -184,11 +196,22 @@ fun IntroductionPanel(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        var showDatePicker by remember { mutableStateOf(false) }
+
         OutlinedTextField(
             value = dob,
             onValueChange = onDobChange,
             label = { Text("When is your birthday?", color = TextSecondary) },
             placeholder = { Text("e.g. MM/DD/YYYY", color = TextSecondary.copy(alpha = 0.6f)) },
+            trailingIcon = {
+                IconButton(onClick = { showDatePicker = true }) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = "Pick your birthday",
+                        tint = AccentNeonGreen
+                    )
+                }
+            },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = AccentNeonGreen,
                 unfocusedBorderColor = BorderColor,
@@ -204,10 +227,48 @@ fun IntroductionPanel(
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (showDatePicker) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = parseDobToUtcMillis(dob),
+                yearRange = 1900..java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            )
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            datePickerState.selectedDateMillis?.let { millis ->
+                                onDobChange(formatUtcMillisAsDob(millis))
+                            }
+                            showDatePicker = false
+                        },
+                        enabled = datePickerState.selectedDateMillis != null
+                    ) { Text("OK", color = AccentNeonGreen, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
         if (showError) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Please enter both your name and birth date.",
+                color = AccentRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (storageError) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Your details could not be saved securely. Please try again.",
                 color = AccentRed,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
@@ -225,6 +286,23 @@ fun IntroductionPanel(
             Text("Let's Go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
+}
+
+/** Parses a typed MM/DD/YYYY value into UTC millis for the picker, or null if not parseable. */
+private fun parseDobToUtcMillis(dob: String): Long? = runCatching {
+    val format = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+        isLenient = false
+    }
+    format.parse(dob.trim())?.time
+}.getOrNull()
+
+/** Formats picker UTC millis as the MM/DD/YYYY string the rest of onboarding expects. */
+private fun formatUtcMillisAsDob(millis: Long): String {
+    val format = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+    }
+    return format.format(java.util.Date(millis))
 }
 
 @Composable

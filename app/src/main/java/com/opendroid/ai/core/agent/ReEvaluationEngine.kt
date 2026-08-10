@@ -3,13 +3,18 @@ package com.opendroid.ai.core.agent
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.ProviderSelectionPolicy
 import com.opendroid.ai.core.llm.ResponseFormat
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
+import com.opendroid.ai.core.llm.error.LLMError
+import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.prompts.ReEvalPrompts
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -42,8 +47,6 @@ class ReEvaluationEngine @Inject constructor(
         planId: String
     ): ReEvalResult {
         return try {
-            val provider = llmProviderFactory.getActiveProvider()
-            
             // Format details for the prompt
             val inputDetails = """
                 - Original goal: $originalGoal
@@ -52,7 +55,7 @@ class ReEvaluationEngine @Inject constructor(
                 - Remaining steps: ${json.encodeToString(remainingSteps)}
             """.trimIndent()
 
-            val response = provider.complete(
+            completeAndDecode(
                 LLMRequest(
                     systemPrompt = ReEvalPrompts.RE_EVAL_SYSTEM_PROMPT,
                     messages = listOf(
@@ -65,18 +68,15 @@ class ReEvaluationEngine @Inject constructor(
                     temperature = 0.0f,
                     maxTokens = 1000,
                     responseFormat = ResponseFormat.JSON
-                )
-            )
-
-            val cleaned = cleanJsonString(response.content)
-            json.decodeFromString<ReEvalResult>(cleaned)
+                ),
+                actionNames = (completedSteps + failedSteps + remainingSteps).map { it.action }
+            ) { cleaned -> json.decodeFromString<ReEvalResult>(cleaned) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LLMException) {
+            throw e
         } catch (e: Exception) {
-            // Safe fallback if network / parsing fails
-            ReEvalResult(
-                speech = "Re-evaluation offline. Continuing with existing plan.",
-                decision = "CONTINUE",
-                updatedPlan = null
-            )
+            throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
     }
 
@@ -88,7 +88,6 @@ class ReEvaluationEngine @Inject constructor(
         planId: String
     ): ReEvalResult {
         return try {
-            val provider = llmProviderFactory.getActiveProvider()
             val whitelist = ActionSchema.getAllActionNames()
             
             // Format details for the prompt
@@ -123,7 +122,7 @@ class ReEvaluationEngine @Inject constructor(
                 - Remaining steps: ${json.encodeToString(remainingSteps)}
             """.trimIndent()
 
-            val response = provider.complete(
+            val result = completeAndDecode(
                 LLMRequest(
                     systemPrompt = systemPrompt,
                     messages = listOf(
@@ -136,11 +135,10 @@ class ReEvaluationEngine @Inject constructor(
                     temperature = 0.0f,
                     maxTokens = 1000,
                     responseFormat = ResponseFormat.JSON
-                )
-            )
-
-            val cleaned = cleanJsonString(response.content)
-            val result = json.decodeFromString<ReEvalResult>(cleaned)
+                ),
+                actionNames = listOf(failedStep.action) +
+                    completedSteps.map { it.action } + remainingSteps.map { it.action }
+            ) { cleaned -> json.decodeFromString<ReEvalResult>(cleaned) }
             
             // Log to unknown actions DB only — never to semantic memory
             try {
@@ -154,8 +152,9 @@ class ReEvaluationEngine @Inject constructor(
             } catch (e: Exception) {}
             
             result
-        } catch (e: Exception) {
-            // Log failed status to DB only — never to semantic memory
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LLMException) {
             try {
                 unknownActionDao.get().insertUnknownAction(
                     UnknownActionEntity(
@@ -164,13 +163,19 @@ class ReEvaluationEngine @Inject constructor(
                         fixStatus = "FAILED"
                     )
                 )
-            } catch (ex: Exception) {}
-
-            ReEvalResult(
-                speech = "Failed to replan failed step: ${e.localizedMessage}",
-                decision = "ABANDON",
-                updatedPlan = null
-            )
+            } catch (_: Exception) {}
+            throw e
+        } catch (e: Exception) {
+            try {
+                unknownActionDao.get().insertUnknownAction(
+                    UnknownActionEntity(
+                        attemptedAction = failedStep.action,
+                        goal = originalGoal,
+                        fixStatus = "FAILED"
+                    )
+                )
+            } catch (_: Exception) {}
+            throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
     }
 
@@ -200,5 +205,56 @@ class ReEvaluationEngine @Inject constructor(
             content = content.removeSuffix("```")
         }
         return content.trim()
+    }
+
+    /**
+     * A malformed local plan is the only condition that may use a configured
+     * alternate planner. Provider errors retain their existing retry/error
+     * contract and never trigger a silent vendor switch.
+     */
+    private suspend fun <T> completeAndDecode(
+        request: LLMRequest,
+        actionNames: Collection<String>,
+        decode: (String) -> T
+    ): T {
+        val providers = llmProviderFactory.getPlanningProviders(actionNames)
+        var lastMalformed: LLMException? = null
+
+        for ((index, provider) in providers.withIndex()) {
+            val response = try {
+                provider.complete(request)
+            } catch (failure: LLMException) {
+                if (ProviderSelectionPolicy.shouldEscalateMalformed(
+                        failure.error,
+                        index < providers.lastIndex
+                    )
+                ) {
+                    lastMalformed = failure
+                    continue
+                }
+                throw failure
+            }
+
+            llmProviderFactory.recordPlanningLatency(response)
+            try {
+                return decode(cleanJsonString(response.content))
+            } catch (_: Exception) {
+                lastMalformed = LLMErrorMapper.malformed(provider.name, response.model)
+                if (index == providers.lastIndex) break
+            }
+        }
+
+        val activeProvider = providers.firstOrNull()?.name ?: "On-Device AI"
+        if (lastMalformed == null) {
+            throw LLMErrorMapper.safeFallbackUnavailable(
+                activeProvider,
+                providers.firstOrNull()?.availableModels?.firstOrNull().orEmpty()
+            )
+        }
+        when (ProviderSelectionPolicy.terminalError(activeProvider, providers.size)) {
+            LLMError.SafeFallbackUnavailable ->
+                throw LLMErrorMapper.safeFallbackUnavailable(activeProvider, lastMalformed.model)
+            else -> throw lastMalformed
+        }
     }
 }

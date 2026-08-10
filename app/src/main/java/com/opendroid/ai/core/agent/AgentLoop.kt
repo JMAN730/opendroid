@@ -5,9 +5,12 @@ import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.LLMResponse
+import com.opendroid.ai.core.llm.LatencyBudgetStatus
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.memory.MemoryManager
+import com.opendroid.ai.core.memory.ExecutionHistoryPrivacy
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Plan
@@ -16,14 +19,17 @@ import com.opendroid.ai.data.models.PlanStep
 import com.opendroid.ai.data.models.StepStatus
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
+import com.opendroid.ai.data.models.approvalSettings
 import com.opendroid.ai.data.repository.ConversationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,11 +45,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import com.opendroid.ai.core.util.NetworkErrorFormatter
+import com.opendroid.ai.core.llm.error.LLMException
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val MAX_NEEDS_INPUT_PROMPTS = 5
+private const val MAX_INCOMPLETE_MESSAGE_IDS = 100
 private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP")
 
 internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionName: String): String {
@@ -74,6 +82,7 @@ class AgentLoop @Inject constructor(
     private val llmProviderFactory: LLMProviderFactory,
     private val planManager: PlanManager,
     private val actionDispatcher: ActionDispatcher,
+    private val actionSequenceExecutor: ActionSequenceExecutor,
     private val memoryManager: MemoryManager,
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
@@ -124,6 +133,23 @@ class AgentLoop @Inject constructor(
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
     val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
+
+    private val _chatError = MutableStateFlow<ChatErrorUiState?>(null)
+    val chatError: StateFlow<ChatErrorUiState?> = _chatError.asStateFlow()
+
+    // Ids of partially streamed agent replies, so re-sent context can label them as
+    // incomplete. Bounded: an insertion-ordered set capped at
+    // MAX_INCOMPLETE_MESSAGE_IDS, dropping the oldest entry once full - only the ids
+    // still inside the last-10-messages context window matter, so evicted entries can
+    // never affect a prompt again.
+    private val incompleteMessageIds: MutableSet<String> = java.util.Collections.synchronizedSet(
+        java.util.Collections.newSetFromMap(
+            object : LinkedHashMap<String, Boolean>() {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>): Boolean =
+                    size > MAX_INCOMPLETE_MESSAGE_IDS
+            }
+        )
+    )
 
     // A single pending awaitUserResponse() prompt, identified by [requestId] - not just a
     // session id, so that even a second prompt opened for the SAME session can never be
@@ -294,7 +320,48 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    /**
+     * Re-executes a previously failed request after the user taps Retry on its error
+     * card. Mirrors processQuery's new-task path, but reuses the user message already
+     * persisted for [requestId] in [sessionId] instead of inserting a duplicate bubble -
+     * and always runs in the error's own session, never wherever the user is looking.
+     * Falls back to the session's last user message if [requestId] doesn't resolve to
+     * one (e.g. a plan re-evaluation failure, whose requestId is a plan id).
+     */
+    fun retryRequest(requestId: String, sessionId: String, context: Context) {
+        val waitingSession = waitingSessionId
+        if (waitingSession != null && waitingSession != sessionId) {
+            abandonWaitingTask(waitingSession)
+        } else {
+            currentJob?.cancel()
+        }
+
+        val job = scope.launch {
+            try {
+                activeTaskSessionId = sessionId
+                resolveStaleProposedPlan(sessionId)
+
+                val messages = conversationRepository.getMessages(sessionId).first()
+                val userMsg = messages.lastOrNull {
+                    it.id == requestId && it.sender == ChatMessage.Sender.USER
+                } ?: messages.lastOrNull { it.sender == ChatMessage.Sender.USER } ?: return@launch
+
+                queryMutex.withLock {
+                    processQueryLocked(userMsg, userMsg.text, context, sessionId)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _agentState.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
+            }
+        }
+        currentJob = job
+    }
+
     private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context, sessionId: String) {
+                // Each new task starts with a clean slate: a stale error card from an
+                // earlier request must not outlive the request it described.
+                _chatError.value = null
                 _agentState.value = AgentState.Thinking
 
                 // 0. Check if this is a complex, multi-step query
@@ -380,8 +447,13 @@ class AgentLoop @Inject constructor(
             // Build a single-step plan from the alias
             val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
 
-            planManager.startNewPlan(plan, context)
-            executePlanLoop(plan, context, sessionId)
+            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
+            val approval = settingsRepository.llmConfig.first().approvalSettings()
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
+                executePlanLoop(plan, context, sessionId, autoApproved = true)
+            } else {
+                proposePlan(plan, sessionId)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -389,11 +461,22 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    fun dismissChatError() {
+        _chatError.value = null
+    }
+
+    private fun publishChatError(error: ChatErrorUiState) {
+        _chatError.value = error
+        _agentState.value = AgentState.Error(error.title())
+    }
+
     private suspend fun executeSimpleQuery(userMsg: ChatMessage, sessionId: String) {
+        val runId = UUID.randomUUID().toString()
+        val requestId = userMsg.id
         try {
             val provider = llmProviderFactory.getActiveProvider()
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
-            val autoModeLabel = settingsRepository.llmConfig.first().resolvedAutoMode().name
+            val autoModeLabel = settingsRepository.llmConfig.first().approvalSettings().mode.name
 
             val systemPrompt = """
                 You are OpenDroid, a friendly and helpful Android AI assistant.
@@ -404,29 +487,36 @@ class AgentLoop @Inject constructor(
                 
                 Never dump raw error messages or technical details. If something goes wrong, say it simply and suggest what to do next.
 
-                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = all plans run automatically). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
+                Plan auto-approval mode is currently: $autoModeLabel (OFF = every plan needs manual approval, AUTO = allowlisted plans run automatically, YOLO = plans run automatically except destructive actions, which still need confirmation). You cannot change this mode; the user changes it in Settings or via the chat mode chip.
                 
                 Context about user and device state:
                 $relevantContext
             """.trimIndent()
 
             val lastMsgs = conversationRepository.getLastMessages(sessionId, 10).map { msg ->
-                if (msg.id == userMsg.id) {
+                val withImage = if (msg.id == userMsg.id) {
                     msg.copy(imageBase64 = userMsg.imageBase64)
                 } else {
                     msg
+                }
+                if (incompleteMessageIds.contains(withImage.id) &&
+                    withImage.sender == ChatMessage.Sender.AGENT
+                ) {
+                    withImage.copy(text = "[incomplete assistant reply]\n${withImage.text}")
+                } else {
+                    withImage
                 }
             }
 
             val replyId = UUID.randomUUID().toString()
             var currentReplyText = ""
+            var inserted = false
             val replyMsg = ChatMessage(
                 id = replyId,
                 text = currentReplyText,
                 sender = ChatMessage.Sender.AGENT,
                 modelBadge = provider.name
             )
-            conversationRepository.insertMessage(sessionId, replyMsg)
 
             try {
                 provider.streamComplete(
@@ -438,34 +528,76 @@ class AgentLoop @Inject constructor(
                         responseFormat = ResponseFormat.TEXT
                     )
                 ).collect { chunk ->
+                    if (chunk.isEmpty()) return@collect
                     currentReplyText += chunk
                     conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
+                    inserted = true
                 }
             } catch (streamError: CancellationException) {
-                throw streamError
-            } catch (streamError: Exception) {
-                if (currentReplyText.isEmpty()) {
-                    val response = provider.complete(
-                        LLMRequest(
-                            systemPrompt = systemPrompt,
-                            messages = lastMsgs,
-                            temperature = 0.5f,
-                            maxTokens = 500,
-                            responseFormat = ResponseFormat.TEXT
+                if (inserted && currentReplyText.isNotBlank()) {
+                    // This coroutine is already cancelled; without NonCancellable the
+                    // suspend insert would abort immediately and the "Stopped" partial
+                    // would never persist.
+                    withContext(NonCancellable) {
+                        conversationRepository.insertMessage(
+                            sessionId,
+                            replyMsg.copy(text = currentReplyText, modelBadge = "Stopped")
                         )
-                    )
-                    currentReplyText = response.content.trim()
-                    conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
+                    }
                 }
+                throw streamError
+            } catch (streamError: LLMException) {
+                val partialId = if (inserted && currentReplyText.isNotBlank()) {
+                    incompleteMessageIds.add(replyId)
+                    conversationRepository.insertMessage(sessionId, replyMsg.copy(text = currentReplyText))
+                    replyId
+                } else {
+                    null
+                }
+                publishChatError(
+                    ChatErrorUiState.fromException(
+                        sessionId = sessionId,
+                        requestId = requestId,
+                        runId = runId,
+                        failure = streamError,
+                        partialMessageId = partialId
+                    )
+                )
+                return
             }
 
-            val finalReplyMsg = replyMsg.copy(text = formatStreamedReply(currentReplyText))
+            if (!inserted || currentReplyText.isBlank()) {
+                publishChatError(
+                    ChatErrorUiState.fromException(
+                        sessionId = sessionId,
+                        requestId = requestId,
+                        runId = runId,
+                        failure = com.opendroid.ai.core.llm.error.LLMErrorMapper.malformed(
+                            provider.name,
+                            ""
+                        )
+                    )
+                )
+                return
+            }
+
+            val finalReplyMsg = replyMsg.copy(text = currentReplyText)
             conversationRepository.insertMessage(sessionId, finalReplyMsg)
             memoryManager.storeMessage(finalReplyMsg, sessionId)
+            _chatError.value = null
             _agentState.value = AgentState.Speaking(finalReplyMsg.text)
             onSpeakCallback?.invoke(finalReplyMsg.text)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: LLMException) {
+            publishChatError(
+                ChatErrorUiState.fromException(
+                    sessionId = sessionId,
+                    requestId = requestId,
+                    runId = runId,
+                    failure = e
+                )
+            )
         } catch (e: Exception) {
             _agentState.value = AgentState.Error(NetworkErrorFormatter.toUserMessage(e))
         }
@@ -506,6 +638,8 @@ class AgentLoop @Inject constructor(
 
                     val plannerResponse = plannerDeferred.await()
                     val criticResponse = criticDeferred.await()
+                    reportLocalPlanningLatency(plannerResponse)
+                    reportLocalPlanningLatency(criticResponse)
 
                     val mergePrompt = """
                         ${PlanningPrompts.MERGE_SYSTEM_PROMPT}
@@ -531,6 +665,7 @@ class AgentLoop @Inject constructor(
                             responseFormat = ResponseFormat.JSON
                         )
                     )
+                    reportLocalPlanningLatency(mergeResponse)
 
                     parsePlanFromLlmResponse(mergeResponse.content, userMsg.text)
                 }
@@ -544,31 +679,47 @@ class AgentLoop @Inject constructor(
                         responseFormat = ResponseFormat.JSON
                     )
                 )
+                reportLocalPlanningLatency(response)
                 parsePlanFromLlmResponse(response.content, userMsg.text)
             }
 
-            planManager.startNewPlan(plan, context)
+            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             // Re-read after LLM work: user may have flipped mode or revoked grants
             // while planning was in flight; stale pre-LLM config must not auto-run.
             val liveConfig = settingsRepository.llmConfig.first()
-            val autoMode = liveConfig.resolvedAutoMode()
-            if (AutoApprovalPolicy.shouldAutoApprove(autoMode, liveConfig.effectiveGrantedActions().keys, plan)) {
-                recordAutoApprovedTrace(plan, autoMode, sessionId)
+            val approval = liveConfig.approvalSettings()
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
+                recordAutoApprovedTrace(plan, approval.mode, sessionId)
                 executePlanLoop(plan, context, sessionId, autoApproved = true)
             } else {
-                proposedPlanSessionId = sessionId
-                _agentState.value = AgentState.PlanProposed(plan)
+                proposePlan(plan, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: LLMException) {
+            publishChatError(
+                ChatErrorUiState.fromException(
+                    sessionId = sessionId,
+                    requestId = userMsg.id,
+                    runId = UUID.randomUUID().toString(),
+                    failure = e
+                )
+            )
         } catch (e: Exception) {
             fallbackOrError(userMsg, context, e, sessionId)
         }
     }
 
+    private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
+        val result = llmProviderFactory.recordPlanningLatency(response)
+        if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
+            onSpeakCallback?.invoke(result.message)
+        }
+    }
+
     /**
-     * Treat malformed plan JSON as an actionable planning failure. Other provider
-     * failures can still degrade to a normal chat response.
+     * Non-LLM planning failures may still degrade to alias/simple chat. Typed
+     * [LLMException]s are handled above and must never fall through here.
      */
     private suspend fun fallbackOrError(userMsg: ChatMessage, context: Context, cause: Throwable, sessionId: String) {
         android.util.Log.e("AgentLoop", "Plan generation failed: ${cause.localizedMessage}", cause)
@@ -590,7 +741,7 @@ class AgentLoop @Inject constructor(
                 params = emptyMap(),
                 success = false,
                 resultData = null,
-                errorMessage = cause.localizedMessage
+                errorMessage = cause.localizedMessage?.take(200)
             )
         } catch (e: CancellationException) {
             throw e
@@ -764,6 +915,11 @@ class AgentLoop @Inject constructor(
         }
     }
 
+    private fun proposePlan(plan: Plan, sessionId: String) {
+        proposedPlanSessionId = sessionId
+        _agentState.value = AgentState.PlanProposed(plan)
+    }
+
     private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String, autoApproved: Boolean = false) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
@@ -783,6 +939,8 @@ class AgentLoop @Inject constructor(
                     speakAndSaveSummary(currentPlanState, false, sessionId)
                 } else {
                     planManager.updatePlanStatus(PlanStatus.COMPLETED)
+                    // Successful completion supersedes any error card still showing.
+                    _chatError.value = null
                     speakAndSaveSummary(currentPlanState, true, sessionId)
                 }
                 break
@@ -800,26 +958,14 @@ class AgentLoop @Inject constructor(
             _agentState.value = AgentState.ExecutingPlan(stepToExecute.description)
 
             // Resolve parameters from prior step results
-            val resolvedParams = stepToExecute.params.mapValues { (_, value) ->
-                var newValue = value
-                currentPlanState.steps.forEach { completedStep ->
-                    if (completedStep.status == StepStatus.COMPLETED && completedStep.result != null) {
-                        val refKey = "$" + completedStep.stepId
-                        if (newValue.contains(refKey)) {
-                            newValue = newValue.replace(refKey, completedStep.result!!)
-                        }
-                        val doubleRefKey = "$$" + completedStep.stepId
-                        if (newValue.contains(doubleRefKey)) {
-                            newValue = newValue.replace(doubleRefKey, completedStep.result!!)
-                        }
-                    }
-                }
-                newValue
-            }
+            val resolvedParams = actionSequenceExecutor.resolveParameters(
+                params = stepToExecute.params,
+                priorSteps = currentPlanState.steps
+            )
 
             // Execute the action dispatcher
             var actionResult = try {
-                var result = actionDispatcher.execute(stepToExecute.action, resolvedParams, context)
+                var result = actionSequenceExecutor.dispatch(stepToExecute.action, resolvedParams, context)
 
                 resolveNeedsInput(result, stepToExecute.action, resolvedParams, context, sessionId)
             } catch (e: CancellationException) {
@@ -829,16 +975,24 @@ class AgentLoop @Inject constructor(
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
+            // Redaction must be based on the dispatcher's canonical mapped action,
+            // not the raw plan action string — the dispatcher accepts non-canonical
+            // names (e.g. "EMAIL", "send-email") that still execute as SEND_EMAIL.
+            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action)
+
             try {
                 memoryManager.logTaskExecution(
                     stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = stepToExecute.description,
+                    description = ExecutionHistoryPrivacy.sanitizeDescription(
+                        canonicalActionName,
+                        stepToExecute.description
+                    ),
                     actionType = stepToExecute.action,
-                    params = resolvedParams,
+                    params = ExecutionHistoryPrivacy.sanitizeParams(canonicalActionName, resolvedParams),
                     success = actionResult.success,
-                    resultData = actionResult.data,
-                    errorMessage = actionResult.error
+                    resultData = actionResult.data?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact),
+                    errorMessage = actionResult.error?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact)
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -853,6 +1007,33 @@ class AgentLoop @Inject constructor(
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
                 )
+            } else if (actionResult is ActionResult.PendingUserAction) {
+                // The action handed control to the user (e.g. the dialer is open awaiting a
+                // tap). Nothing failed, so no fallback and no failure replan - surface the
+                // hand-off in chat and speech, record it as the step result, and let the
+                // normal re-evaluation path decide what remains.
+                handlePendingUserAction(actionResult, sessionId)
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.COMPLETED,
+                    result = actionResult.message
+                )
+            } else if (actionResult is ActionResult.UserActionRequired) {
+                // A user-facing flow (for example email compose) is not an
+                // executed side effect. Do not run an automated fallback or
+                // allow the plan to treat the step as completed.
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.FAILED,
+                    error = actionResult.error ?: "User action is required before this step can complete."
+                )
+                // Skip the generic re-evaluation below: its prompt allows adding
+                // alternative steps, which would let the agent launch another
+                // action or duplicate composer while the user is still reviewing
+                // the one just opened. Move on to the next plan step (if any)
+                // instead of triggering an automated replan for this failure.
+                currentPlanState = planManager.currentPlan.value ?: break
+                continue
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
@@ -870,13 +1051,29 @@ class AgentLoop @Inject constructor(
                 val completed = currentPlanState.steps.filter { it.status == StepStatus.COMPLETED }
                 val remaining = currentPlanState.steps.filter { it.status == StepStatus.PENDING }
 
-                val replan = reEvalEngine.get().replanAfterUnknownAction(
-                    originalGoal = currentPlanState.goal,
-                    failedStep = stepToExecute,
-                    completedSteps = completed,
-                    remainingSteps = remaining,
-                    planId = currentPlanState.planId
-                )
+                val replan = try {
+                    reEvalEngine.get().replanAfterUnknownAction(
+                        originalGoal = currentPlanState.goal,
+                        failedStep = stepToExecute,
+                        completedSteps = completed,
+                        remainingSteps = remaining,
+                        planId = currentPlanState.planId
+                    )
+                } catch (e: LLMException) {
+                    // Nothing ever resumes a PAUSED plan - mark it FAILED so the Plan
+                    // tab shows a truthful terminal state; the error card still offers
+                    // the retry path.
+                    planManager.updatePlanStatus(PlanStatus.FAILED)
+                    publishChatError(
+                        ChatErrorUiState.fromException(
+                            sessionId = sessionId,
+                            requestId = currentPlanState.planId,
+                            runId = UUID.randomUUID().toString(),
+                            failure = e
+                        )
+                    )
+                    return
+                }
 
                 if (replan.speech.isNotEmpty()) {
                     onSpeakCallback?.invoke(replan.speech)
@@ -898,22 +1095,27 @@ class AgentLoop @Inject constructor(
                             // Auto-approved plans: silently injected steps must not run
                             // past the allowlist. Re-check the merged plan's pending
                             // steps; if any is blocked, park the WHOLE remainder back
-                            // in the PlanProposed gate. YOLO skips like all other
-                            // checks; manually-approved plans keep today's behavior.
+                            // in the PlanProposed gate. YOLO auto-approves everything
+                            // by design, so this re-check only gates AUTO mode.
                             if (autoApproved) {
                                 val liveConfig = settingsRepository.llmConfig.first()
-                                val liveMode = liveConfig.resolvedAutoMode()
-                                if (liveMode != AutoMode.YOLO) {
-                                    val mergedPlan = planManager.currentPlan.value
-                                    val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
-                                    val blocked = AutoApprovalPolicy.blockedActions(
-                                        liveConfig.effectiveGrantedActions().keys, pending
+                                val approval = liveConfig.approvalSettings()
+                                val mergedPlan = planManager.currentPlan.value
+                                val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
+                                if (mergedPlan != null && !AutoApprovalPolicy.shouldAutoApprove(
+                                        approval.mode,
+                                        approval.grantedActions,
+                                        mergedPlan.copy(steps = pending)
+                                    )) {
+                                    // startNewPlan persisted the merged plan as RUNNING;
+                                    // reflect the approval gate in the stored status too so
+                                    // the Plan tab and history match the PlanProposed state.
+                                    planManager.updatePlanStatus(PlanStatus.PROPOSED)
+                                    proposePlan(
+                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED),
+                                        sessionId
                                     )
-                                    if (blocked.isNotEmpty() && mergedPlan != null) {
-                                        proposedPlanSessionId = sessionId
-                                        _agentState.value = AgentState.PlanProposed(mergedPlan)
-                                        return
-                                    }
+                                    return
                                 }
                             }
                         }
@@ -930,9 +1132,9 @@ class AgentLoop @Inject constructor(
                 continue
             } else {
                 // Try fallback action
-                if (stepToExecute.fallback.isNotEmpty() && actionDispatcher.hasAction(stepToExecute.fallback)) {
+                if (actionSequenceExecutor.shouldAttemptFallback(actionResult, stepToExecute)) {
                     val fallbackResult = try {
-                        actionDispatcher.execute(stepToExecute.fallback, resolvedParams, context)
+                        actionSequenceExecutor.dispatch(stepToExecute.fallback, resolvedParams, context)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -972,13 +1174,28 @@ class AgentLoop @Inject constructor(
                 continue
             }
 
-            val reEval = reEvalEngine.get().evaluateStepResult(
-                originalGoal = currentPlanState.goal,
-                completedSteps = completed,
-                failedSteps = failed,
-                remainingSteps = remaining,
-                planId = currentPlanState.planId
-            )
+            val reEval = try {
+                reEvalEngine.get().evaluateStepResult(
+                    originalGoal = currentPlanState.goal,
+                    completedSteps = completed,
+                    failedSteps = failed,
+                    remainingSteps = remaining,
+                    planId = currentPlanState.planId
+                )
+            } catch (e: LLMException) {
+                // Same rationale as the replan failure above: PAUSED is a dead end, so
+                // fail the plan and let the error card drive recovery.
+                planManager.updatePlanStatus(PlanStatus.FAILED)
+                publishChatError(
+                    ChatErrorUiState.fromException(
+                        sessionId = sessionId,
+                        requestId = currentPlanState.planId,
+                        runId = UUID.randomUUID().toString(),
+                        failure = e
+                    )
+                )
+                return
+            }
 
             // Speak post-step evaluation speech if any
             if (reEval.speech.isNotEmpty()) {
@@ -1231,6 +1448,24 @@ class AgentLoop @Inject constructor(
             actionDispatcher.execute(actionName, newParams, context),
             newParams
         )
+    }
+
+    /**
+     * Tell the user that a step is now waiting on them. The agent cannot observe the
+     * user's tap, so this is a hand-off notice, not a prompt that blocks the plan.
+     */
+    private suspend fun handlePendingUserAction(
+        pending: ActionResult.PendingUserAction,
+        sessionId: String
+    ) {
+        val pendingMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = pending.message,
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(sessionId, pendingMsg)
+        onSpeakCallback?.invoke(pending.message)
     }
 
     /**

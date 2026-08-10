@@ -120,7 +120,7 @@ $schema
             - SEND_WHATSAPP: Opens WhatsApp, navigates to contact, and sends the message — all in one step.
             - MAKE_CALL: Opens dialer/places call directly.
             - SEND_SMS: Sends SMS or opens SMS compose directly.
-            - SEND_EMAIL: Opens email compose directly.
+            - SEND_EMAIL: Opens a pre-filled email draft directly; the user must review and tap Send, and the app must not claim it was sent.
             - BOOK_UBER, BOOK_OLA: Opens the respective app directly.
             - PLAY_MUSIC, PLAY_YOUTUBE: Opens the media app directly.
 

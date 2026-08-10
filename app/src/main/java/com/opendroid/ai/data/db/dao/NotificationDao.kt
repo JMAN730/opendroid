@@ -69,7 +69,13 @@ interface NotificationDao {
     suspend fun deleteNotification(notification: NotificationEntity)
 
     @Query("DELETE FROM notifications")
-    suspend fun clearAll()
+    suspend fun clearAll(): Int
+
+    @Query("DELETE FROM notifications WHERE packageName = :packageName")
+    suspend fun deleteNotificationsByApp(packageName: String): Int
+
+    @Query("DELETE FROM notifications WHERE id = :id")
+    suspend fun deleteNotificationById(id: Long): Int
 }
 
 data class AppNotificationCount(

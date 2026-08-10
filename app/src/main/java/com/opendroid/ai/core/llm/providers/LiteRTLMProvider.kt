@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -20,7 +21,6 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.SamplerConfig
-import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -28,35 +28,39 @@ import com.google.ai.edge.litertlm.Contents
 /**
  * LLM provider backed by LiteRT-LM (com.google.ai.edge.litertlm).
  *
- * This provider runs Gemma models entirely on-device using the LiteRT runtime
+ * This provider runs LiteRT models entirely on-device using the LiteRT runtime
  * with GPU/NPU acceleration. It does NOT require Google AI Core / Play Services.
  *
- * Supported models are defined in [OnDeviceModelRegistry.liteRTOnly].
+ * Catalog models are defined in [OnDeviceModelRegistry.liteRTOnly]; freestanding
+ * custom imports are resolved through [ModelRepository.resolveLiteRTSpec].
  */
 @Singleton
 class LiteRTLMProvider @Inject constructor(
     private val context: Context,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val modelRepository: dagger.Lazy<com.opendroid.ai.data.repository.ModelRepository>
 ) : LLMProvider {
 
     private var cachedEngine: Engine? = null
     private var cachedModelPath: String? = null
+    private val artifactVerifier = ModelArtifactVerifier(
+        hashVerifier = CachingFileHashVerifier()
+    )
 
     companion object {
         private const val TAG = "LiteRTLMProvider"
     }
 
     override val name: String = "LiteRT-LM (On-device)"
-    override val availableModels: List<String> =
-        OnDeviceModelRegistry.liteRTOnly.map { it.id }
+    override val availableModels: List<String>
+        get() = OnDeviceModelRegistry.liteRTOnly.map { it.id }
 
     /**
      * Resolves the model spec for the currently selected model.
      * Falls back to the recommended LiteRT model if the selection isn't a LiteRT model.
      */
     private fun resolveModelSpec(modelId: String): OnDeviceModelSpec {
-        return OnDeviceModelRegistry.findById(modelId)
-            ?.takeIf { it.backend == OnDeviceBackend.LITERT_LM }
+        return modelRepository.get().resolveLiteRTSpec(modelId)
             ?: OnDeviceModelRegistry.recommendedFor(OnDeviceBackend.LITERT_LM)
             ?: throw IllegalStateException("No LiteRT-LM models registered in OnDeviceModelRegistry")
     }
@@ -80,14 +84,15 @@ class LiteRTLMProvider @Inject constructor(
      * Checks whether a given model file has been downloaded and is ready.
      */
     fun isModelDownloaded(modelId: String): Boolean {
-        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
+        val spec = modelRepository.get().resolveLiteRTSpec(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
-        // Integrity check: real LiteRT model file must exist and be > 100MB (mock files from previous runs are small)
-        return modelFile.exists() && modelFile.length() > 100 * 1024 * 1024
+        val manifestFile = modelFile.parentFile?.let(ModelStoragePaths::manifestFile) ?: return false
+        return artifactVerifier.verifyForStartup(modelFile, manifestFile, spec) ==
+            ArtifactVerificationResult.Valid
     }
 
     /**
-     * Returns the download status for all LiteRT-LM models.
+     * Returns the download status for all LiteRT-LM catalog models.
      * Map of model ID → downloaded boolean.
      */
     fun getAllModelStatuses(): Map<String, Boolean> {
@@ -97,57 +102,20 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     /**
-     * Initiates a model download. In production this would download the .litertlm file
-     * from Hugging Face or a CDN. For now, this creates a placeholder that signals
-     * the model location for the LiteRT-LM runtime.
-     *
-     * Returns a Flow that emits download progress (0..100) and completes.
-     */
-    fun downloadModel(modelId: String): Flow<Int> = flow {
-        val spec = resolveModelSpec(modelId)
-        val modelFile = File(getModelFilePath(spec))
-
-        Log.i(TAG, "Starting download for model: ${spec.displayName} from ${spec.modelPath}")
-        emit(0)
-
-        withContext(Dispatchers.IO) {
-            // In a production implementation this would use WorkManager + OkHttp
-            // to download the .litertlm file from:
-            // https://huggingface.co/${spec.modelPath}/resolve/main/model.litertlm
-            //
-            // For now we create a manifest file that the LiteRT-LM runtime
-            // can use to locate the model once side-loaded or downloaded externally.
-            val manifest = JSONObject().apply {
-                put("model_id", spec.id)
-                put("model_path", spec.modelPath)
-                put("family", spec.family)
-                put("size", spec.sizeLabel)
-                put("format", "litertlm")
-                put("status", "pending_download")
-            }
-            modelFile.parentFile?.mkdirs()
-            modelFile.writeText(manifest.toString())
-        }
-
-        // Simulate progress milestones
-        emit(50)
-        emit(100)
-        Log.i(TAG, "Model manifest created for: ${spec.displayName}")
-    }.flowOn(Dispatchers.IO)
-
-    /**
      * Deletes a downloaded model to free storage.
      */
     fun deleteModel(modelId: String): Boolean {
-        val spec = OnDeviceModelRegistry.findById(modelId) ?: return false
+        val spec = modelRepository.get().resolveLiteRTSpec(modelId) ?: return false
         val modelFile = File(getModelFilePath(spec))
-        return if (modelFile.exists()) modelFile.delete() else true
+        val deleted = if (modelFile.exists()) modelFile.delete() else true
+        modelFile.parentFile?.let(ModelStoragePaths::manifestFile)?.delete()
+        return deleted
     }
 
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val startTime = System.currentTimeMillis()
-        val config = settingsRepository.llmConfig.first()
-        val spec = resolveModelSpec(config.activeModel)
+        val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
+        val spec = resolveModelSpec(modelId)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -178,9 +146,9 @@ class LiteRTLMProvider @Inject constructor(
     }
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
+        val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
         try {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -213,8 +181,7 @@ class LiteRTLMProvider @Inject constructor(
                 conversation.close()
             }
         } catch (e: Throwable) {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
         }
     }
@@ -223,9 +190,9 @@ class LiteRTLMProvider @Inject constructor(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> = flow {
+        val modelId = settingsRepository.llmConfig.first().selectedModelFor(name)
         try {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -252,19 +219,23 @@ class LiteRTLMProvider @Inject constructor(
                 // Not JSON — treat as plain text
             }
         } catch (e: Throwable) {
-            val config = settingsRepository.llmConfig.first()
-            val spec = resolveModelSpec(config.activeModel)
+            val spec = resolveModelSpec(modelId)
             emit(StreamChunk.Content("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}"))
         }
     }
 
     override suspend fun isAvailable(): Boolean {
         return try {
-            // LiteRT-LM requires Android 12+ (API 31)
-            if (Build.VERSION.SDK_INT < 31) return false
-            // Check if at least one model is downloaded
+            // LiteRT-LM requires Android 12+ (API 31) for many catalog models; smaller models
+            // (including custom imports) run on the app's minSdk, so no extra SDK gate here.
+            // Per-model SDK requirements are enforced by checkSdkCompatibility().
+            // Check if at least one catalog or custom model is ready on disk
             OnDeviceModelRegistry.liteRTOnly.any { spec ->
                 isModelDownloaded(spec.id)
+            } || modelRepository.get().allModelsFlow.first().any { entity ->
+                OnDeviceModelRegistry.isCustomId(entity.id) &&
+                    entity.status == com.opendroid.ai.data.db.entities.ModelStatus.READY &&
+                    isModelDownloaded(entity.id)
             }
         } catch (e: Exception) {
             Log.w(TAG, "isAvailable check failed: ${e.message}")
@@ -284,72 +255,17 @@ class LiteRTLMProvider @Inject constructor(
         }
     }
 
-    private fun verifyModelFileIntegrity(modelPath: String) {
+    private fun verifyModelFileIntegrity(modelPath: String, spec: OnDeviceModelSpec) {
         val file = File(modelPath)
-        Log.i(TAG, "[INTEGRITY CHECK] Verifying file at path: $modelPath")
-        
-        if (!file.exists()) {
-            Log.e(TAG, "[INTEGRITY CHECK] File does not exist: $modelPath")
-            throw java.io.FileNotFoundException("Model file does not exist at: $modelPath")
-        }
-        
-        if (file.isDirectory) {
-            Log.e(TAG, "[INTEGRITY CHECK] File is a directory: $modelPath")
-            throw IllegalArgumentException("Expected model file, but path is a directory: $modelPath")
-        }
-        
-        val size = file.length()
-        Log.i(TAG, "[INTEGRITY CHECK] File size: $size bytes (${String.format("%.2f", size.toDouble() / (1024 * 1024))} MB)")
-        if (size == 0L) {
-            Log.e(TAG, "[INTEGRITY CHECK] File is empty (0 bytes): $modelPath")
-            throw IOException("Model file is empty (0 bytes) at: $modelPath")
-        }
-        
-        if (size < 100 * 1024 * 1024) {
-            Log.e(TAG, "[INTEGRITY CHECK] File is too small ($size bytes) to be a valid Gemma model. It is likely a simulated placeholder.")
-            throw IOException("Model file at '$modelPath' is invalid/simulated ($size bytes). Please delete and redownload it.")
-        }
-        
-        if (size >= 4) {
-            try {
-                file.inputStream().use { input ->
-                    val magic = ByteArray(4)
-                    val read = input.read(magic)
-                    if (read == 4) {
-                        val hex = magic.joinToString(" ") { "%02X".format(it) }
-                        val ascii = String(magic).replace(Regex("[^\\x20-\\x7E]"), ".")
-                        Log.i(TAG, "[INTEGRITY CHECK] Magic bytes (Hex): $hex | ASCII: $ascii")
-                        
-                        // ZIP archive magic header: PK\u0003\u0004 (50 4B 03 04)
-                        if (magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
-                            magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()) {
-                            Log.i(TAG, "[INTEGRITY CHECK] Valid ZIP/Task archive header found.")
-                        } else {
-                            Log.w(TAG, "[INTEGRITY CHECK] Warning: ZIP/Task archive header not found! Expected 50 4B 03 04 (PK..)")
-                        }
-                    }
-                }
-            } catch (e: java.lang.Exception) {
-                Log.e(TAG, "[INTEGRITY CHECK] Failed to read magic bytes", e)
+        val manifestFile = file.parentFile?.let(ModelStoragePaths::manifestFile)
+            ?: throw IOException("Model integrity metadata is unavailable. Reinstall the model.")
+        when (artifactVerifier.verifyBeforeNativeLoad(file, manifestFile, spec)) {
+            ArtifactVerificationResult.Valid -> Unit
+            is ArtifactVerificationResult.Invalid -> {
+                throw IOException(
+                    "Model integrity verification failed. Delete and redownload the model, or import it again."
+                )
             }
-        } else {
-            Log.e(TAG, "[INTEGRITY CHECK] File is too small to read magic header (< 4 bytes)")
-        }
-
-        // Compute and print SHA-256
-        try {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            file.inputStream().use { input ->
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    digest.update(buffer, 0, read)
-                }
-            }
-            val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
-            Log.i(TAG, "[INTEGRITY CHECK] SHA-256 checksum: $sha256")
-        } catch (e: java.lang.Exception) {
-            Log.e(TAG, "[INTEGRITY CHECK] Failed to compute SHA-256", e)
         }
     }
 
@@ -358,14 +274,7 @@ class LiteRTLMProvider @Inject constructor(
      */
     private fun checkModelReady(modelPath: String, spec: OnDeviceModelSpec) {
         OnDeviceModelRegistry.checkDeviceMemoryCompatibility(context, spec)
-        val file = File(modelPath)
-        if (!file.exists() || file.length() < 100 * 1024 * 1024) {
-            throw IllegalStateException(
-                "Model \"${spec.displayName}\" has not been downloaded yet or is invalid/simulated. " +
-                "Please download it from Settings → On-Device AI."
-            )
-        }
-        verifyModelFileIntegrity(modelPath)
+        verifyModelFileIntegrity(modelPath, spec)
     }
 
     /**
@@ -385,33 +294,47 @@ class LiteRTLMProvider @Inject constructor(
 
         var engine = cachedEngine
         if (engine == null) {
-            verifyModelFileIntegrity(modelPath)
+            verifyModelFileIntegrity(modelPath, spec)
 
             Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: ${spec.contextWindow}")
             // maxNumTokens is the TOTAL token capacity (input + output) of the
             // engine. It must match the model's KV-cache size (spec.contextWindow),
             // NOT a request's output-token budget — undersizing it makes the native
             // runtime abort (force close) as soon as a prompt exceeds it.
-            val config = EngineConfig(
-                modelPath = modelPath,
-                backend = Backend.CPU(), // Run on CPU for compatibility
-                maxNumTokens = spec.contextWindow,
-                cacheDir = context.cacheDir.absolutePath
-            )
-            
+            // Gemma 4 LiteRT packages require the GPU-constrained main section,
+            // while older catalog models and custom imports may only load on
+            // CPU, so fall back rather than locking every model to one backend.
             Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
-            try {
-                engine = Engine(config)
-                engine.initialize()
-                cachedEngine = engine
-                cachedModelPath = modelPath
-                Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully and cached.")
-            } catch (e: Throwable) {
-                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine. Full Exception Stack Trace:", e)
-                throw e
+            var lastFailure: Throwable? = null
+            for (backend in LiteRtCompatibility.backendPreference) {
+                val config = EngineConfig(
+                    modelPath = modelPath,
+                    backend = backend(),
+                    maxNumTokens = spec.contextWindow,
+                    cacheDir = context.cacheDir.absolutePath
+                )
+                var candidate: Engine? = null
+                try {
+                    candidate = Engine(config)
+                    candidate.initialize()
+                    engine = candidate
+                    cachedEngine = candidate
+                    cachedModelPath = modelPath
+                    Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} and cached.")
+                    lastFailure = null
+                    break
+                } catch (e: Throwable) {
+                    Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend}.", e)
+                    lastFailure = e
+                    runCatching { candidate?.close() }
+                }
+            }
+            if (lastFailure != null) {
+                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
+                throw lastFailure
             }
         }
-        return engine
+        return requireNotNull(engine) { "LiteRT Engine initialization produced no engine" }
     }
 
     /**

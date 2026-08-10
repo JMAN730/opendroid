@@ -1,7 +1,6 @@
 package com.opendroid.ai.core.llm
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -9,7 +8,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.io.RandomAccessFile
 
 class ModelStoragePathsTest {
 
@@ -42,6 +40,17 @@ class ModelStoragePathsTest {
         assertEquals("Gemma4-E4B", ModelStoragePaths.folderName("gemma-4-e4b-it-litert"))
         assertEquals("Gemma3n-E2B", ModelStoragePaths.folderName("gemma-3n-e2b-it-litert"))
         assertEquals("Gemma3n-E4B", ModelStoragePaths.folderName("gemma-3n-e4b-it-litert"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `modelDir rejects traversal in an untrusted model id`() {
+        ModelStoragePaths.modelDir(tempFolder.root, "../../outside")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `targetFile rejects a registry filename with a path separator`() {
+        val unsafeSpec = gemmaE2BSpec().copy(modelFilename = "../outside.litertlm")
+        ModelStoragePaths.targetFile(tempFolder.root, unsafeSpec)
     }
 
     @Test
@@ -92,17 +101,44 @@ class ModelStoragePathsTest {
     }
 
     @Test
-    fun `hasVerifiedModel requires min size`() {
+    fun `manifestFile is colocated with the model artifact`() {
         val dir = tempFolder.newFolder("size-check")
-        val file = File(dir, "gemma-4-E2B-it.litertlm")
-        file.writeBytes(ByteArray(1024))
-        assertFalse(ModelStoragePaths.hasVerifiedModel(dir, gemmaE2BSpec()))
+        assertEquals(File(dir, "manifest.json"), ModelStoragePaths.manifestFile(dir))
+    }
 
-        // Simulate a large enough file without allocating 10MB
-        RandomAccessFile(file, "rw").use { raf ->
-            raf.setLength(ModelStoragePaths.MIN_VERIFIED_BYTES)
-        }
-        assertTrue(ModelStoragePaths.hasVerifiedModel(dir, gemmaE2BSpec()))
+    @Test
+    fun `folderName preserves custom model ids`() {
+        assertEquals(
+            "custom-my-model-abcd1234",
+            ModelStoragePaths.folderName("custom-my-model-abcd1234")
+        )
+    }
+
+    @Test
+    fun `sanitizeImportFilename accepts litertlm and task`() {
+        assertEquals(
+            "gemma-4-E2B-it.litertlm",
+            ModelStoragePaths.sanitizeImportFilename("gemma-4-E2B-it.litertlm")
+        )
+        assertEquals(
+            "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+            ModelStoragePaths.sanitizeImportFilename("Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task")
+        )
+    }
+
+    @Test
+    fun `sanitizeImportFilename rejects gguf and other extensions`() {
+        assertNull(ModelStoragePaths.sanitizeImportFilename("model.gguf"))
+        assertNull(ModelStoragePaths.sanitizeImportFilename("weights.bin"))
+        assertTrue(ModelStoragePaths.isLikelyUnsupportedGguf("llama-7b-q4.gguf"))
+    }
+
+    @Test
+    fun `sanitizeImportFilename strips path and unsafe characters`() {
+        assertEquals(
+            "my_model.litertlm",
+            ModelStoragePaths.sanitizeImportFilename("Download/my model.litertlm")
+        )
     }
 
     @Test

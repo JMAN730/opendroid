@@ -14,11 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.opendroid.ai.core.llm.ConnectionTestPlanner
+import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.ui.theme.*
 import com.opendroid.ai.ui.viewmodel.SettingsViewModel
 
@@ -30,20 +32,12 @@ fun BenchmarkScreen(
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
-    
-    val providers = listOf(
-        "Google Gemini",
-        "OpenAI",
-        "Anthropic Claude",
-        "Groq",
-        "Mistral AI",
-        "OpenRouter",
-        "Together AI",
-        "Cohere",
-        "DeepSeek",
-        "Copilot API",
-        "Ollama"
-    )
+    val connectionResults by viewModel.connectionResults.collectAsState()
+    val batchProgress by viewModel.connectionBatchProgress.collectAsState()
+    var showConfirm by remember { mutableStateOf(false) }
+
+    val providers = ConnectionTestPlanner.cloudProviders()
+        .filter { it != "Custom OpenAI Compatible" }
 
     Scaffold(
         topBar = {
@@ -64,19 +58,28 @@ fun BenchmarkScreen(
                     }
                 },
                 actions = {
-                    Button(
-                        onClick = {
-                            providers.forEach { providerName ->
-                                viewModel.testProviderLatency(providerName)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Run Test", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Test All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (batchProgress != null) {
+                        TextButton(onClick = { viewModel.cancelConnectionTests() }) {
+                            Text("Cancel", fontSize = 11.sp, color = AccentRed)
+                        }
+                    } else {
+                        Button(
+                            onClick = { showConfirm = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentNeonGreen,
+                                contentColor = DarkBackground
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = "Run Test",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Test all configured", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
@@ -85,6 +88,31 @@ fun BenchmarkScreen(
         containerColor = DarkBackground,
         modifier = modifier
     ) { padding ->
+        if (showConfirm) {
+            val configuredCount = ConnectionTestPlanner.configuredProviders(config).size
+            AlertDialog(
+                onDismissRequest = { showConfirm = false },
+                title = { Text("Test all configured?") },
+                text = {
+                    Text(
+                        "This will send $configuredCount sequential provider requests. " +
+                            "Provider charges may apply."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showConfirm = false
+                            viewModel.testAllConfigured()
+                        }
+                    ) { Text("Continue") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -110,7 +138,10 @@ fun BenchmarkScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "This utility performs a standard API ping/completion on each LLM provider to measure round-trip response latency. Configure keys in settings before running.",
+                            text = batchProgress?.let {
+                                "Testing ${it.index} of ${it.total}: ${it.provider}"
+                            } ?: "Explicit connection tests use each provider's own selected model. " +
+                                "Missing keys surface as configuration errors instead of silent skips.",
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -119,35 +150,42 @@ fun BenchmarkScreen(
             }
 
             items(providers) { provider ->
-                val latency = config.latencyBenchmarks[provider]
-                ProviderLatencyRow(providerName = provider, latencyMs = latency)
+                val result = connectionResults[provider]
+                val legacyLatency = config.latencyBenchmarks[provider]
+                ProviderConnectionRow(
+                    providerName = provider,
+                    state = result,
+                    legacyLatencyMs = legacyLatency,
+                    onTest = { viewModel.testConnection(provider) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun ProviderLatencyRow(providerName: String, latencyMs: Long?) {
-    val barColor = when {
-        latencyMs == null -> BorderColor
-        latencyMs == 9999L -> AccentRed
-        latencyMs < 500L -> AccentNeonGreen
-        latencyMs < 1500L -> AccentCyan
-        else -> AccentPurple
+fun ProviderConnectionRow(
+    providerName: String,
+    state: ConnectionTestState?,
+    legacyLatencyMs: Long?,
+    onTest: () -> Unit
+) {
+    val statusText = when (state) {
+        is ConnectionTestState.Testing -> "Testing…"
+        is ConnectionTestState.Connected -> "Connected · ${state.latencyMs} ms · ${state.model}"
+        is ConnectionTestState.Failed -> connectionFailureLabel(state.error)
+        is ConnectionTestState.ConfigMissing -> when (state.reason) {
+            LLMError.AuthMissing -> "Key required"
+            else -> "Configuration required"
+        }
+        else -> legacyLatencyMs?.takeIf { it > 0 && it != 9999L }?.let { "Last latency $it ms" }
+            ?: "Not tested"
     }
-
-    val ratingText = when {
-        latencyMs == null -> "NO DATA / UNTESTED"
-        latencyMs == 9999L -> "ERROR / OFFLINE"
-        latencyMs < 500L -> "EXCELLENT (<500ms)"
-        latencyMs < 1500L -> "MODERATE (0.5s - 1.5s)"
-        else -> "SLOW (>1.5s)"
-    }
-
-    val fraction = when {
-        latencyMs == null -> 0.05f
-        latencyMs == 9999L -> 1f
-        else -> (latencyMs / 3000f).coerceIn(0.1f, 1f)
+    val barColor = when (state) {
+        is ConnectionTestState.Connected -> AccentNeonGreen
+        is ConnectionTestState.Failed, is ConnectionTestState.ConfigMissing -> AccentRed
+        is ConnectionTestState.Testing -> AccentCyan
+        else -> BorderColor
     }
 
     Card(
@@ -168,28 +206,18 @@ fun ProviderLatencyRow(providerName: String, latencyMs: Long?) {
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
-                Text(
-                    text = when {
-                        latencyMs == null -> "—"
-                        latencyMs == 9999L -> "Offline"
-                        else -> "$latencyMs ms"
-                    },
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = barColor,
-                    fontFamily = FontFamily.Monospace
-                )
+                TextButton(onClick = onTest) {
+                    Text("Test", fontSize = 11.sp)
+                }
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = ratingText,
+                text = statusText,
                 fontSize = 10.sp,
                 color = TextSecondary,
                 fontFamily = FontFamily.Monospace
             )
             Spacer(modifier = Modifier.height(10.dp))
-            
-            // Draw custom colored bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -197,6 +225,13 @@ fun ProviderLatencyRow(providerName: String, latencyMs: Long?) {
                     .clip(RoundedCornerShape(4.dp))
                     .background(BorderColor)
             ) {
+                val fraction = when (state) {
+                    is ConnectionTestState.Connected ->
+                        (state.latencyMs / 3000f).coerceIn(0.1f, 1f)
+                    is ConnectionTestState.Failed, is ConnectionTestState.ConfigMissing -> 1f
+                    is ConnectionTestState.Testing -> 0.35f
+                    else -> 0.05f
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
@@ -207,4 +242,18 @@ fun ProviderLatencyRow(providerName: String, latencyMs: Long?) {
             }
         }
     }
+}
+
+private fun connectionFailureLabel(error: LLMError): String = when (error) {
+    LLMError.AuthMissing -> "Key required"
+    LLMError.AuthInvalid -> "Invalid key"
+    LLMError.QuotaExhausted -> "Quota exhausted"
+    LLMError.RateLimited -> "Rate limited"
+    LLMError.ModelUnavailable -> "Model unavailable"
+    LLMError.RequestInvalid -> "Invalid request"
+    LLMError.Network -> "Network error"
+    LLMError.ServerError -> "Server error"
+    LLMError.MalformedResponse -> "Malformed response"
+    LLMError.SafeFallbackUnavailable -> "No safe fallback"
+    LLMError.Unknown -> "Failed"
 }

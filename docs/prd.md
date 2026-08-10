@@ -70,7 +70,7 @@ The agent utilizes a four-layered memory structure backed by SQLite (Room Databa
 
 ### 3.5. On-Device Model Downloader & Manager (LiteRT-LM)
 * **Background Downloading**: Support downloading fully offline LiteRT models (`.task`/`.litertlm` formats) in the background via Jetpack WorkManager. The downloader must support pausing, resuming (with HTTP Range headers), and canceling.
-* **Hugging Face Authentication**: Enable secure downloading of both public and gated models. Implement a Hugging Face Access Token manager stored in Android's KeyStore-backed `EncryptedSharedPreferences`. Provide verification via the `whoami-v2` endpoint.
+* **Hugging Face Authentication**: Enable secure downloading of both public and gated models. Implement a Hugging Face Access Token manager stored in a direct Android Keystore-backed encrypted record. Provide verification via the `whoami-v2` endpoint.
 * **Integrity & Compatibility Verification**: Before marking a model as ready for inference, verify that the downloaded file size matches expectations, check the SHA-256 hash (if defined), and ensure the file can be opened and initialized by the LiteRT runtime engine. If verification fails, delete the corrupted file and report the error.
 * **Local Model Import**: Allow users to bypass downloading by importing custom local `.task` or `.litertlm` files, copying them to sandboxed storage, and running the same JNI compatibility validation checks.
 
@@ -97,7 +97,7 @@ The user interface follows a **Premium Glassmorphic Cyberpunk** aesthetic.
 Because OpenDroid operates with high-privilege permissions, security is treated as a first-class requirement.
 
 > [!IMPORTANT]
-> **Data Security Requirement:** API Keys must not be stored in standard `SharedPreferences` in plaintext. They must be saved using Android's jetpack `Security-Crypto` (EncryptedSharedPreferences) backed by KeyStore keys.
+> **Data Security Requirement:** API Keys must not be stored in standard `SharedPreferences` in plaintext. They must be saved in direct Android Keystore-backed encrypted records.
 
 > [!CAUTION]
 > **Accessibility Service Warning:** The accessibility service handles highly sensitive user data. Under no circumstances should layout hierarchies, scraped texts, or screenshots be sent to third-party endpoints unless explicitly authorized by the active LLM provider configuration. All transmission must be encrypted via HTTPS.
@@ -136,3 +136,18 @@ The onboarding screen must implement a vertical scroll container that handles ro
 2. **Layout Adaptability:** The app must be fully functional and readable under both portrait and landscape screen configurations.
 3. **Execution Success Rate:** Over 90% of native system commands (Wi-Fi toggle, Brightness, Alarm set) must execute within 2.5 seconds of user input.
 4. **Fallback Resilience:** Phone calls and SMS must successfully trigger standard system Intent overlays if direct runtime permissions are missing.
+
+### 7.1 Approval modes and diagnostics
+
+The app supports three plan approval modes: OFF requires approval for every
+plan; AUTO runs only plans whose actions are in the user's explicit allowlist;
+and YOLO runs every plan without approval, including actions marked
+`neverAutoApprove` — that is the point of the mode. In OFF and AUTO, actions
+marked `neverAutoApprove` always require confirmation.
+Screen capture is not a first-run grant and must be explicitly enabled by the
+user. A declined plan remains proposed and can be approved later.
+
+The app also keeps a local crash log. Users can inspect, share, and clear
+redacted reports. Reports are retained locally with a bounded maximum count;
+sharing is user initiated and the UI must explain that redaction is best
+effort before export.

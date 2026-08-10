@@ -40,10 +40,15 @@ data class OnDeviceModelSpec(
     val modelFilename: String = "model.task",
     /** Model version identifier. */
     val version: String = "1.0.0",
-    /** Expected SHA-256 hash checksum of the model file. */
-    val sha256: String = "",
-    /** Expected file size of the model file in bytes. */
-    val expectedSize: Long = 0L,
+    /**
+     * Registry-owned metadata for a model that the app may download itself.
+     * A partial record deliberately makes managed download unavailable.
+     */
+    val managedArtifact: ManagedModelArtifactMetadata? = null,
+    /** Expected SHA-256 hash checksum, retained for existing display callers. */
+    val sha256: String = managedArtifact?.sha256.orEmpty(),
+    /** Expected file size in bytes, retained for memory sizing and display callers. */
+    val expectedSize: Long = managedArtifact?.expectedSize ?: 0L,
     /** Gated repository license terms URL. */
     val licenseUrl: String = "",
     /** Whether downloading this model requires Hugging Face authentication. */
@@ -58,7 +63,11 @@ data class OnDeviceModelSpec(
      * sized from this — exceeding it crashes natively.
      */
     val contextWindow: Int = 1280
-)
+) {
+    /** True only when the catalog has a complete, publisher-verifiable artifact record. */
+    val isManagedDownloadAvailable: Boolean
+        get() = backend == OnDeviceBackend.LITERT_LM && managedArtifact?.isComplete == true
+}
 
 /**
  * Single source of truth for every on-device model the app supports.
@@ -69,6 +78,44 @@ data class OnDeviceModelSpec(
  *    automatically pick up the new entry.
  */
 object OnDeviceModelRegistry {
+
+    /** Id prefix for user-imported LiteRT models that are not in the static catalog. */
+    const val CUSTOM_ID_PREFIX = "custom-"
+
+    /**
+     * Conservative default for unknown custom imports. Under-sizing [OnDeviceModelSpec.contextWindow]
+     * is safer than over-sizing: LiteRT aborts natively if input+output exceeds maxNumTokens.
+     */
+    const val CUSTOM_DEFAULT_CONTEXT_WINDOW = 1280
+
+    fun isCustomId(id: String): Boolean = id.startsWith(CUSTOM_ID_PREFIX)
+
+    /**
+     * Builds a LiteRT spec for a freestanding user import. Not managed-downloadable and never
+     * requires Hugging Face auth.
+     */
+    fun customSpec(
+        id: String,
+        displayName: String,
+        modelFilename: String,
+        expectedSize: Long = 0L,
+        contextWindow: Int = CUSTOM_DEFAULT_CONTEXT_WINDOW,
+        minSdk: Int = 26
+    ): OnDeviceModelSpec {
+        require(isCustomId(id)) { "Custom on-device model ids must start with $CUSTOM_ID_PREFIX" }
+        return OnDeviceModelSpec(
+            id = id,
+            displayName = displayName,
+            family = "Custom",
+            sizeLabel = "Import",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelFilename = modelFilename,
+            expectedSize = expectedSize,
+            authRequired = false,
+            minSdk = minSdk,
+            contextWindow = contextWindow
+        )
+    }
 
     // ── AI Core models (existing, unchanged behaviour) ─────────────────
     private val aiCoreModels = listOf(
@@ -100,10 +147,18 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E2B-it-litert-lm",
             modelFilename = "gemma-4-E2B-it.litertlm",
-            expectedSize = 2588147712L,
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm",
+                sourceRevision = "6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94",
+                expectedSize = 2588147712L,
+                // Publisher LFS sha256 recorded in #129, agreed by two independent Hugging Face
+                // endpoints (model-info `?blobs=true` and the resolve `X-Linked-ETag` header) for
+                // the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+            ),
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
-            authRequired = true,
-            isRecommended = true,
+            // The litert-community mirror is ungated: anonymous resolve returns the artifact.
+            authRequired = false,
             minSdk = 31,
             contextWindow = 4096
         ),
@@ -115,9 +170,20 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/gemma-4-E4B-it-litert-lm",
             modelFilename = "gemma-4-E4B-it.litertlm",
-            expectedSize = 3660000000L,
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+                sourceRevision = "2eee7ac325f20eb8c9ac1d0e972f7c84663062da",
+                // The previous 3_660_000_000 constant was an estimate; the real artifact is
+                // 469,760 bytes smaller, which an exact-size check would have rejected.
+                expectedSize = 3659530240L,
+                // Publisher LFS sha256 recorded in #129, agreed by two independent Hugging Face
+                // endpoints (model-info `?blobs=true` and the resolve `X-Linked-ETag` header) for
+                // the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+            ),
             licenseUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm",
-            authRequired = true,
+            // The litert-community mirror is ungated: anonymous resolve returns the artifact.
+            authRequired = false,
             minSdk = 31,
             contextWindow = 4096
         ),
@@ -129,7 +195,14 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E2B-it-litert-lm",
             modelFilename = "gemma-3n-E2B-it-int4.litertlm",
-            expectedSize = 2000000000L,  // TODO: Replace with actual published artifact size
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/ba9ca88da013b537b6ed38108be609b8db1c3a16/gemma-3n-E2B-it-int4.litertlm",
+                sourceRevision = "ba9ca88da013b537b6ed38108be609b8db1c3a16",
+                expectedSize = 3655827456L,
+                // Publisher LFS sha256 recorded in #82 from the Hugging Face revision
+                // endpoint for the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6"
+            ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm",
             authRequired = true,
             minSdk = 31,
@@ -143,7 +216,14 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "google/gemma-3n-E4B-it-litert-lm",
             modelFilename = "gemma-3n-E4B-it-int4.litertlm",
-            expectedSize = 4000000000L,  // TODO: Replace with actual published artifact size
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+                sourceRevision = "297ed75955702dec3503e00c2c2ecbbf475300bc",
+                expectedSize = 4919541760L,
+                // Publisher LFS sha256 recorded in #82 from the Hugging Face revision
+                // endpoint for the pinned revision; not yet re-hashed from downloaded bytes.
+                sha256 = "2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4"
+            ),
             licenseUrl = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm",
             authRequired = true,
             minSdk = 31,
@@ -157,10 +237,17 @@ object OnDeviceModelRegistry {
             backend = OnDeviceBackend.LITERT_LM,
             modelPath = "litert-community/Qwen2.5-0.5B-Instruct",
             modelFilename = "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-            expectedSize = 546660344L,
-            sha256 = "e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2",
+            managedArtifact = ManagedModelArtifactMetadata(
+                downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/6c237a59eedeb06a821b21f0a59b03d346ac8bc3/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+                sourceRevision = "6c237a59eedeb06a821b21f0a59b03d346ac8bc3",
+                expectedSize = 546660344L,
+                sha256 = "e608953f169aeb1bd7b9155fec2559825e08453fc209b84eda3a781ed0452fd2"
+            ),
             licenseUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct",
             authRequired = false,
+            // Public HF artifact + complete integrity metadata — default LiteRT pick for
+            // devices that cannot (or choose not to) configure a Hugging Face token.
+            isRecommended = true,
             minSdk = 26,
             contextWindow = 1280
         )
@@ -175,7 +262,7 @@ object OnDeviceModelRegistry {
     /** Only LiteRT-LM models. */
     val liteRTOnly: List<OnDeviceModelSpec> get() = allModels.filter { it.backend == OnDeviceBackend.LITERT_LM }
 
-    /** Look up a model spec by its stable [id]. */
+    /** Look up a catalog model spec by its stable [id]. Custom imports are resolved via [ModelRepository]. */
     fun findById(id: String): OnDeviceModelSpec? = allModels.find { it.id == id }
 
     /** Returns the recommended model for the given [backend], or the first available. */

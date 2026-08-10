@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.opendroid.ai.accessibility.GenericAppAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.util.DeviceCapabilities
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -299,6 +300,11 @@ class AdvancedControlActions @Inject constructor() {
 
         @SuppressLint("MissingPermission")
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            // Camera hardware is optional (see AndroidManifest uses-feature) — no
+            // point opening a camera app on a device that has no camera at all.
+            if (!DeviceCapabilities.hasCamera(context)) {
+                return ActionResult(false, null, "This device doesn't have a camera.")
+            }
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 return launchCameraIntentFallback(context, "Camera permission missing. Launched camera app instead.")
             }
@@ -343,6 +349,12 @@ class AdvancedControlActions @Inject constructor() {
             cameraId: String,
             outputFile: File
         ): Boolean = suspendCoroutine { continuation ->
+            // Guard against SecurityException from openCamera - the permission can
+            // be revoked between the caller's check and this capture starting.
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                continuation.resume(false)
+                return@suspendCoroutine
+            }
             val handlerThread = HandlerThread("CameraBackgroundThread")
             handlerThread.start()
             val backgroundHandler = Handler(handlerThread.looper)

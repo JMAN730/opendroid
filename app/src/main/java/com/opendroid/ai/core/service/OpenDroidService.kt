@@ -34,6 +34,9 @@ class OpenDroidService : Service() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var mcpServer: McpServer
+
     private lateinit var wakeWordDetector: WakeWordDetector
     private lateinit var speechRecognitionEngine: SpeechRecognitionEngine
     private lateinit var textToSpeechEngine: TextToSpeechEngine
@@ -87,6 +90,7 @@ class OpenDroidService : Service() {
         // Start Foreground Notification
         createNotificationChannel()
         startForegroundCompat()
+        mcpServer.start()
 
         // Monitor floating button config to start/stop wake word detection dynamically
         serviceScope.launch {
@@ -108,13 +112,13 @@ class OpenDroidService : Service() {
             agentLoop.agentState.collectLatest { state ->
                 if (state is AgentState.PlanProposed && state.plan.planId != promptedPlanId) {
                     promptedPlanId = state.plan.planId
+                    if (!showFloatingButton) {
+                        pendingApprovalListen = true
+                    }
                     textToSpeechEngine.speak(
                         "I've planned: ${state.plan.goal}, ${state.plan.estimatedSteps} steps. " +
                         "Say approve to run, or cancel."
                     )
-                    if (!showFloatingButton) {
-                        pendingApprovalListen = true
-                    }
                 }
             }
         }
@@ -143,7 +147,9 @@ class OpenDroidService : Service() {
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             }
-        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // FOREGROUND_SERVICE_TYPE_MICROPHONE is an API 30 constant; API 29 devices
+            // fall through to plain startForeground, which uses the manifest-declared types.
             androidx.core.app.ServiceCompat.startForeground(
                 this, NOTIFICATION_ID, notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -232,6 +238,7 @@ class OpenDroidService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        mcpServer.stop()
         wakeWordDetector.destroy()
         speechRecognitionEngine.destroy()
         textToSpeechEngine.destroy()
