@@ -226,12 +226,6 @@ dependencies {
     // DataStore Preferences
     implementation 'androidx.datastore:datastore-preferences:1.1.1'
 
-    // Legacy import only. Nothing stores through EncryptedSharedPreferences any more; secrets and
-    // profile data use direct Android Keystore envelopes (KeystoreSecretStorage.kt). This stays
-    // until the one-time migration in LegacyPreferenceMigration has shipped for a release, since
-    // dropping it sooner would make every pre-migration value permanently unreadable.
-    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
-
     // Hilt Dependency Injection
     implementation 'com.google.dagger:hilt-android:2.60.1'
     ksp 'com.google.dagger:hilt-compiler:2.60.1'

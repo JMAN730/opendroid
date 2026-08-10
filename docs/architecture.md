@@ -102,7 +102,7 @@ OpenDroid organizes memory across four distinct tiers:
 | **Dependency Injection** | Dagger-Hilt | 2.60.1 | Centralized dependency graph and scope management |
 | **Local Database** | Room DB (SQLite) | 2.8.4 | Multi-tier persistent memory storage |
 | **Key-Value Storage** | DataStore Preferences | 1.1.1 | Reactive user settings management |
-| **Provider credential encryption** | Android Keystore | Platform API | AES-256-GCM versioned envelopes ([`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt) and [`UserProfileStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt)); `security-crypto` remains only as a deprecated one-time import source |
+| **Provider credential encryption** | Android Keystore | Platform API | AES-256-GCM versioned envelopes ([`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt) and [`UserProfileStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/UserProfileStore.kt)) |
 | **Local On-Device AI** | LiteRT-LM Android Library | 0.14.0 | Offline LLM inference execution engine (`.task` models) |
 | **Google GenAI API** | Google ML Kit GenAI | 1.0.0-beta2 | Device-integrated Gemini Nano prompt API integration |
 | **Network & REST API** | OkHttp3 / Retrofit2 | 4.12.0 / 2.9.0 | HTTP client engine, JSON parsing, chunked downloads |
