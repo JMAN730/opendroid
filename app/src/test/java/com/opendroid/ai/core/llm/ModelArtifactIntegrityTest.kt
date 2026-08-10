@@ -61,7 +61,12 @@ class ModelArtifactIntegrityTest {
 
     @Test
     fun `Gemma managed downloads are available with their recorded SHA pins`() {
-        listOf("gemma-3n-e2b-it-litert", "gemma-3n-e4b-it-litert").forEach { id ->
+        listOf(
+            "gemma-3n-e2b-it-litert",
+            "gemma-3n-e4b-it-litert",
+            "gemma-4-e2b-it-litert",
+            "gemma-4-e4b-it-litert"
+        ).forEach { id ->
             val gemma = requireNotNull(OnDeviceModelRegistry.findById(id))
             val artifact = requireNotNull(gemma.managedArtifact)
 
@@ -83,6 +88,33 @@ class ModelArtifactIntegrityTest {
         assertTrue(artifact.isComplete)
         assertEquals("6c237a59eedeb06a821b21f0a59b03d346ac8bc3", artifact.sourceRevision)
         assertTrue(requireNotNull(artifact.downloadUrl).contains("/${artifact.sourceRevision}/"))
+    }
+
+    @Test
+    fun `Gemma 4 entries pin the exact published artifact sizes`() {
+        val sizes = mapOf(
+            "gemma-4-e2b-it-litert" to 2588147712L,
+            "gemma-4-e4b-it-litert" to 3659530240L
+        )
+
+        sizes.forEach { (id, expectedSize) ->
+            val spec = requireNotNull(OnDeviceModelRegistry.findById(id))
+
+            assertEquals(expectedSize, spec.expectedSize)
+            assertEquals(expectedSize, requireNotNull(spec.managedArtifact).expectedSize)
+        }
+    }
+
+    @Test
+    fun `no catalog LiteRT entry advertises a size without a publisher hash`() {
+        OnDeviceModelRegistry.liteRTOnly.forEach { spec ->
+            if (spec.expectedSize > 0L) {
+                assertTrue(
+                    "${spec.id} carries a size but no complete publisher record",
+                    spec.isManagedDownloadAvailable
+                )
+            }
+        }
     }
 
     @Test
@@ -312,6 +344,38 @@ class ModelArtifactIntegrityTest {
             verifier.verifyBeforeNativeLoad(target, manifestFile, spec)
         )
         assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
+    }
+
+    @Test
+    fun `local import reports LiteRT runtime incompatibility separately from an invalid file`() {
+        val spec = OnDeviceModelSpec(
+            id = "local-model",
+            displayName = "Local model",
+            family = "Test",
+            sizeLabel = "Test",
+            backend = OnDeviceBackend.LITERT_LM,
+            modelFilename = "local.task"
+        )
+        val source = File(tempFolder.root, "import.task").apply { writeText("model") }
+        val target = File(tempFolder.root, spec.modelFilename)
+        val manifestFile = File(tempFolder.root, "manifest.json")
+
+        val result = ModelArtifactInstaller().installLocalImport(
+            source = source,
+            target = target,
+            manifestFile = manifestFile,
+            spec = spec,
+            verifyFormat = {
+                throw LiteRtRuntimeIncompatibilityException(IllegalStateException("GPU unavailable"))
+            }
+        )
+
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE),
+            result
+        )
+        assertFalse(target.exists())
+        assertFalse(manifestFile.exists())
     }
 
     @Test

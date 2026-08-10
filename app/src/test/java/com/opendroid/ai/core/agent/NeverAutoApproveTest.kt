@@ -12,14 +12,15 @@ import org.junit.Test
 class NeverAutoApproveTest {
 
     @Test
-    fun `exactly the spec's ten actions are flagged`() {
+    fun `exactly the spec's twelve actions are flagged`() {
         val flagged = ActionSchema.ALL_ACTIONS.filter { it.neverAutoApprove }.map { it.name }.toSet()
         assertEquals(
             setOf(
                 // Money
                 "PAY_UPI", "ORDER_FOOD", "ORDER_GROCERY", "BOOK_UBER", "BOOK_OLA",
                 // Irreversible / destructive
-                "INSTALL_APP", "RESTART_DEVICE", "DELETE_FILE", "CLEAR_BROWSER_DATA", "LOCK_DOOR"
+                "INSTALL_APP", "RESTART_DEVICE", "DELETE_FILE", "DELETE_MACRO", "CLEAR_BROWSER_DATA", "LOCK_DOOR",
+                "DISMISS_NOTIFICATION"
             ),
             flagged
         )

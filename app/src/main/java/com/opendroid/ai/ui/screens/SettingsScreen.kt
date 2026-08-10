@@ -397,7 +397,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            if (fetchedModels.isNotEmpty()) {
+                        if (fetchedModels.isNotEmpty()) {
                                 DropdownMenu(
                                     expanded = modelDropdownExpanded,
                                     onDismissRequest = { modelDropdownExpanded = false },
@@ -486,6 +486,46 @@ fun SettingsScreen(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "EXPLICIT PLANNING FALLBACKS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Text(
+                            text = "Only selected providers may receive a retry after an unusable low-impact local plan. High-impact plans never switch automatically.",
+                            fontSize = 10.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        )
+                        providers
+                            .filter { it != config.activeProvider && it != "On-Device AI" }
+                            .forEach { fallbackProvider ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = config.fallbackProviders.contains(fallbackProvider),
+                                        onCheckedChange = { enabled ->
+                                            viewModel.updateFallbackProvider(fallbackProvider, enabled)
+                                        },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = AccentNeonGreen,
+                                            uncheckedColor = BorderColor,
+                                            checkmarkColor = DarkBackground
+                                        )
+                                    )
+                                    Text(
+                                        text = fallbackProvider,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
 
                         // Model names are never bundled with the app, so when the
                         // live list is unavailable the reason is shown rather than
@@ -778,7 +818,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Needed only for gated Hugging Face downloads (Google Gemma LiteRT builds). Public models such as Qwen 2.5 download without a token. Not used for cloud API providers.",
+                                text = "Needed only for gated Hugging Face downloads (the Google-hosted Gemma 3n LiteRT builds). Public models such as Qwen 2.5 and the Gemma 4 community mirrors download without a token. Not used for cloud API providers.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -922,7 +962,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Runs without Google AI Core. Public catalog models (e.g. Qwen) need no HF token; Gemma LiteRT builds are gated. Or import your own .task / .litertlm file.",
+                                text = "Runs without Google AI Core. Models tagged PUBLIC (Qwen, the Gemma 4 community mirrors) need no HF token; models tagged GATED (the Google-hosted Gemma 3n builds) do. Or import your own .task / .litertlm file.",
                                 fontSize = 10.sp,
                                 color = TextSecondary
                             )
@@ -2336,7 +2376,7 @@ fun SettingsScreen(
             text = {
                 Text(
                     text = "This model is gated on Hugging Face and needs an Access Token to download.\n\n" +
-                        "Public models (for example Qwen 2.5) do not need a token — only Gemma LiteRT builds do. " +
+                        "Models tagged PUBLIC (for example Qwen 2.5 and the Gemma 4 community mirrors) do not need a token — only the ones tagged GATED do. " +
                         "Add a read-only token in the Hugging Face section above, or pick a PUBLIC model.",
                     color = TextSecondary
                 )

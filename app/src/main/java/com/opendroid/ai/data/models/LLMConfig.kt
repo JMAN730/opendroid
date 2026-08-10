@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import com.opendroid.ai.core.llm.AIModel
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
 import com.opendroid.ai.core.llm.ProviderCatalog
+import com.opendroid.ai.core.llm.OnDeviceLatencyProfile
 
 private const val TAG = "LLMConfig"
 
@@ -39,6 +40,10 @@ data class LLMConfig(
     // An explicit empty map means "user revoked everything" and stays empty.
     val grantedActions: Map<String, Long>? = null,
     val latencyBenchmarks: Map<String, Long> = emptyMap(), // Provider -> latency Ms
+    /** Per-device, per-model-tier local planning measurements. */
+    val onDeviceLatencyProfiles: Map<String, OnDeviceLatencyProfile> = emptyMap(),
+    /** Provider names explicitly allowed as planning fallbacks; empty means none. */
+    val fallbackProviders: List<String> = emptyList(),
     val elevenLabsApiKey: String = "",
     val elevenLabsVoiceId: String = "",
     val ollamaUrl: String = "",
@@ -66,6 +71,29 @@ fun LLMConfig.approvalSettings(): ApprovalSettings = ApprovalSettings(
     grantedActions = effectiveGrantedActions().keys
 )
 
+/**
+ * Resolves a Claude model ID for outbound use without coercing to the default.
+ *
+ * Order: catalog (current IDs + legacy aliases), then any ID Anthropic returned
+ * via `/v1/models` in [modelCache] this session. Returns `null` when neither
+ * trusts the selection — callers then decide whether to warn and fall back.
+ */
+fun LLMConfig.resolveClaudeModelOrNull(selected: String): String? {
+    ClaudeModelCatalog.resolve(selected)?.let { return it }
+    val trimmed = selected.trim()
+    if (trimmed.isEmpty()) return null
+    val provider = ProviderCatalog.canonicalName("Anthropic Claude")
+    val trusted = modelCache[provider].orEmpty()
+    return if (trusted.any { it.id == trimmed }) trimmed else null
+}
+
+/** Like [resolveClaudeModelOrNull], coercing untrusted IDs to the catalog default. */
+fun LLMConfig.resolveClaudeModelId(selected: String): String =
+    resolveClaudeModelOrNull(selected) ?: run {
+        warnCoercion()
+        ClaudeModelCatalog.defaultModelId
+    }
+
 fun LLMConfig.selectedModelFor(providerName: String): String {
     val provider = ProviderCatalog.canonicalName(providerName)
     val migratedPairs = selectedModels
@@ -79,10 +107,7 @@ fun LLMConfig.selectedModelFor(providerName: String): String {
         ?: ProviderCatalog.defaultModel(provider)
 
     return if (provider == "Anthropic Claude") {
-        ClaudeModelCatalog.resolve(selected) ?: run {
-            warnCoercion()
-            ClaudeModelCatalog.defaultModelId
-        }
+        resolveClaudeModelId(selected)
     } else {
         selected.trim()
     }
@@ -92,10 +117,7 @@ fun LLMConfig.withSelectedModel(providerName: String, model: String): LLMConfig 
     val provider = ProviderCatalog.canonicalName(providerName)
     require(ProviderCatalog.isKnown(provider)) { "Unknown LLM provider." }
     val safeModel = if (provider == "Anthropic Claude") {
-        ClaudeModelCatalog.resolve(model) ?: run {
-            warnCoercion()
-            ClaudeModelCatalog.defaultModelId
-        }
+        resolveClaudeModelId(model)
     } else {
         model.trim().ifBlank { ProviderCatalog.defaultModel(provider) }
     }

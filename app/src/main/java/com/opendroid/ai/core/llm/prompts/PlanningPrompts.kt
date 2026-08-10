@@ -29,7 +29,7 @@ CRITICAL DEPENDENCY RULES:
    - The Re-Evaluation Engine runs at each step boundary. It will inspect the data outputs of the completed steps and dynamically decide whether to CONTINUE executing the remaining conditional steps or ABANDON them when the user's conditions are not met.
 
 SELF-CONTAINED ACTIONS (do NOT add OPEN_APP before these):
-- SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally.
+- SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally. SEND_EMAIL only prepares a draft and requires the user to tap Send.
 - BOOK_UBER, BOOK_OLA — these open the ride app internally.
 - PLAY_MUSIC, PLAY_YOUTUBE — these open the media app internally AND perform the
   search/play. They already handle phrasing like "open youtube and search X" or

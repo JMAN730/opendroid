@@ -35,13 +35,7 @@ class FinanceActions @Inject constructor() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 
-                val appPackage = when (app.lowercase()) {
-                    "phonepe" -> "com.phonepe.app"
-                    "paytm" -> "net.one97.paytm"
-                    else -> "com.google.android.apps.nbu.paisa.user" // Google Pay
-                }
-                
-                intent.setPackage(appPackage)
+                intent.setPackage(paymentApp(app).packageName)
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
@@ -66,16 +60,16 @@ class FinanceActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             return try {
                 // Cannot fetch balance programmatically due to bank NPCI/UPI pin constraints.
-                // Open default UPI app (Google Pay) for the user to authenticate and check balance.
+                // Open the selected UPI app for the user to authenticate and check balance.
+                val selectedApp = paymentApp(params["app"] ?: "gpay")
                 val pm = context.packageManager
-                val gpayPackage = "com.google.android.apps.nbu.paisa.user"
-                val intent = pm.getLaunchIntentForPackage(gpayPackage)
+                val intent = pm.getLaunchIntentForPackage(selectedApp.packageName)
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                    ActionResult(true, "I opened Google Pay — you'll need to check your balance there with your PIN.", null, true)
+                    ActionResult(true, "I opened ${selectedApp.displayName} — you'll need to check your balance there with your PIN.", null, true)
                 } else {
-                    ActionResult(false, null, "Google Pay isn't installed. Check your balance in your banking app.")
+                    ActionResult(false, null, "${selectedApp.displayName} isn't installed. Check your balance in your banking app.")
                 }
             } catch (e: Exception) {
                 Log.e("CheckBalance", "Balance check failed: ${e.localizedMessage}")
@@ -133,4 +127,15 @@ class FinanceActions @Inject constructor() {
             }
         }
     }
+}
+
+private data class PaymentApp(
+    val packageName: String,
+    val displayName: String
+)
+
+private fun paymentApp(app: String): PaymentApp = when (app.lowercase(Locale.ROOT)) {
+    "phonepe" -> PaymentApp("com.phonepe.app", "PhonePe")
+    "paytm" -> PaymentApp("net.one97.paytm", "Paytm")
+    else -> PaymentApp("com.google.android.apps.nbu.paisa.user", "Google Pay")
 }

@@ -5,9 +5,12 @@ import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
+import com.opendroid.ai.core.llm.LLMResponse
+import com.opendroid.ai.core.llm.LatencyBudgetStatus
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.memory.MemoryManager
+import com.opendroid.ai.core.memory.ExecutionHistoryPrivacy
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Plan
@@ -79,6 +82,7 @@ class AgentLoop @Inject constructor(
     private val llmProviderFactory: LLMProviderFactory,
     private val planManager: PlanManager,
     private val actionDispatcher: ActionDispatcher,
+    private val actionSequenceExecutor: ActionSequenceExecutor,
     private val memoryManager: MemoryManager,
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
@@ -634,6 +638,8 @@ class AgentLoop @Inject constructor(
 
                     val plannerResponse = plannerDeferred.await()
                     val criticResponse = criticDeferred.await()
+                    reportLocalPlanningLatency(plannerResponse)
+                    reportLocalPlanningLatency(criticResponse)
 
                     val mergePrompt = """
                         ${PlanningPrompts.MERGE_SYSTEM_PROMPT}
@@ -659,6 +665,7 @@ class AgentLoop @Inject constructor(
                             responseFormat = ResponseFormat.JSON
                         )
                     )
+                    reportLocalPlanningLatency(mergeResponse)
 
                     parsePlanFromLlmResponse(mergeResponse.content, userMsg.text)
                 }
@@ -672,6 +679,7 @@ class AgentLoop @Inject constructor(
                         responseFormat = ResponseFormat.JSON
                     )
                 )
+                reportLocalPlanningLatency(response)
                 parsePlanFromLlmResponse(response.content, userMsg.text)
             }
 
@@ -699,6 +707,13 @@ class AgentLoop @Inject constructor(
             )
         } catch (e: Exception) {
             fallbackOrError(userMsg, context, e, sessionId)
+        }
+    }
+
+    private suspend fun reportLocalPlanningLatency(response: LLMResponse) {
+        val result = llmProviderFactory.recordPlanningLatency(response)
+        if (result?.status == LatencyBudgetStatus.EXCEEDED && result.message != null) {
+            onSpeakCallback?.invoke(result.message)
         }
     }
 
@@ -943,26 +958,14 @@ class AgentLoop @Inject constructor(
             _agentState.value = AgentState.ExecutingPlan(stepToExecute.description)
 
             // Resolve parameters from prior step results
-            val resolvedParams = stepToExecute.params.mapValues { (_, value) ->
-                var newValue = value
-                currentPlanState.steps.forEach { completedStep ->
-                    if (completedStep.status == StepStatus.COMPLETED && completedStep.result != null) {
-                        val refKey = "$" + completedStep.stepId
-                        if (newValue.contains(refKey)) {
-                            newValue = newValue.replace(refKey, completedStep.result!!)
-                        }
-                        val doubleRefKey = "$$" + completedStep.stepId
-                        if (newValue.contains(doubleRefKey)) {
-                            newValue = newValue.replace(doubleRefKey, completedStep.result!!)
-                        }
-                    }
-                }
-                newValue
-            }
+            val resolvedParams = actionSequenceExecutor.resolveParameters(
+                params = stepToExecute.params,
+                priorSteps = currentPlanState.steps
+            )
 
             // Execute the action dispatcher
             var actionResult = try {
-                var result = actionDispatcher.execute(stepToExecute.action, resolvedParams, context)
+                var result = actionSequenceExecutor.dispatch(stepToExecute.action, resolvedParams, context)
 
                 resolveNeedsInput(result, stepToExecute.action, resolvedParams, context, sessionId)
             } catch (e: CancellationException) {
@@ -972,16 +975,24 @@ class AgentLoop @Inject constructor(
                 ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
             }
 
+            // Redaction must be based on the dispatcher's canonical mapped action,
+            // not the raw plan action string — the dispatcher accepts non-canonical
+            // names (e.g. "EMAIL", "send-email") that still execute as SEND_EMAIL.
+            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action)
+
             try {
                 memoryManager.logTaskExecution(
                     stepId = stepToExecute.stepId,
                     planId = currentPlanState.planId,
-                    description = stepToExecute.description,
+                    description = ExecutionHistoryPrivacy.sanitizeDescription(
+                        canonicalActionName,
+                        stepToExecute.description
+                    ),
                     actionType = stepToExecute.action,
-                    params = resolvedParams,
+                    params = ExecutionHistoryPrivacy.sanitizeParams(canonicalActionName, resolvedParams),
                     success = actionResult.success,
-                    resultData = actionResult.data,
-                    errorMessage = actionResult.error
+                    resultData = actionResult.data?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact),
+                    errorMessage = actionResult.error?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact)
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -996,6 +1007,33 @@ class AgentLoop @Inject constructor(
                     StepStatus.COMPLETED,
                     result = actionResult.data ?: "Completed successfully."
                 )
+            } else if (actionResult is ActionResult.PendingUserAction) {
+                // The action handed control to the user (e.g. the dialer is open awaiting a
+                // tap). Nothing failed, so no fallback and no failure replan - surface the
+                // hand-off in chat and speech, record it as the step result, and let the
+                // normal re-evaluation path decide what remains.
+                handlePendingUserAction(actionResult, sessionId)
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.COMPLETED,
+                    result = actionResult.message
+                )
+            } else if (actionResult is ActionResult.UserActionRequired) {
+                // A user-facing flow (for example email compose) is not an
+                // executed side effect. Do not run an automated fallback or
+                // allow the plan to treat the step as completed.
+                planManager.updateStepStatus(
+                    stepToExecute.stepId,
+                    StepStatus.FAILED,
+                    error = actionResult.error ?: "User action is required before this step can complete."
+                )
+                // Skip the generic re-evaluation below: its prompt allows adding
+                // alternative steps, which would let the agent launch another
+                // action or duplicate composer while the user is still reviewing
+                // the one just opened. Move on to the next plan step (if any)
+                // instead of triggering an automated replan for this failure.
+                currentPlanState = planManager.currentPlan.value ?: break
+                continue
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
@@ -1094,9 +1132,9 @@ class AgentLoop @Inject constructor(
                 continue
             } else {
                 // Try fallback action
-                if (stepToExecute.fallback.isNotEmpty() && actionDispatcher.hasAction(stepToExecute.fallback)) {
+                if (actionSequenceExecutor.shouldAttemptFallback(actionResult, stepToExecute)) {
                     val fallbackResult = try {
-                        actionDispatcher.execute(stepToExecute.fallback, resolvedParams, context)
+                        actionSequenceExecutor.dispatch(stepToExecute.fallback, resolvedParams, context)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -1410,6 +1448,24 @@ class AgentLoop @Inject constructor(
             actionDispatcher.execute(actionName, newParams, context),
             newParams
         )
+    }
+
+    /**
+     * Tell the user that a step is now waiting on them. The agent cannot observe the
+     * user's tap, so this is a hand-off notice, not a prompt that blocks the plan.
+     */
+    private suspend fun handlePendingUserAction(
+        pending: ActionResult.PendingUserAction,
+        sessionId: String
+    ) {
+        val pendingMsg = ChatMessage(
+            id = UUID.randomUUID().toString(),
+            text = pending.message,
+            sender = ChatMessage.Sender.AGENT,
+            modelBadge = "System"
+        )
+        conversationRepository.insertMessage(sessionId, pendingMsg)
+        onSpeakCallback?.invoke(pending.message)
     }
 
     /**

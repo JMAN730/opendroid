@@ -43,6 +43,7 @@ fun runtimePermissions(
         "android.permission.CALL_PHONE",
         "android.permission.READ_SMS",
         "android.permission.RECEIVE_SMS",
+        "android.permission.READ_PHONE_STATE",
     )
 
     PermissionCardId.CONTACTS_CALENDAR -> listOf(

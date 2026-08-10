@@ -29,6 +29,7 @@ import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.RetryPolicy
 import com.opendroid.ai.core.llm.error.SecretRegistry
+import com.opendroid.ai.data.models.resolveClaudeModelOrNull
 import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
 import com.opendroid.ai.core.security.CredentialStoreResult
@@ -286,8 +287,10 @@ class SettingsViewModel @Inject constructor(
 
                 // Migrate a legacy Claude selection regardless of cache state, so a
                 // migratable ID is never left persisted or treated as absent below.
+                // Live-fetched IDs (present in modelCache) are trusted the same as
+                // catalog entries — see resolveClaudeModelOrNull.
                 val isClaude = provider == "Anthropic Claude"
-                val claudeResolved = if (isClaude) ClaudeModelCatalog.resolve(config.activeModel) else null
+                val claudeResolved = if (isClaude) config.resolveClaudeModelOrNull(config.activeModel) else null
                 val activeModel = if (isClaude) {
                     if (claudeResolved != null && claudeResolved != config.activeModel) {
                         updateActiveModel(claudeResolved)
@@ -296,9 +299,9 @@ class SettingsViewModel @Inject constructor(
                 } else {
                     config.activeModel
                 }
-                // An unresolvable Claude selection (retired with no replacement, or a
-                // hand-edited setting) must never stay persisted: re-run the fetch so
-                // auto-selection below moves the user onto the catalog default.
+                // Catalog+cache reject this ID: re-fetch so auto-selection can move
+                // onto a live model (or the catalog default) rather than leave a
+                // hand-edited / attacker-controlled string persisted.
                 val unsupportedClaudeModel = isClaude && config.activeModel.isNotBlank() && claudeResolved == null
 
                 // Check cache time limit (1 hour) unless forced
@@ -317,12 +320,21 @@ class SettingsViewModel @Inject constructor(
                             } catch (e: Exception) {
                                 android.util.Log.e("SettingsViewModel", "Failed to save model cache: ${e.message}", e)
                             }
+                            // Local state must include the fresh list before any
+                            // withSelectedModel call: selection trusts modelCache,
+                            // and the DataStore collect may lag behind this coroutine.
+                            _llmConfig.value = _llmConfig.value.copy(
+                                modelCache = _llmConfig.value.modelCache + (provider to models),
+                                lastModelFetch = _llmConfig.value.lastModelFetch +
+                                    (provider to System.currentTimeMillis())
+                            )
 
                             // The live list is authoritative: a selection the provider
-                            // no longer serves is replaced rather than left to fail at
-                            // request time with a confusing error.
+                            // no longer serves is replaced. A previously untrusted ID
+                            // that now appears in the fetch is kept (it came from
+                            // Anthropic), not forced onto the catalog default.
                             val modelExists = models.any { it.id == activeModel }
-                            if (!modelExists || activeModel.isBlank() || unsupportedClaudeModel) {
+                            if (!modelExists || activeModel.isBlank()) {
                                 val providerDefault = if (provider == "Anthropic Claude") {
                                     models.find { it.id == ClaudeModelCatalog.defaultModelId }
                                 } else {
@@ -379,13 +391,38 @@ class SettingsViewModel @Inject constructor(
         activeModelJob = viewModelScope.launch {
             try {
                 delay(1000)
+                // Prefer this session's in-memory Claude/live list for the active
+                // provider if DataStore has not absorbed refreshModels yet.
+                val memoryModels = _llmConfig.value.modelCache[provider]
                 settingsRepository.updateConfig { current ->
-                    current.withSelectedModel(current.activeProvider, model)
+                    val config = if (!memoryModels.isNullOrEmpty()) {
+                        current.copy(modelCache = current.modelCache + (provider to memoryModels))
+                    } else {
+                        current
+                    }
+                    config.withSelectedModel(current.activeProvider, model)
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
                     android.util.Log.e("SettingsViewModel", "Failed to update active model: ${e.message}", e)
                 }
+            }
+        }
+    }
+
+    /**
+     * Stores an explicit planning fallback allowlist. No provider is inferred
+     * from credentials alone; the list is the user's authorization boundary.
+     */
+    fun updateFallbackProvider(providerName: String, enabled: Boolean) {
+        val provider = ProviderCatalog.canonicalName(providerName)
+        val updated = _llmConfig.value.fallbackProviders.toMutableList().apply {
+            if (enabled) add(provider) else removeAll { it == provider }
+        }.distinct()
+        _llmConfig.value = _llmConfig.value.copy(fallbackProviders = updated)
+        viewModelScope.launch {
+            settingsRepository.updateConfig { current ->
+                current.copy(fallbackProviders = updated)
             }
         }
     }

@@ -10,6 +10,7 @@ import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.models.Macro
 import com.opendroid.ai.data.models.PlanStep
+import com.opendroid.ai.core.memory.ExecutionHistoryPrivacy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -106,17 +107,18 @@ class MemoryRepository @Inject constructor(
         resultData: String?,
         errorMessage: String?
     ) {
-        val paramsJson = json.encodeToString(params)
+        val safeParams = ExecutionHistoryPrivacy.sanitizeParams(actionType, params)
+        val paramsJson = json.encodeToString(safeParams)
         taskHistoryDao.insertHistory(
             TaskHistoryEntity(
                 stepId = stepId,
                 planId = planId,
-                description = description,
+                description = ExecutionHistoryPrivacy.sanitizeDescription(actionType, description),
                 actionType = actionType,
                 paramsJson = paramsJson,
                 success = success,
-                resultData = resultData,
-                errorMessage = errorMessage
+                resultData = resultData?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact),
+                errorMessage = errorMessage?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact)
             )
         )
     }

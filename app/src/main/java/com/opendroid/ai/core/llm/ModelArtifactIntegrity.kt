@@ -244,7 +244,8 @@ enum class ArtifactVerificationFailure {
     SIZE_MISMATCH,
     HASH_MISMATCH,
     HASH_UNAVAILABLE,
-    FORMAT_INVALID
+    FORMAT_INVALID,
+    LITERT_RUNTIME_INCOMPATIBLE
 }
 
 sealed interface ArtifactVerificationResult {
@@ -521,6 +522,10 @@ class ModelArtifactInstaller(
 
             try {
                 verifyFormat(stagedArtifact)
+            } catch (_: LiteRtRuntimeIncompatibilityException) {
+                return ArtifactVerificationResult.Invalid(
+                    ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE
+                )
             } catch (_: Exception) {
                 return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID)
             } catch (_: LinkageError) {

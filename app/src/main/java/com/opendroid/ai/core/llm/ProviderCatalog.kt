@@ -75,4 +75,9 @@ object ProviderCatalog {
         "Custom OpenAI Compatible" -> true
         else -> false
     }
+
+    fun isOnDevice(providerName: String): Boolean = when (canonicalName(providerName)) {
+        ON_DEVICE, "LiteRT-LM (On-device)" -> true
+        else -> false
+    }
 }

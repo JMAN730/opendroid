@@ -84,6 +84,25 @@ class ActionDispatcher @Inject constructor(
     fun hasAction(actionName: String): Boolean =
         actionsMap.containsKey(actionName) || actionsMap.containsKey(autoMapper.normalizeActionName(actionName))
 
+    /**
+     * Resolves a raw plan/LLM action name to the canonical action name that
+     * [execute] will actually dispatch to (schema name, registered handler
+     * name, or the ActionAutoMapper alias/semantic target). Callers that need
+     * to make decisions based on "which action will actually run" — such as
+     * redacting sensitive params before persisting execution history — must
+     * use this instead of the raw action string, since the raw string may be
+     * a non-canonical variant (e.g. "EMAIL", "send-email") that still maps to
+     * a sensitive canonical action.
+     */
+    fun canonicalActionName(actionName: String): String {
+        val normalized = autoMapper.normalizeActionName(actionName)
+        if (ActionSchema.isValid(normalized) || normalized in actionsMap.keys) {
+            return normalized
+        }
+        val mapping = autoMapper.mapAction(actionName, emptyMap(), actionsMap.keys)
+        return mapping.mappedAction ?: normalized
+    }
+
     fun isRegistered(actionName: String): Boolean = hasAction(actionName)
 
     fun getAllRegisteredActions(): List<String> = actionsMap.keys.toList()

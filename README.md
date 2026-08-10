@@ -145,7 +145,7 @@ com.opendroid.ai
 │   ├── agent/              AgentLoop, PlanManager, IntentClassifier, VisionEngine
 │   ├── llm/                12 LLM providers, fallback chain, prompt engine
 │   ├── memory/             4-tier memory system + notification intelligence
-│   ├── security/           Direct Keystore provider credentials + legacy encrypted preferences
+│   ├── security/           Direct Keystore provider credentials + legacy plaintext migration
 │   ├── service/            Foreground service, notification listener, boot receiver
 │   └── voice/              Wake word, speech recognition, TTS engine
 │

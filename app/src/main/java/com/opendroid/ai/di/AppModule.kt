@@ -7,6 +7,12 @@ import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.core.settings.AndroidAppSettingsStore
 import com.opendroid.ai.core.settings.AppSettingsStore
+import com.opendroid.ai.accessibility.AndroidCallFlowVerifier
+import com.opendroid.ai.accessibility.CallFlowVerifier
+import com.opendroid.ai.actions.AndroidMediaPlaybackVerifier
+import com.opendroid.ai.actions.ActionDispatcher
+import com.opendroid.ai.actions.MediaPlaybackVerifier
+import com.opendroid.ai.core.agent.ActionSequenceExecutor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -46,6 +52,14 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideCallFlowVerifier(): CallFlowVerifier = AndroidCallFlowVerifier()
+
+    @Provides
+    @Singleton
+    fun provideMediaPlaybackVerifier(): MediaPlaybackVerifier = AndroidMediaPlaybackVerifier()
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -53,4 +67,15 @@ object AppModule {
             .writeTimeout(15, TimeUnit.SECONDS)
             .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideActionSequenceExecutor(
+        actionDispatcher: dagger.Lazy<ActionDispatcher>
+    ): ActionSequenceExecutor = ActionSequenceExecutor(
+        executeAction = { action, params, context ->
+            actionDispatcher.get().execute(action, params, context)
+        },
+        hasAction = { action -> actionDispatcher.get().hasAction(action) }
+    )
 }
