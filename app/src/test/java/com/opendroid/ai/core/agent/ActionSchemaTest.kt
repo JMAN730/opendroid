@@ -39,6 +39,36 @@ class ActionSchemaTest {
     }
 
     @Test
+    fun `check balance app is optional and restricted to supported payment apps`() {
+        val app = ActionSchema.getAction("CHECK_BALANCE")!!.params.single()
+
+        assertEquals("app", app.name)
+        assertEquals(ParamType.ENUM, app.type)
+        assertFalse(app.required)
+        assertEquals(listOf("gpay", "phonepe", "paytm"), app.enumValues)
+        assertEquals("gpay", app.defaultValue)
+
+        val (defaultResult, defaultParams) = ActionSchema.validateParams("CHECK_BALANCE", emptyMap())
+        assertTrue(defaultResult is ActionSchema.ValidationResult.Valid)
+        assertEquals("gpay", defaultParams["app"])
+
+        listOf("gpay", "phonepe", "paytm").forEach { value ->
+            val (result, enriched) = ActionSchema.validateParams(
+                "CHECK_BALANCE",
+                mapOf("app" to value)
+            )
+            assertTrue(result is ActionSchema.ValidationResult.Valid)
+            assertEquals(value, enriched["app"])
+        }
+
+        val (invalidResult, _) = ActionSchema.validateParams(
+            "CHECK_BALANCE",
+            mapOf("app" to "paypal")
+        )
+        assertTrue(invalidResult is ActionSchema.ValidationResult.MissingParams)
+    }
+
+    @Test
     fun `enum synonym is corrected to a canonical value`() {
         // "enable" is a synonym for "on" in the on/off/toggle enum
         val (result, enriched) = ActionSchema.validateParams("TOGGLE_WIFI", mapOf("state" to "enable"))
