@@ -433,13 +433,21 @@ class LiteRTLMProvider @Inject constructor(
         contextWindow: Int
     ): Int {
         return PromptBudget.outputBudget(prompt, contextWindow, requestedMaxTokens)
-            ?: throw IllegalStateException(
+            ?: throw PromptBudgetExceededException(
                 "This conversation is too long for ${spec.displayName} " +
                 "(~${PromptBudget.estimateTokens(prompt)} tokens, limit $contextWindow). " +
                 "Raise the context window in Settings, start a new chat, shorten the " +
                 "message, or switch to a larger model."
             )
     }
+
+    /**
+     * Thrown when a prompt doesn't fit the resolved context window. The engine
+     * that produced the rejection is otherwise healthy — this is a budgeting
+     * failure, not an engine/inference failure — so callers must not retire
+     * the cached handle for it.
+     */
+    private class PromptBudgetExceededException(message: String) : IllegalStateException(message)
 
     @Synchronized
     private fun invokeLiteRTInference(
@@ -546,7 +554,13 @@ class LiteRTLMProvider @Inject constructor(
         } catch (e: Throwable) {
             // Retire only the handle this call leased — never a stale/replaced
             // cache entry another concurrent request may already be using.
-            active?.let { retire(it) }
+            // Prompt-budget rejections don't mean the engine is broken (it may
+            // just be a fallback-sized engine that doesn't fit this particular
+            // prompt) — keep it cached so a shortened prompt or retry doesn't
+            // have to reload the multi-gigabyte model.
+            if (e !is PromptBudgetExceededException) {
+                active?.let { retire(it) }
+            }
             throw e
         } finally {
             active?.let { releaseEngine(it) }
