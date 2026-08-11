@@ -19,14 +19,23 @@ updateA11y();
 const hamburger = document.getElementById('nav-hamburger');
 const navLinks = document.getElementById('nav-links');
 if (hamburger && navLinks) {
+const setMenuState = (open) => {
+hamburger.classList.toggle('active', open);
+navLinks.classList.toggle('open', open);
+hamburger.setAttribute('aria-expanded', String(open));
+};
 hamburger.addEventListener('click', () => {
-hamburger.classList.toggle('active');
-navLinks.classList.toggle('open');
+setMenuState(!navLinks.classList.contains('open'));
 });
 document.addEventListener('click', (e) => {
 if (!hamburger.contains(e.target) && !navLinks.contains(e.target)) {
-hamburger.classList.remove('active');
-navLinks.classList.remove('open');
+setMenuState(false);
+}
+});
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape' && navLinks.classList.contains('open')) {
+setMenuState(false);
+hamburger.focus();
 }
 });
 }
@@ -59,4 +68,48 @@ if (navbar) {
 window.addEventListener('scroll', () => {
 navbar.classList.toggle('scrolled', window.scrollY > 10);
 });
+}
+document.querySelectorAll('.code-copy').forEach(wrapper => {
+const codeEl = wrapper.querySelector('code');
+if (!codeEl) return;
+const btn = document.createElement('button');
+btn.type = 'button';
+btn.className = 'copy-btn';
+btn.setAttribute('aria-label', 'Copy to clipboard');
+btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+btn.addEventListener('click', async () => {
+const text = codeEl.textContent;
+try {
+await navigator.clipboard.writeText(text);
+} catch (e) {
+const ta = document.createElement('textarea');
+ta.value = text;
+ta.style.position = 'fixed';
+ta.style.opacity = '0';
+document.body.appendChild(ta);
+ta.select();
+try { document.execCommand('copy'); } catch (e2) { /* give up quietly */ }
+document.body.removeChild(ta);
+}
+btn.setAttribute('data-copied', 'true');
+btn.setAttribute('aria-label', 'Copied');
+setTimeout(() => {
+btn.removeAttribute('data-copied');
+btn.setAttribute('aria-label', 'Copy to clipboard');
+}, 1800);
+});
+wrapper.appendChild(btn);
+});
+const ghStats = document.getElementById('gh-stats');
+if (ghStats) {
+fetch('https://api.github.com/repos/yashab-cyber/opendroid')
+.then(res => (res.ok ? res.json() : Promise.reject(res.status)))
+.then(data => {
+const stars = ghStats.querySelector('[data-stat="stars"]');
+const forks = ghStats.querySelector('[data-stat="forks"]');
+if (stars) stars.textContent = data.stargazers_count.toLocaleString();
+if (forks) forks.textContent = data.forks_count.toLocaleString();
+ghStats.setAttribute('data-loaded', 'true');
+})
+.catch(() => { /* leave hidden, no broken UI on failure */ });
 }
