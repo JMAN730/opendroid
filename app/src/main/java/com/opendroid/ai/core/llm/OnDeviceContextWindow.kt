@@ -26,16 +26,19 @@ object OnDeviceContextWindow {
 
     /**
      * The choices to show for [spec]: the model's own default plus every offered
-     * size, ascending and de-duplicated.
+     * size at or above it, ascending and de-duplicated. Selection starts at the
+     * model catalog default — smaller offered sizes are not shown.
      */
     fun optionsFor(spec: OnDeviceModelSpec): List<Int> = optionsFor(spec.contextWindow)
 
     /** As [optionsFor], for callers that hold only the model's default size. */
-    fun optionsFor(defaultWindow: Int): List<Int> =
-        (OFFERED + defaultWindow)
+    fun optionsFor(defaultWindow: Int): List<Int> {
+        val clampedDefault = clamp(defaultWindow)
+        return (OFFERED.filter { it >= clampedDefault } + clampedDefault)
             .map(::clamp)
             .distinct()
             .sorted()
+    }
 
     /** Compact label for a token count, e.g. 8192 -> "8K", 1280 -> "1280". */
     fun label(tokens: Int): String =

@@ -721,7 +721,9 @@ class SettingsViewModel @Inject constructor(
      * on the next request, so the change takes effect without restarting the app.
      */
     fun updateOnDeviceContextWindow(modelId: String, tokens: Int?) {
+        val previous = _llmConfig.value.onDeviceContextWindows[modelId]
         val updated = _llmConfig.value.withOnDeviceContextWindow(modelId, tokens)
+        val applied = updated.onDeviceContextWindows[modelId]
         _llmConfig.value = updated
         viewModelScope.launch {
             try {
@@ -730,6 +732,11 @@ class SettingsViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 android.util.Log.e("SettingsViewModel", "Failed to update context window: ${e.message}", e)
+                // Only roll back if the picker selection hasn't moved on since this
+                // failed write, so a newer selection is never clobbered.
+                if (_llmConfig.value.onDeviceContextWindows[modelId] == applied) {
+                    _llmConfig.value = _llmConfig.value.withOnDeviceContextWindow(modelId, previous)
+                }
             }
         }
     }

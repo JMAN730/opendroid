@@ -35,6 +35,12 @@ class OnDeviceContextWindowTest {
     }
 
     @Test
+    fun `options for an 8192-token default exclude smaller offered sizes`() {
+        val options = OnDeviceContextWindow.optionsFor(8192)
+        assertEquals(listOf(8192, 16384, 32768), options)
+    }
+
+    @Test
     fun `label renders whole-K sizes compactly`() {
         assertEquals("32K", OnDeviceContextWindow.label(32768))
         assertEquals("4K", OnDeviceContextWindow.label(4096))
