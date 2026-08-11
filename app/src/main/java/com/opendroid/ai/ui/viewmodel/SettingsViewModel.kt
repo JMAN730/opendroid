@@ -726,17 +726,25 @@ class SettingsViewModel @Inject constructor(
         val applied = updated.onDeviceContextWindows[modelId]
         _llmConfig.value = updated
         viewModelScope.launch {
-            try {
+            val persistenceState = try {
                 settingsRepository.updateConfig { current ->
                     current.withOnDeviceContextWindow(modelId, tokens)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("SettingsViewModel", "Failed to update context window: ${e.message}", e)
-                // Only roll back if the picker selection hasn't moved on since this
-                // failed write, so a newer selection is never clobbered.
-                if (_llmConfig.value.onDeviceContextWindows[modelId] == applied) {
-                    _llmConfig.value = _llmConfig.value.withOnDeviceContextWindow(modelId, previous)
-                }
+                null
+            }
+            val failed = persistenceState == null || persistenceState != ProviderCredentialPersistenceState.Ready
+            if (failed) {
+                android.util.Log.e(
+                    "SettingsViewModel",
+                    "Failed to persist context window: ${persistenceState ?: "exception"}"
+                )
+            }
+            // Only roll back if the picker selection hasn't moved on since this
+            // failed write, so a newer selection is never clobbered.
+            if (failed && _llmConfig.value.onDeviceContextWindows[modelId] == applied) {
+                _llmConfig.value = _llmConfig.value.withOnDeviceContextWindow(modelId, previous)
             }
         }
     }
