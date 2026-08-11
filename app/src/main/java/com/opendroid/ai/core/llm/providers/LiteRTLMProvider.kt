@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
+import com.opendroid.ai.data.models.effectiveContextWindow
 import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,8 @@ class LiteRTLMProvider @Inject constructor(
 
     private var cachedEngine: Engine? = null
     private var cachedModelPath: String? = null
+    /** Window the cached engine was built with; a changed selection must rebuild it. */
+    private var cachedContextWindow: Int? = null
     private val artifactVerifier = ModelArtifactVerifier(
         hashVerifier = CachingFileHashVerifier()
     )
@@ -64,6 +67,23 @@ class LiteRTLMProvider @Inject constructor(
             ?: OnDeviceModelRegistry.recommendedFor(OnDeviceBackend.LITERT_LM)
             ?: throw IllegalStateException("No LiteRT-LM models registered in OnDeviceModelRegistry")
     }
+
+    /**
+     * Resolves the spec and applies the user's context-window choice for it, so
+     * every downstream consumer (engine sizing, prompt budget, error text) reads
+     * one number. The catalog size stays reachable via [catalogContextWindow] for
+     * the fallback path.
+     */
+    private suspend fun resolveRequestSpec(modelId: String): OnDeviceModelSpec {
+        val spec = resolveModelSpec(modelId)
+        val config = settingsRepository.llmConfig.first()
+        return spec.copy(contextWindow = config.effectiveContextWindow(spec))
+    }
+
+    /** The size the catalog ships for [specId]; the safe target when a raised window fails. */
+    private fun catalogContextWindow(specId: String): Int =
+        OnDeviceModelRegistry.findById(specId)?.contextWindow
+            ?: OnDeviceModelRegistry.CUSTOM_DEFAULT_CONTEXT_WINDOW
 
     /**
      * Returns the local file path where a model should be stored / loaded from.
@@ -115,7 +135,7 @@ class LiteRTLMProvider @Inject constructor(
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val startTime = System.currentTimeMillis()
         val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
-        val spec = resolveModelSpec(modelId)
+        val spec = resolveRequestSpec(modelId)
 
         return withContext(Dispatchers.IO) {
             try {
@@ -148,7 +168,7 @@ class LiteRTLMProvider @Inject constructor(
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
         val modelId = request.model?.takeIf { it.isNotBlank() } ?: ProviderCatalog.defaultModel(name)
         try {
-            val spec = resolveModelSpec(modelId)
+            val spec = resolveRequestSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -160,8 +180,9 @@ class LiteRTLMProvider @Inject constructor(
                     ?: emptyList()
             )
 
-            checkPromptFits(prompt, spec, request.maxTokens)
-            val engine = getOrInitializeEngine(modelPath, spec)
+            val active = getOrInitializeEngine(modelPath, spec)
+            checkPromptFits(prompt, spec, request.maxTokens, active.contextWindow)
+            val engine = active.engine
 
             val samplerConfig = SamplerConfig(
                 topK = 40,
@@ -192,7 +213,7 @@ class LiteRTLMProvider @Inject constructor(
     ): Flow<StreamChunk> = flow {
         val modelId = settingsRepository.llmConfig.first().selectedModelFor(name)
         try {
-            val spec = resolveModelSpec(modelId)
+            val spec = resolveRequestSpec(modelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -286,56 +307,69 @@ class LiteRTLMProvider @Inject constructor(
      * call through to the real engine.
      */
     @Synchronized
-    private fun getOrInitializeEngine(modelPath: String, spec: OnDeviceModelSpec): Engine {
-        if (cachedModelPath != modelPath) {
-            Log.i(TAG, "[INIT FLOW] Active model path changed from '$cachedModelPath' to '$modelPath'. Resetting cached engine.")
+    private fun getOrInitializeEngine(modelPath: String, spec: OnDeviceModelSpec): ActiveEngine {
+        if (cachedModelPath != modelPath || cachedContextWindow != spec.contextWindow) {
+            Log.i(
+                TAG,
+                "[INIT FLOW] Engine inputs changed (path '$cachedModelPath' -> '$modelPath', " +
+                    "window $cachedContextWindow -> ${spec.contextWindow}). Resetting cached engine."
+            )
             closeCachedEngine()
         }
 
-        var engine = cachedEngine
-        if (engine == null) {
-            verifyModelFileIntegrity(modelPath, spec)
+        val cached = cachedEngine
+        if (cached != null) {
+            return ActiveEngine(cached, cachedContextWindow ?: spec.contextWindow)
+        }
 
-            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: ${spec.contextWindow}")
-            // maxNumTokens is the TOTAL token capacity (input + output) of the
-            // engine. It must match the model's KV-cache size (spec.contextWindow),
-            // NOT a request's output-token budget — undersizing it makes the native
-            // runtime abort (force close) as soon as a prompt exceeds it.
-            // Gemma 4 LiteRT packages require the GPU-constrained main section,
-            // while older catalog models and custom imports may only load on
-            // CPU, so fall back rather than locking every model to one backend.
-            Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
-            var lastFailure: Throwable? = null
+        verifyModelFileIntegrity(modelPath, spec)
+
+        // maxNumTokens is the TOTAL token capacity (input + output) of the
+        // engine. It must match the model's KV-cache size (spec.contextWindow),
+        // NOT a request's output-token budget — undersizing it makes the native
+        // runtime abort (force close) as soon as a prompt exceeds it.
+        // A user-raised window is attempted first; artifacts with a baked-in cache
+        // size (…ekv1280.task) or devices short on RAM fall back to the catalog
+        // size rather than leaving the model unusable.
+        // Gemma 4 LiteRT packages require the GPU-constrained main section,
+        // while older catalog models and custom imports may only load on
+        // CPU, so fall back rather than locking every model to one backend.
+        val windows = listOf(spec.contextWindow, catalogContextWindow(spec.id)).distinct()
+        var lastFailure: Throwable? = null
+        for (window in windows) {
+            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: $window")
             for (backend in LiteRtCompatibility.backendPreference) {
                 val config = EngineConfig(
                     modelPath = modelPath,
                     backend = backend(),
-                    maxNumTokens = spec.contextWindow,
+                    maxNumTokens = window,
                     cacheDir = context.cacheDir.absolutePath
                 )
                 var candidate: Engine? = null
                 try {
                     candidate = Engine(config)
                     candidate.initialize()
-                    engine = candidate
                     cachedEngine = candidate
                     cachedModelPath = modelPath
-                    Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} and cached.")
-                    lastFailure = null
-                    break
+                    cachedContextWindow = window
+                    Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} at $window tokens and cached.")
+                    return ActiveEngine(candidate, window)
                 } catch (e: Throwable) {
-                    Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend}.", e)
+                    Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend} at $window tokens.", e)
                     lastFailure = e
                     runCatching { candidate?.close() }
                 }
             }
-            if (lastFailure != null) {
-                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
-                throw lastFailure
+            if (window != windows.last()) {
+                Log.w(TAG, "[INIT FLOW] Context window $window did not load; retrying at the catalog size.")
             }
         }
-        return requireNotNull(engine) { "LiteRT Engine initialization produced no engine" }
+        Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
+        throw lastFailure ?: IllegalStateException("LiteRT Engine initialization produced no engine")
     }
+
+    /** An initialized engine plus the token capacity it was actually built with. */
+    private class ActiveEngine(val engine: Engine, val contextWindow: Int)
 
     /**
      * Verifies the prompt fits the model's context window BEFORE handing it to
@@ -343,12 +377,18 @@ class LiteRTLMProvider @Inject constructor(
      * not a catchable exception) when the prompt overflows the engine's token
      * capacity — this guard turns that force close into a normal error message.
      */
-    private fun checkPromptFits(prompt: String, spec: OnDeviceModelSpec, requestedMaxTokens: Int): Int {
-        return PromptBudget.outputBudget(prompt, spec.contextWindow, requestedMaxTokens)
+    private fun checkPromptFits(
+        prompt: String,
+        spec: OnDeviceModelSpec,
+        requestedMaxTokens: Int,
+        contextWindow: Int
+    ): Int {
+        return PromptBudget.outputBudget(prompt, contextWindow, requestedMaxTokens)
             ?: throw IllegalStateException(
                 "This conversation is too long for ${spec.displayName} " +
-                "(~${PromptBudget.estimateTokens(prompt)} tokens, limit ${spec.contextWindow}). " +
-                "Start a new chat, shorten the message, or switch to a larger model."
+                "(~${PromptBudget.estimateTokens(prompt)} tokens, limit $contextWindow). " +
+                "Raise the context window in Settings, start a new chat, shorten the " +
+                "message, or switch to a larger model."
             )
     }
 
@@ -361,7 +401,10 @@ class LiteRTLMProvider @Inject constructor(
         temperature: Float
     ): String {
         try {
-            checkPromptFits(prompt, spec, maxTokens)
+            // The prompt is budgeted after the engine exists: initialization may have
+            // fallen back to a smaller window than the user selected, and budgeting
+            // against the requested size would then let an oversized prompt reach the
+            // native runtime, which aborts the process instead of throwing.
             // 1. Verify LiteRT library classes / static classpath integrity
             Log.i(TAG, "[INIT FLOW] [STEP 1/6] Verifying LiteRT SDK classes on classpath...")
             // Compiles statically with com.google.ai.edge.litertlm.*
@@ -386,7 +429,7 @@ class LiteRTLMProvider @Inject constructor(
 
             // 3 & 4. Verify options configuration & engine initialization
             Log.i(TAG, "[INIT FLOW] [STEP 3/6 & 4/6] Creating & Initializing Engine...")
-            val engine = try {
+            val active = try {
                 getOrInitializeEngine(modelPath, spec)
             } catch (e: LinkageError) {
                 Log.e(TAG, "[INIT FLOW] [FAILURE] JNI native library failed to load (liblitertlm_jni.so)", e)
@@ -405,6 +448,9 @@ class LiteRTLMProvider @Inject constructor(
             Log.i(TAG, "[INIT FLOW] [STEP 5/6] Verifying JNI library link status...")
             // If the engine instance exists and is initialized, JNI link succeeded.
             Log.i(TAG, "[INIT FLOW] [SUCCESS] JNI library links verified.")
+
+            val engine = active.engine
+            checkPromptFits(prompt, spec, maxTokens, active.contextWindow)
 
             // 6. Execute inference
             Log.i(TAG, "[INIT FLOW] [STEP 6/6] Executing inference on prompt...")
@@ -451,6 +497,7 @@ class LiteRTLMProvider @Inject constructor(
         }
         cachedEngine = null
         cachedModelPath = null
+        cachedContextWindow = null
     }
 
     // ── Prompt building (shared with GemmaProvider pattern) ─────────────

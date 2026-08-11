@@ -6,6 +6,7 @@ import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.withActiveProvider
+import com.opendroid.ai.data.models.withOnDeviceContextWindow
 import com.opendroid.ai.data.models.withSelectedModel
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -710,6 +711,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.updateConfig { current ->
                 current.copy(isDarkMode = enabled)
+            }
+        }
+    }
+
+    /**
+     * Sets the context window an on-device model runs with, or clears the choice
+     * with `null` so the model's catalog size applies again. The engine is rebuilt
+     * on the next request, so the change takes effect without restarting the app.
+     */
+    fun updateOnDeviceContextWindow(modelId: String, tokens: Int?) {
+        val updated = _llmConfig.value.withOnDeviceContextWindow(modelId, tokens)
+        _llmConfig.value = updated
+        viewModelScope.launch {
+            try {
+                settingsRepository.updateConfig { current ->
+                    current.withOnDeviceContextWindow(modelId, tokens)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update context window: ${e.message}", e)
             }
         }
     }
