@@ -27,3 +27,6 @@ local.properties
 # Local AI assistant guidance — not tracked
 CLAUDE.md
 docs/superpowers/
+
+# Kotlin compiler working directory (build errors and daemon session files)
+.kotlin/

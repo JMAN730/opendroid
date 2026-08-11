@@ -149,8 +149,9 @@ class ReEvaluationEngine @Inject constructor(
                         fixStatus = "REPLANNED"
                     )
                 )
-            } catch (e: Exception) {}
-            
+            } catch (logError: Exception) {
+                android.util.Log.w("ReEval", "Failed to log REPLANNED unknown action", logError)
+            }
             result
         } catch (e: CancellationException) {
             throw e
@@ -163,7 +164,9 @@ class ReEvaluationEngine @Inject constructor(
                         fixStatus = "FAILED"
                     )
                 )
-            } catch (_: Exception) {}
+            } catch (logError: Exception) {
+                android.util.Log.w("ReEval", "Failed to log FAILED unknown action", logError)
+            }
             throw e
         } catch (e: Exception) {
             try {
@@ -174,7 +177,9 @@ class ReEvaluationEngine @Inject constructor(
                         fixStatus = "FAILED"
                     )
                 )
-            } catch (_: Exception) {}
+            } catch (logError: Exception) {
+                android.util.Log.w("ReEval", "Failed to log FAILED unknown action", logError)
+            }
             throw LLMErrorMapper.fromThrowable("Unknown provider", "", e)
         }
     }
@@ -192,7 +197,7 @@ class ReEvaluationEngine @Inject constructor(
                 )
             )
         } catch (e: Exception) {
-            // Ignore DB errors
+            android.util.Log.w("ReEval", "Failed to log unknown action in extractLearning", e)
         }
     }
 

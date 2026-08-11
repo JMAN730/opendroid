@@ -13,12 +13,22 @@ internal object ModelDownloadWorkRequest {
 
     internal const val RETRY_BACKOFF_SECONDS = 30L
 
-    fun create(inputData: Data, modelId: String): OneTimeWorkRequest =
+    /**
+     * [allowMetered] is only ever true when the user explicitly confirmed a cellular
+     * download for this model; without that confirmation multi-GB retries must not
+     * silently consume a metered plan.
+     */
+    fun create(
+        inputData: Data,
+        modelId: String,
+        allowMetered: Boolean = false
+    ): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    // Multi-GB retries must not silently consume a user's metered cellular plan.
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
+                    .setRequiredNetworkType(
+                        if (allowMetered) NetworkType.CONNECTED else NetworkType.UNMETERED
+                    )
                     .build()
             )
             .setBackoffCriteria(

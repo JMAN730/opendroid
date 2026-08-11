@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -148,7 +149,7 @@ fun PlanStepCard(
                             StepDisplayState.FAILED -> Icons.Default.Close
                             StepDisplayState.AUTO_FIXING -> Icons.Default.Build
                             StepDisplayState.REPAIRED -> Icons.Default.CheckCircle
-                            StepDisplayState.SKIPPED -> Icons.Default.ArrowForward
+                            StepDisplayState.SKIPPED -> Icons.AutoMirrored.Filled.ArrowForward
                             StepDisplayState.BLOCKED -> Icons.Default.Warning
                             StepDisplayState.PENDING -> Icons.Default.PlayArrow
                         },
@@ -161,7 +162,7 @@ fun PlanStepCard(
 
             AnimatedVisibility(visible = isEditing) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
 
                     Text("Action Module: ${step.action}", fontSize = 11.sp, color = AccentPurple, fontFamily = FontFamily.Monospace)
                     Spacer(modifier = Modifier.height(10.dp))
@@ -267,7 +268,7 @@ fun PlanStepCard(
                                 onSaveEdit(cleanedDescription, cleanedParams)
                                 isEditing = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -278,7 +279,7 @@ fun PlanStepCard(
 
             AnimatedVisibility(visible = expanded && !isEditing) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Divider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
                     
                     Text("Action Module: ${step.action}", fontSize = 11.sp, color = AccentPurple, fontFamily = FontFamily.Monospace)
                     

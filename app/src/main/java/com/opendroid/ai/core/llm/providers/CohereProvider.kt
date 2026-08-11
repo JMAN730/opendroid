@@ -8,7 +8,6 @@ import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -86,14 +85,7 @@ class CohereProvider @Inject constructor(
         } // withContext
     }
 
-    override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        val response = complete(request)
-        val words = response.content.split(" ")
-        for (word in words) {
-            emit("$word ")
-            kotlinx.coroutines.delay(50)
-        }
-    }
+    override fun streamComplete(request: LLMRequest): Flow<String> = simulatedWordStream(request)
 
     override suspend fun isAvailable(): Boolean {
         val config = settingsRepository.llmConfig.first()

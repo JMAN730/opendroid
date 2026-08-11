@@ -6,7 +6,7 @@ import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
@@ -16,7 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.repository.SettingsRepository
+import com.opendroid.ai.core.util.isAccessibilityServiceEnabled
 import com.opendroid.ai.ui.theme.AppTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -90,7 +91,7 @@ fun AutoReplySettingsScreen(
                 title = { Text("Auto-Reply Settings", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -247,11 +248,11 @@ fun AutoReplySettingsScreen(
                             AppToggleRow("WhatsApp", "💬", config.whatsappEnabled, themeColors) {
                                 saveConfig(config.copy(whatsappEnabled = it))
                             }
-                            Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
+                            HorizontalDivider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("SMS", "📱", config.smsEnabled, themeColors) {
                                 saveConfig(config.copy(smsEnabled = it))
                             }
-                            Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
+                            HorizontalDivider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("Email", "📧", config.emailEnabled, themeColors) {
                                 saveConfig(config.copy(emailEnabled = it))
                             }
@@ -461,13 +462,4 @@ private fun isNotificationServiceEnabled(context: Context): Boolean {
         }
     }
     return false
-}
-
-private fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    if (com.opendroid.ai.accessibility.OpenDroidAccessibilityService.getInstance() != null) {
-        return true
-    }
-    val expectedComponentName = android.content.ComponentName(context, com.opendroid.ai.accessibility.OpenDroidAccessibilityService::class.java).flattenToString()
-    val enabledServicesSetting = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-    return enabledServicesSetting.contains(expectedComponentName)
 }

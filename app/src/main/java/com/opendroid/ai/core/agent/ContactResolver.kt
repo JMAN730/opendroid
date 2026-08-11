@@ -60,6 +60,12 @@ class ContactResolver @Inject constructor(
     companion object {
         private const val TAG = "ContactResolver"
 
+        /** True when [input] looks like a dialable number rather than a contact name. */
+        fun isPhoneNumber(input: String): Boolean {
+            val digitsOnly = input.trim().replace(Regex("[^0-9+]"), "")
+            return digitsOnly.length >= 7 && digitsOnly.all { it.isDigit() || it == '+' }
+        }
+
         /**
          * Legacy static resolve for backward compatibility.
          * Used by CommunicationActions.resolveContactToPhoneNumber().
@@ -68,11 +74,10 @@ class ContactResolver @Inject constructor(
             val cleaned = input.trim()
 
             // CASE 1: Input is already a phone number
-            val digitsOnly = cleaned.replace(Regex("[^0-9+]"), "")
-            if (digitsOnly.length >= 7 && (digitsOnly.all { it.isDigit() || it == '+' })) {
+            if (isPhoneNumber(cleaned)) {
                 return ContactResult.Found(
                     displayName = cleaned,
-                    phoneNumber = digitsOnly
+                    phoneNumber = cleaned.replace(Regex("[^0-9+]"), "")
                 )
             }
 
@@ -415,10 +420,7 @@ class ContactResolver @Inject constructor(
         }
     }
 
-    private fun isPhoneNumber(input: String): Boolean =
-        input.replace(Regex("[+\\-\\s()]"), "")
-            .all { it.isDigit() } &&
-        input.replace(Regex("[+\\-\\s()]"), "").length >= 7
+    private fun isPhoneNumber(input: String): Boolean = Companion.isPhoneNumber(input)
 
     private fun cleanPhone(number: String): String =
         number.replace(Regex("[\\s\\-()]"), "").trim()

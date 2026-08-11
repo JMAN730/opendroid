@@ -76,6 +76,9 @@ sealed interface AgentState {
     data class Error(val message: String) : AgentState
 }
 
+/** Shared lenient parser; building one per call is measurably slow. */
+private val lenientJson = Json { ignoreUnknownKeys = true }
+
 @Singleton
 class AgentLoop @Inject constructor(
     private val intentClassifier: IntentClassifier,
@@ -1287,8 +1290,7 @@ class AgentLoop @Inject constructor(
 
         // Parse the matches back from JSON
         val matches: List<Map<String, String>> = try {
-            Json { ignoreUnknownKeys = true }
-                .decodeFromString<List<Map<String, String>>>(matchesJson)
+            lenientJson.decodeFromString<List<Map<String, String>>>(matchesJson)
         } catch (e: Exception) {
             android.util.Log.e("AgentLoop", "Failed to parse contact matches: ${e.message}")
             return NeedsInputRetry(pickerResult, originalParams)

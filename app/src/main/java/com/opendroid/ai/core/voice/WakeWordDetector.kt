@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import java.util.Locale
 
 class WakeWordDetector(private val context: Context) {
@@ -121,10 +122,14 @@ class WakeWordDetector(private val context: Context) {
     private fun cleanupRecognizer() {
         try {
             speechRecognizer?.stopListening()
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.d(TAG, "stopListening during cleanup failed", e)
+        }
         try {
             speechRecognizer?.destroy()
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.d(TAG, "destroy during cleanup failed", e)
+        }
         speechRecognizer = null
     }
 
@@ -137,5 +142,9 @@ class WakeWordDetector(private val context: Context) {
 
     fun destroy() {
         stopListening()
+    }
+
+    companion object {
+        private const val TAG = "WakeWordDetector"
     }
 }

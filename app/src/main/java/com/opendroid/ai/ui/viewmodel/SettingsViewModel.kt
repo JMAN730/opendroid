@@ -728,14 +728,20 @@ class SettingsViewModel @Inject constructor(
         initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
     )
 
-    fun downloadModel(modelId: String) {
+    fun downloadModel(modelId: String, allowMetered: Boolean = false) {
         viewModelScope.launch {
             val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
             spec?.let {
-                modelRepository.startDownload(it)
+                modelRepository.startDownload(it, allowMetered)
             }
         }
     }
+
+    /** True when starting a download now would block on the unmetered constraint. */
+    fun isActiveNetworkMetered(): Boolean = modelRepository.isActiveNetworkMetered()
+
+    fun isWaitingForUnmetered(modelId: String) =
+        modelRepository.isWaitingForUnmeteredFlow(modelId)
 
     fun pauseDownload(modelId: String) {
         viewModelScope.launch {

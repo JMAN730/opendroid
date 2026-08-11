@@ -138,7 +138,7 @@ fun MacrosScreen(
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor)
+                            HorizontalDivider(color = BorderColor)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Steps in custom macro
@@ -291,7 +291,7 @@ fun MacrosScreen(
                                             isAddingMacro = false
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Save Macro", fontWeight = FontWeight.Bold)
@@ -377,7 +377,7 @@ fun MacroCard(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Divider(color = BorderColor)
+            HorizontalDivider(color = BorderColor)
             Spacer(modifier = Modifier.height(10.dp))
             
             Row(

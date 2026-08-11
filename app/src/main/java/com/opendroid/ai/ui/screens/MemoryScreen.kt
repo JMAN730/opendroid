@@ -82,7 +82,7 @@ fun MemoryScreen(
                 containerColor = DarkBackground,
                 contentColor = AccentNeonGreen,
                 edgePadding = 0.dp,
-                divider = { Divider(color = BorderColor) }
+                divider = { HorizontalDivider(color = BorderColor) }
             ) {
                 MemoryType.values().forEach { type ->
                     Tab(
@@ -287,7 +287,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
-                        Divider(color = BorderColor)
+                        HorizontalDivider(color = BorderColor)
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         plan.steps.forEachIndexed { index, step ->
@@ -608,7 +608,7 @@ fun SemanticMemoryView(
                                     onIsAddingFactChange(false)
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save Fact", fontWeight = FontWeight.Bold)

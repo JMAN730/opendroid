@@ -137,7 +137,7 @@ class ModelRepository @Inject constructor(
         startDownload(model)
     }
 
-    suspend fun startDownload(model: OnDeviceModel) {
+    suspend fun startDownload(model: OnDeviceModel, allowMetered: Boolean = false) {
         val spec = OnDeviceModelRegistry.findById(model.id) ?: return
         modelDao.getModelById(spec.id) ?: return
         if (!spec.isManagedDownloadAvailable) {
@@ -154,7 +154,7 @@ class ModelRepository @Inject constructor(
             .putString("model_id", spec.id)
             .build()
 
-        val downloadRequest = ModelDownloadWorkRequest.create(inputData, model.id)
+        val downloadRequest = ModelDownloadWorkRequest.create(inputData, model.id, allowMetered)
 
         workManager.enqueueUniqueWork(
             "download_${spec.id}",
@@ -422,10 +422,31 @@ class ModelRepository @Inject constructor(
         }
     }
 
-    suspend fun resumeDownload(model: OnDeviceModel) {
+    suspend fun resumeDownload(model: OnDeviceModel, allowMetered: Boolean = false) {
         if (modelDao.getModelById(model.id) == null) return
-        startDownload(model)
+        startDownload(model, allowMetered)
     }
+
+    /**
+     * True when the only network available would make an unconfirmed download sit
+     * blocked forever, so the caller can ask before spending the user's data.
+     */
+    fun isActiveNetworkMetered(): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return false
+        return connectivityManager.isActiveNetworkMetered
+    }
+
+    /**
+     * Emits true while a model's download work is scheduled but held back by its
+     * network constraint. Without this the UI is indistinguishable from a dead button.
+     */
+    fun isWaitingForUnmeteredFlow(modelId: String): Flow<Boolean> =
+        workManager.getWorkInfosForUniqueWorkFlow("download_$modelId")
+            .map { infos ->
+                infos.any { it.state == androidx.work.WorkInfo.State.ENQUEUED }
+            }
+            .distinctUntilChanged()
 
     override suspend fun delete(model: OnDeviceModel) {
         cancelDownload(model)

@@ -280,7 +280,7 @@ fun IntroductionPanel(
         Button(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
             shape = RoundedCornerShape(8.dp)
         ) {
             Text("Let's Go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -366,7 +366,7 @@ fun PermissionPromptPanel(
         Button(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+            colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton, contentColor = DarkBackground),
             shape = RoundedCornerShape(8.dp)
         ) {
             Text("Grant Permissions", fontWeight = FontWeight.Bold, fontSize = 16.sp)
