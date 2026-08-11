@@ -24,14 +24,23 @@
 const hamburger = document.getElementById('nav-hamburger');
 const navLinks = document.getElementById('nav-links');
 if (hamburger && navLinks) {
+  const setMenuState = (open) => {
+    hamburger.classList.toggle('active', open);
+    navLinks.classList.toggle('open', open);
+    hamburger.setAttribute('aria-expanded', String(open));
+  };
   hamburger.addEventListener('click', () => {
-    hamburger.classList.toggle('active');
-    navLinks.classList.toggle('open');
+    setMenuState(!navLinks.classList.contains('open'));
   });
   document.addEventListener('click', (e) => {
     if (!hamburger.contains(e.target) && !navLinks.contains(e.target)) {
-      hamburger.classList.remove('active');
-      navLinks.classList.remove('open');
+      setMenuState(false);
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && navLinks.classList.contains('open')) {
+      setMenuState(false);
+      hamburger.focus();
     }
   });
 }

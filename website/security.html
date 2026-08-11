@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('opendroid-theme') || 'dark');</script>
-
   <meta charset="UTF-8">
+  <script src="js/theme-init.js"></script>
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
   <title>Security — OpenDroid</title>
   <meta name="description" content="OpenDroid security practices and vulnerability reporting.">
   <meta property="og:title" content="Security — OpenDroid">
@@ -15,9 +17,13 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="canonical" href="https://yashab-cyber.github.io/opendroid/security.html">
   <link rel="icon" type="image/png" href="assets/bot.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
 <nav class="navbar" id="navbar">
   <div class="nav-inner">
@@ -31,8 +37,8 @@
         <a href="features.html">Products</a>
         <ul class="dropdown-menu">
           <li><a href="features.html">Features</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank">Download APK</a></li>
-          <li><a href="https://indusapp.store/wphbqhzu" target="_blank">Indus Appstore</a></li>
+          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" rel="noopener noreferrer">Download APK</a></li>
+          <li><a href="https://indusapp.store/wphbqhzu" target="_blank" rel="noopener noreferrer">Indus Appstore</a></li>
         </ul>
       </li>
       <li class="nav-dropdown">
@@ -49,14 +55,14 @@
       <li class="nav-dropdown">
         <a href="#">Resources</a>
         <ul class="dropdown-menu">
-          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a></li>
-          <li><a href="https://discord.gg/knRMyFmvpp" target="_blank">Discord</a></li>
+          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+          <li><a href="https://discord.gg/knRMyFmvpp" target="_blank" rel="noopener noreferrer">Discord</a></li>
           <li><a href="contributor.html">Contributors</a></li>
           <li><a href="security.html">Security</a></li>
           <li><a href="privacy.html">Privacy</a></li>
         </ul>
       </li>
-      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta" aria-label="Download OpenDroid">
+      <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" class="nav-cta" aria-label="Download OpenDroid" rel="noopener noreferrer">
         Download
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
       </a></li>
@@ -67,7 +73,7 @@
         <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
         <span class="theme-toggle-text-wrap"><span class="tt-dark">Dark</span><span class="tt-light">Light</span></span>
       </button>
-      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu">
+      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
         <span></span><span></span><span></span>
       </button>
     </div>
@@ -75,7 +81,7 @@
 </nav>
 
 
-<header class="page-header">
+<header class="page-header" id="main-content" tabindex="-1">
   <div class="container">
     <span class="label">Security</span>
     <h1>Security Policy</h1>
@@ -251,10 +257,10 @@
         <h4>Product</h4>
         <ul>
           <li><a href="features.html">Features</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank">Download</a></li>
-          <li><a href="https://indusapp.store/wphbqhzu" target="_blank">Indus Appstore</a></li>
+          <li><a href="https://github.com/yashab-cyber/opendroid/releases" target="_blank" rel="noopener noreferrer">Download</a></li>
+          <li><a href="https://indusapp.store/wphbqhzu" target="_blank" rel="noopener noreferrer">Indus Appstore</a></li>
           <li><a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer">Product Hunt</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a></li>
+          <li><a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer">GitHub</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -271,7 +277,7 @@
         <ul>
           <li><a href="privacy.html">Privacy Policy</a></li>
           <li><a href="terms.html">Terms of Service</a></li>
-          <li><a href="https://github.com/yashab-cyber/opendroid/blob/main/LICENSE" target="_blank">License</a></li>
+          <li><a href="https://github.com/yashab-cyber/opendroid/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a></li>
         </ul>
       </div>
     </div>
@@ -279,8 +285,8 @@
       <span>&copy; 2026 OpenDroid Contributors. Apache License 2.0.</span>
       <span>
         <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer">Product Hunt</a> &nbsp;·&nbsp;
-        <a href="https://discord.gg/knRMyFmvpp" target="_blank">Discord</a> &nbsp;·&nbsp;
-        <a href="https://github.com/yashab-cyber/opendroid" target="_blank">GitHub</a>
+        <a href="https://discord.gg/knRMyFmvpp" target="_blank" rel="noopener noreferrer">Discord</a> &nbsp;·&nbsp;
+        <a href="https://github.com/yashab-cyber/opendroid" target="_blank" rel="noopener noreferrer">GitHub</a>
       </span>
     </div>
   </div>
