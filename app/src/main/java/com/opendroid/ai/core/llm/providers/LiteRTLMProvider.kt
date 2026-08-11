@@ -44,8 +44,10 @@ class LiteRTLMProvider @Inject constructor(
 
     private var cachedEngine: Engine? = null
     private var cachedModelPath: String? = null
-    /** Window the cached engine was built with; a changed selection must rebuild it. */
+    /** Window the cached engine was actually built with (may be a fallback size). */
     private var cachedContextWindow: Int? = null
+    /** Window that was requested when the cached engine was built; a changed selection must rebuild it. */
+    private var cachedRequestedContextWindow: Int? = null
     private val artifactVerifier = ModelArtifactVerifier(
         hashVerifier = CachingFileHashVerifier()
     )
@@ -308,11 +310,11 @@ class LiteRTLMProvider @Inject constructor(
      */
     @Synchronized
     private fun getOrInitializeEngine(modelPath: String, spec: OnDeviceModelSpec): ActiveEngine {
-        if (cachedModelPath != modelPath || cachedContextWindow != spec.contextWindow) {
+        if (cachedModelPath != modelPath || cachedRequestedContextWindow != spec.contextWindow) {
             Log.i(
                 TAG,
                 "[INIT FLOW] Engine inputs changed (path '$cachedModelPath' -> '$modelPath', " +
-                    "window $cachedContextWindow -> ${spec.contextWindow}). Resetting cached engine."
+                    "requested window $cachedRequestedContextWindow -> ${spec.contextWindow}). Resetting cached engine."
             )
             closeCachedEngine()
         }
@@ -352,6 +354,7 @@ class LiteRTLMProvider @Inject constructor(
                     cachedEngine = candidate
                     cachedModelPath = modelPath
                     cachedContextWindow = window
+                    cachedRequestedContextWindow = spec.contextWindow
                     Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} at $window tokens and cached.")
                     return ActiveEngine(candidate, window)
                 } catch (e: Throwable) {
@@ -498,6 +501,7 @@ class LiteRTLMProvider @Inject constructor(
         cachedEngine = null
         cachedModelPath = null
         cachedContextWindow = null
+        cachedRequestedContextWindow = null
     }
 
     // ── Prompt building (shared with GemmaProvider pattern) ─────────────
