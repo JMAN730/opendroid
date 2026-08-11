@@ -6,7 +6,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self' 'sha256-YQzn/ofzL7amH8qMj017a7xMa+eZTQj1sBEmSNouZ1w='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self' 'sha256-YQzn/ofzL7amH8qMj017a7xMa+eZTQj1sBEmSNouZ1w='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'">
   <title>OpenDroid — Your Open Autonomous Android Agent</title>
   <meta name="description" content="OpenDroid is a production-ready, autonomous, self-planning AI assistant for Android. Break complex goals into sub-tasks with full device control.">
   <meta name="keywords" content="OpenDroid, Android AI, autonomous agent, accessibility automation, open source">
@@ -109,6 +109,7 @@
       </button>
     </div>
   </div>
+  </div>
 </nav>
 
 <!-- Hero -->
@@ -176,6 +177,10 @@
           <source src="assets/opendroid-3d-hello.mp4" type="video/mp4">
           Your browser does not support the video tag.
         </video>
+        <button type="button" class="video-pause-btn" id="hero-video-toggle" aria-label="Pause video" aria-pressed="false" aria-controls="hero-video">
+          <svg class="icon-pause" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+          <svg class="icon-play" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+        </button>
       </div>
       <p class="video-caption">OpenDroid saying hi — rendered in 3D</p>
     </div>

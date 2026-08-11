@@ -6,7 +6,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'">
   <title>Privacy Policy — OpenDroid</title>
   <meta name="description" content="OpenDroid privacy policy. Learn how your data is handled.">
   <meta property="og:title" content="Privacy Policy — OpenDroid">
@@ -142,7 +142,7 @@
     <p>Each provider has its own privacy policy governing how they handle your data. <strong>We strongly recommend reviewing the privacy policy of any LLM provider you choose to use.</strong> OpenDroid does not control how these third parties process your data.</p>
 
     <h3>4.1 API Keys</h3>
-    <p>API keys you enter are stored locally on your device using Android DataStore Preferences. They are <strong>never</strong> transmitted to OpenDroid servers (we operate none). Keys are sent only to the respective API provider's endpoint when making LLM requests.</p>
+    <p>API keys you enter are stored locally on your device, encrypted at rest with a key held in the Android KeyStore (see the <a href="security.html">Security</a> page for details). They are <strong>never</strong> transmitted to OpenDroid servers (we operate none). Keys are sent only to the respective API provider's endpoint when making LLM requests.</p>
 
     <h3>4.2 Local / Offline Mode</h3>
     <p>OpenDroid supports fully offline operation via Ollama. When using a local model server, no data leaves your device or local network.</p>

@@ -96,29 +96,64 @@ document.querySelectorAll('.code-copy').forEach(wrapper => {
 
   btn.addEventListener('click', async () => {
     const text = codeEl.textContent;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(text);
+      copied = true;
     } catch (e) {
-      // Clipboard API unavailable (older browser / insecure context) — fall back silently.
+      // Clipboard API unavailable (older browser / insecure context) — fall back.
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); } catch (e2) { /* give up quietly */ }
+      try { copied = document.execCommand('copy'); } catch (e2) { copied = false; }
       document.body.removeChild(ta);
     }
-    btn.setAttribute('data-copied', 'true');
-    btn.setAttribute('aria-label', 'Copied');
-    setTimeout(() => {
-      btn.removeAttribute('data-copied');
-      btn.setAttribute('aria-label', 'Copy to clipboard');
-    }, 1800);
+    if (copied) {
+      btn.setAttribute('data-copied', 'true');
+      btn.setAttribute('aria-label', 'Copied');
+      setTimeout(() => {
+        btn.removeAttribute('data-copied');
+        btn.setAttribute('aria-label', 'Copy to clipboard');
+      }, 1800);
+    } else {
+      btn.setAttribute('data-copy-failed', 'true');
+      btn.setAttribute('aria-label', 'Copy failed — copy manually');
+      setTimeout(() => {
+        btn.removeAttribute('data-copy-failed');
+        btn.setAttribute('aria-label', 'Copy to clipboard');
+      }, 1800);
+    }
   });
 
   wrapper.appendChild(btn);
 });
+
+// ── Hero video pause/play control ──
+// Required for WCAG 2.2.2 (Pause, Stop, Hide) since the video
+// autoplays and loops indefinitely.
+const heroVideo = document.getElementById('hero-video');
+const heroVideoToggle = document.getElementById('hero-video-toggle');
+if (heroVideo && heroVideoToggle) {
+  const syncState = () => {
+    const paused = heroVideo.paused;
+    heroVideoToggle.classList.toggle('paused', paused);
+    heroVideoToggle.setAttribute('aria-pressed', String(!paused));
+    heroVideoToggle.setAttribute('aria-label', paused ? 'Play video' : 'Pause video');
+  };
+  heroVideoToggle.addEventListener('click', () => {
+    if (heroVideo.paused) {
+      heroVideo.play();
+    } else {
+      heroVideo.pause();
+    }
+  });
+  heroVideo.addEventListener('play', syncState);
+  heroVideo.addEventListener('pause', syncState);
+  syncState();
+}
 
 // ── Live GitHub stats ──
 // Fetches star/fork counts for the upstream repo. Fails silently

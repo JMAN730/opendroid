@@ -6,7 +6,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://avatars.githubusercontent.com https://github.githubassets.com https://api.producthunt.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'">
   <title>Security — OpenDroid</title>
   <meta name="description" content="OpenDroid security practices and vulnerability reporting.">
   <meta property="og:title" content="Security — OpenDroid">
@@ -188,7 +188,7 @@
       <h2>2. Key Security Features</h2>
       <h3>A. Local Key Storage</h3>
       <p>
-        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted using <code>EncryptedSharedPreferences</code> backed by the hardware-isolated Android KeyStore.
+        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted at rest with AES-256-GCM using a key generated and held inside the Android KeyStore, never in application memory or plaintext preferences. Older installs that stored credentials in DataStore are migrated to this store automatically and the legacy values are then removed. Whether the KeyStore key is additionally isolated in dedicated secure hardware (StrongBox/TEE) depends on the device.
       </p>
 
       <h3>B. Intent &amp; Action Verification</h3>
