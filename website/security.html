@@ -78,6 +78,7 @@
       </button>
     </div>
   </div>
+  </div>
 </nav>
 
 
@@ -176,70 +177,29 @@
     <h2>Out of Scope</h2>
     <ul>
       <li>Vulnerabilities in third-party LLM provider APIs</li>
-<main class="page-content">
-  <div class="container">
-    <div class="legal-content glass-card reveal">
+    </ul>
 
-      <h2>1. Security Philosophy</h2>
-      <p>
-        OpenDroid operates with full Android system permissions (Accessibility, System Settings, Notifications). Consequently, security is engineered directly into our architecture through principal of least privilege, strict input sanitization, and local encrypted storage.
-      </p>
+    <h2>Security Philosophy</h2>
+    <p>
+      OpenDroid operates with full Android system permissions (Accessibility, System Settings, Notifications). Consequently, security is engineered directly into our architecture through principal of least privilege, strict input sanitization, and local encrypted storage.
+    </p>
 
-      <h2>2. Key Security Features</h2>
-      <h3>A. Local Key Storage</h3>
-      <p>
-        All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted at rest with AES-256-GCM using a key generated and held inside the Android KeyStore, never in application memory or plaintext preferences. Older installs that stored credentials in DataStore are migrated to this store automatically and the legacy values are then removed. Whether the KeyStore key is additionally isolated in dedicated secure hardware (StrongBox/TEE) depends on the device.
-      </p>
+    <h2>Key Security Features</h2>
+    <h3>Local Key Storage</h3>
+    <p>
+      All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted at rest with AES-256-GCM using a key generated and held inside the Android KeyStore, never in application memory or plaintext preferences. Older installs that stored credentials in DataStore are migrated to this store automatically and the legacy values are then removed. Whether the KeyStore key is additionally isolated in dedicated secure hardware (StrongBox/TEE) depends on the device.
+    </p>
 
-      <h3>B. Intent &amp; Action Verification</h3>
-      <p>
-        Every high-consequence system action (making calls, sending messages, changing system settings) undergoes strict schema verification before execution to prevent prompt injection or rogue LLM output execution.
-      </p>
+    <h3>Intent &amp; Action Verification</h3>
+    <p>
+      Every high-consequence system action (making calls, sending messages, changing system settings) undergoes strict schema verification before execution to prevent prompt injection or rogue LLM output execution.
+    </p>
 
-      <h3>C. Compound Intent Guard</h3>
-      <p>
-        Detects and validates chained actions (e.g. multi-step automation scripts) to prevent unauthorized side-effects.
-      </p>
+    <h3>Compound Intent Guard</h3>
+    <p>
+      Detects and validates chained actions (e.g. multi-step automation scripts) to prevent unauthorized side-effects.
+    </p>
 
-      <h2>3. Reporting a Vulnerability</h2>
-      <p>
-        We take security vulnerabilities seriously. If you discover a security flaw in OpenDroid, please do <strong>NOT</strong> open a public GitHub issue.
-      </p>
-      <p>
-        Instead, report it directly to our core security team:
-      </p>
-      <ul>
-        <li><strong>Email:</strong> <a href="mailto:opendroid.ai@gmail.com">opendroid.ai@gmail.com</a></li>
-        <li><strong>PGP Key:</strong> Available upon request</li>
-      </ul>
-      <p>
-        We will acknowledge receipt within 48 hours and work with you to remediate the vulnerability before public disclosure.
-      </p>
-
-      <h2>4. Supported Versions</h2>
-      <p>
-        Security updates are actively maintained for the current major release version of OpenDroid:
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Version</th>
-            <th>Supported</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>OpenDroid v1.x (Latest)</td>
-            <td><span class="badge-supported">✓ Yes</span></td>
-          </tr>
-          <tr>
-            <td>&lt; v1.0 Pre-releases</td>
-            <td><span class="badge-unsupported">✗ No</span></td>
-          </tr>
-        </tbody>
-      </table>
-
-    </div>
   </div>
 </main>
 
