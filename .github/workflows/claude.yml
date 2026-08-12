@@ -55,12 +55,25 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
+        env:
+          # AGENTS.md scopes the issue tracker to this fork and forbids touching
+          # the yashab-cyber/opendroid upstream. gh resolves a fork's default
+          # repo to its parent, so pin it explicitly rather than relying on
+          # every gh call passing --repo.
+          GH_REPO: ${{ github.repository }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Gradle is pre-allowed so Claude can verify its own changes the same
-          # way android-ci.yml does. Anything else still prompts-and-fails, so
-          # add commands here rather than widening to a bare Bash allow.
+          # These add to the tools the action already grants itself in tag mode
+          # (Read/Grep/Glob/LS, comment updating, CI log reading, git commit and
+          # push) - --allowedTools accumulates across flags rather than
+          # replacing. Anything not listed falls through to "ask", which a
+          # headless run denies, so new commands go here.
+          #
+          # gh is authenticated: the action exports GH_TOKEN for its own use.
+          # Subcommands are listed individually rather than as Bash(gh:*) to
+          # keep `gh api` (arbitrary writes), `gh pr merge`, `gh workflow run`,
+          # and `gh secret` out of reach of anything a mention injects.
           claude_args: |
             --max-turns 30
-            --allowedTools "Bash(./gradlew:*)"
+            --allowedTools "Bash(./gradlew:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh issue close:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
