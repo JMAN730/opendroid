@@ -46,6 +46,14 @@ class OpenDroidService : Service() {
     private var enginesInitialized = false
     @Volatile private var pendingApprovalListen = false
 
+    /**
+     * True only when [startForegroundCompat] actually promoted with the `microphone` type.
+     * A `specialUse` fallback (e.g. after a boot start) doesn't carry microphone foreground
+     * eligibility, so [WakeWordDetector] would just fail onError -> restart every second
+     * forever; wake word is gated on this instead of being started unconditionally.
+     */
+    private var micForegroundEligible = false
+
     companion object {
         const val ACTION_TRIGGER_RECORD = "com.opendroid.ai.action.TRIGGER_RECORD"
         private const val TAG = "OpenDroidService"
@@ -164,10 +172,16 @@ class OpenDroidService : Service() {
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
         val preferred = ForegroundServiceStartPolicy.preferredType(sdkInt, micGranted)
-        if (startForegroundWithType(notification, preferred)) return true
+        if (startForegroundWithType(notification, preferred)) {
+            micForegroundEligible = preferred == android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            return true
+        }
 
         // Both a missing RECORD_AUDIO grant and a disallowed start context reject the
-        // microphone type; specialUse still works in the former case.
+        // microphone type; specialUse still works in the former case. A specialUse start
+        // never carries microphone eligibility, so micForegroundEligible stays false and
+        // wake word detection is suppressed until the service is next created from a
+        // context (e.g. a foreground activity) allowed to promote to microphone.
         val fallback = ForegroundServiceStartPolicy.fallbackType(sdkInt, micGranted)
         if (fallback != ForegroundServiceStartPolicy.TYPE_NONE &&
             startForegroundWithType(notification, fallback)
@@ -192,6 +206,7 @@ class OpenDroidService : Service() {
     }
 
     private fun startWakeWordDetection() {
+        if (!micForegroundEligible) return
         wakeWordDetector.startListening {
             // Wake word detected! Prompt user with a sound or greeting and start listing for query
             textToSpeechEngine.speak("OpenDroid online.")
@@ -212,10 +227,7 @@ class OpenDroidService : Service() {
                 agentLoop.processQuery(query, this)
                 // Resume wake word detection only if floating button is disabled
                 if (!showFloatingButton) {
-                    wakeWordDetector.startListening {
-                        textToSpeechEngine.speak("OpenDroid online.")
-                        startListeningForQuery()
-                    }
+                    startWakeWordDetection()
                 } else {
                     agentLoop.setAgentState(AgentState.Idle)
                 }
@@ -224,10 +236,7 @@ class OpenDroidService : Service() {
                 agentLoop.setAgentState(AgentState.Idle)
                 // Resume wake word detection only if floating button is disabled
                 if (!showFloatingButton) {
-                    wakeWordDetector.startListening {
-                        textToSpeechEngine.speak("OpenDroid online.")
-                        startListeningForQuery()
-                    }
+                    startWakeWordDetection()
                 }
             }
         )
