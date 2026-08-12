@@ -7,8 +7,11 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  # Only 'opened': without an assignee_trigger configured, 'assigned' would
+  # start a second run for every assignment of an issue still containing
+  # @claude.
   issues:
-    types: [opened, assigned]
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
@@ -30,7 +33,9 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write # Required for the action's GitHub App authentication
-      actions: read # Lets Claude read CI results on PRs
+      # Scopes the workflow's own GITHUB_TOKEN. It does NOT reach the App token
+      # Claude actually uses - see additional_permissions on the step below.
+      actions: read
 
     steps:
       - name: Checkout repository
@@ -61,8 +66,22 @@ jobs:
           # repo to its parent, so pin it explicitly rather than relying on
           # every gh call passing --repo.
           GH_REPO: ${{ github.repository }}
+          # Off unless set: action.yml only defaults it on for
+          # allowed_non_write_users. Scrubs Anthropic/cloud/Actions secrets from
+          # subprocess environments, so a Gradle task can't read the OAuth token
+          # out of its own env, and adds PID-namespace isolation where
+          # bubblewrap is available.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: 1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # The job-level actions: read above scopes GITHUB_TOKEN, but Claude
+          # authenticates as the Claude GitHub App, whose token is minted by a
+          # separate exchange. That exchange sends contents/pull_requests/issues
+          # write and nothing else unless additional_permissions is set, so
+          # without this the mcp__github_ci__* tools fail on every API call.
+          additional_permissions: |
+            actions: read
 
           # These add to the tools the action already grants itself in tag mode
           # (Read/Grep/Glob/LS, comment updating, CI log reading, git commit and
