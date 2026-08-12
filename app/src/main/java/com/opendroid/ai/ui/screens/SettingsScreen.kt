@@ -6,7 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -35,8 +37,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveContextWindow
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
+import com.opendroid.ai.core.llm.OnDeviceContextWindow
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
@@ -1308,6 +1312,13 @@ fun SettingsScreen(
                                                         Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = TextSecondary)
                                                     }
                                                 }
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                ContextWindowPicker(
+                                                    defaultWindow = spec.contextWindow,
+                                                    selectedWindow = config.effectiveContextWindow(spec),
+                                                    onSelect = { viewModel.updateOnDeviceContextWindow(spec.id, it) }
+                                                )
                                             }
                                         }
                                     }
@@ -1437,6 +1448,17 @@ fun SettingsScreen(
                                                         )
                                                     }
                                                 }
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                val customDefault =
+                                                    OnDeviceModelRegistry.CUSTOM_DEFAULT_CONTEXT_WINDOW
+                                                ContextWindowPicker(
+                                                    defaultWindow = customDefault,
+                                                    selectedWindow = config.onDeviceContextWindows[entity.id]
+                                                        ?.let(OnDeviceContextWindow::clamp)
+                                                        ?: customDefault,
+                                                    onSelect = { viewModel.updateOnDeviceContextWindow(entity.id, it) }
+                                                )
                                             }
                                         }
                                     }
@@ -2568,6 +2590,63 @@ private fun formatBytes(bytes: Long): String {
         bytes / Math.pow(1024.0, digitGroups.toDouble()),
         units[digitGroups]
     )
+}
+
+/**
+ * Lets the user run an on-device model with a larger context window than the one
+ * it ships with, so longer chats and multi-step plans stop hitting the limit.
+ * Selecting the model's own size clears the override.
+ */
+@Composable
+private fun ContextWindowPicker(
+    defaultWindow: Int,
+    selectedWindow: Int,
+    onSelect: (Int?) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "CONTEXT WINDOW",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color = AccentCyan
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "Total tokens for prompt + reply. Higher fits longer chats and " +
+                "multi-step plans, but uses more RAM — if the model will not load at " +
+                "your choice, it runs at ${OnDeviceContextWindow.label(defaultWindow)} instead.",
+            fontSize = 10.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OnDeviceContextWindow.optionsFor(defaultWindow).forEach { option ->
+                val isSelected = option == selectedWindow
+                Button(
+                    onClick = { onSelect(if (option == defaultWindow) null else option) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) AccentCyan else BorderColor
+                    ),
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = OnDeviceContextWindow.label(option) +
+                            if (option == defaultWindow) " · default" else "",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) DarkBackground else TextPrimary
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
