@@ -221,7 +221,12 @@ class LiteRTLMProvider @Inject constructor(
             } catch (e: Throwable) {
                 // Only retire the handle this call leased, not whatever a
                 // concurrent settings change or request may have cached since.
-                retire(active)
+                // Prompt-budget rejections and stream cancellation don't mean the
+                // engine is broken — keep it cached so a shortened prompt or
+                // retry doesn't have to reload the multi-gigabyte model.
+                if (e !is PromptBudgetExceededException && e !is kotlinx.coroutines.CancellationException) {
+                    retire(active)
+                }
                 throw e
             } finally {
                 releaseEngine(active)
