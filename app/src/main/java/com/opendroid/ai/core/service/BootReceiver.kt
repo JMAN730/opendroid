@@ -15,8 +15,8 @@ class BootReceiver : BroadcastReceiver() {
             context, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
         // Android 14+ rejects the `microphone` foreground type when the start comes from
-        // BOOT_COMPLETED; the app starts it on first launch instead (issue 185). The
-        // `specialUse` fallback used when the mic isn't granted is not restricted at boot.
+        // BOOT_COMPLETED; OpenDroidService.startForegroundCompat() catches that refusal and
+        // falls back to `specialUse`, which BOOT_COMPLETED may still launch (issue 185).
         if (!ForegroundServiceStartPolicy.isBootAutoStartAllowed(Build.VERSION.SDK_INT, micGranted)) return
         OpenDroidService.start(context)
     }

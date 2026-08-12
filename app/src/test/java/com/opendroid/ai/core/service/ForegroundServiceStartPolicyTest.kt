@@ -2,26 +2,18 @@ package com.opendroid.ai.core.service
 
 import android.content.pm.ServiceInfo
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ForegroundServiceStartPolicyTest {
 
     @Test
-    fun `boot auto start allowed below Android 14 regardless of mic grant`() {
-        listOf(26, 29, 30, 31, 32, 33).forEach { sdk ->
+    fun `boot auto start always allowed since a boot-safe type is always reachable`() {
+        // microphone FGS is banned from BOOT_COMPLETED on 34+, but preferredType only picks
+        // it when RECORD_AUDIO is granted, and fallbackType then offers specialUse - which
+        // is never boot-restricted - so OpenDroidService always has a boot-safe type to try.
+        listOf(26, 29, 30, 31, 32, 33, 34, 35, 36).forEach { sdk ->
             assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = true))
-            assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = false))
-        }
-    }
-
-    @Test
-    fun `boot auto start blocked from Android 14 up only when mic is granted`() {
-        // microphone FGS is banned from BOOT_COMPLETED on 34+; specialUse is not, so a
-        // boot start without the mic grant (which selects specialUse) stays allowed.
-        listOf(34, 35, 36).forEach { sdk ->
-            assertFalse("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = true))
             assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = false))
         }
     }
