@@ -181,13 +181,13 @@
 
     <h2>Security Philosophy</h2>
     <p>
-      OpenDroid operates with full Android system permissions (Accessibility, System Settings, Notifications). Consequently, security is engineered directly into our architecture through principal of least privilege, strict input sanitization, and local encrypted storage.
+      OpenDroid operates with full Android system permissions (Accessibility, System Settings, Notifications). Consequently, security is engineered directly into our architecture through principle of least privilege, strict input sanitization, and local encrypted storage.
     </p>
 
     <h2>Key Security Features</h2>
     <h3>Local Key Storage</h3>
     <p>
-      All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted at rest with AES-256-GCM using a key generated and held inside the Android KeyStore, never in application memory or plaintext preferences. Older installs that stored credentials in DataStore are migrated to this store automatically and the legacy values are then removed. Whether the KeyStore key is additionally isolated in dedicated secure hardware (StrongBox/TEE) depends on the device.
+      All API keys provided by users (Gemini, OpenAI, Claude, Groq, ElevenLabs) are encrypted at rest with AES-256-GCM using a key generated and held inside the Android KeyStore, never in application memory or plaintext preferences. Older installs that stored credentials in DataStore are migrated to this store automatically; the legacy plaintext value is removed only once the migration succeeds, and is left in place for a later retry if it doesn't (it is not used at runtime once migration has started). Whether the KeyStore key is additionally isolated in dedicated secure hardware (StrongBox/TEE) depends on the device.
     </p>
 
     <h3>Intent &amp; Action Verification</h3>
