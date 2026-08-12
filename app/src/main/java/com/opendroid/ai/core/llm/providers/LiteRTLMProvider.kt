@@ -231,6 +231,8 @@ class LiteRTLMProvider @Inject constructor(
             } finally {
                 releaseEngine(active)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
             val spec = resolveModelSpec(modelId)
             emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
@@ -239,11 +241,12 @@ class LiteRTLMProvider @Inject constructor(
 
     override suspend fun generate(
         messages: List<ChatMessage>,
-        tools: List<ToolDefinition>
+        tools: List<ToolDefinition>,
+        modelId: String?
     ): Flow<StreamChunk> = flow {
-        val modelId = settingsRepository.llmConfig.first().selectedModelFor(name)
+        val resolvedModelId = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(name)
         try {
-            val spec = resolveRequestSpec(modelId)
+            val spec = resolveRequestSpec(resolvedModelId)
             checkSdkCompatibility(spec)
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
@@ -270,7 +273,7 @@ class LiteRTLMProvider @Inject constructor(
                 // Not JSON — treat as plain text
             }
         } catch (e: Throwable) {
-            val spec = resolveModelSpec(modelId)
+            val spec = resolveModelSpec(resolvedModelId)
             emit(StreamChunk.Content("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}"))
         }
     }
