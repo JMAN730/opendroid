@@ -1,0 +1,66 @@
+name: Claude Code
+
+# Mention @claude in an issue or PR comment (or in a new issue's title/body) and
+# Claude responds in a comment on that same thread, pushing commits when asked.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    name: Respond to @claude
+    # Keeps a runner from starting on the comments that don't mention @claude.
+    # The action re-checks the trigger phrase itself before responding.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write # Required for the action's GitHub App authentication
+      actions: read # Lets Claude read CI results on PRs
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      # Must match JavaVersion.VERSION_21 / jvmTarget '21' in app/build.gradle.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Read-only: @claude runs shouldn't evict the cache entries android-ci.yml
+      # seeds from main.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Gradle is pre-allowed so Claude can verify its own changes the same
+          # way android-ci.yml does. Anything else still prompts-and-fails, so
+          # add commands here rather than widening to a bare Bash allow.
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(./gradlew:*)"
