@@ -19,14 +19,16 @@ object ForegroundServiceStartPolicy {
     const val TYPE_NONE = -1
 
     /**
-     * Android 14 bans starting a `microphone` foreground service from BOOT_COMPLETED, and
-     * Android 15 extends the ban to `specialUse`, so from API 34 up there is no type this
-     * service could legally use at boot. Attempting it throws
-     * `ForegroundServiceStartNotAllowedException` and kills the process; the service is
-     * started from the UI instead once the user opens the app.
+     * Android 14 bans starting a `microphone` foreground service from BOOT_COMPLETED
+     * (Android 15 adds `camera`, `dataSync` and `phoneCall` to that list, but never
+     * `specialUse`). So boot auto-start is only unsafe from API 34 up when RECORD_AUDIO
+     * is granted, since that is what makes [preferredType] pick `microphone`; without the
+     * grant the service starts under `specialUse`, which BOOT_COMPLETED may still launch.
+     * Attempting a banned type throws `ForegroundServiceStartNotAllowedException` and kills
+     * the process; the service is started from the UI instead once the user opens the app.
      */
-    fun isBootAutoStartAllowed(sdkInt: Int): Boolean =
-        sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+    fun isBootAutoStartAllowed(sdkInt: Int, micGranted: Boolean): Boolean =
+        sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || !micGranted
 
     /**
      * Android 14+ rejects a `microphone` FGS when RECORD_AUDIO is not granted, so the agent

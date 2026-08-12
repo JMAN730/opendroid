@@ -84,31 +84,40 @@ class OpenDroidService : Service() {
             return
         }
 
-        // Initialize engines
-        wakeWordDetector = WakeWordDetector(this)
-        speechRecognitionEngine = SpeechRecognitionEngine(this)
-        textToSpeechEngine = TextToSpeechEngine(this, settingsRepository)
+        // Initialize engines. enginesInitialized stays false until every step below
+        // succeeds, so a construction or mcpServer.start() failure can't leave onDestroy's
+        // cleanup skipped or onStartCommand STICKY-restarting into the same crash (issue 185).
+        try {
+            wakeWordDetector = WakeWordDetector(this)
+            speechRecognitionEngine = SpeechRecognitionEngine(this)
+            textToSpeechEngine = TextToSpeechEngine(this, settingsRepository)
 
-        // Bind Agent Loop TTS
-        agentLoop.onSpeakCallback = { text ->
-            textToSpeechEngine.speak(text)
-        }
-
-        // Set TTS completion listener to transition back to Idle
-        textToSpeechEngine.onCompletionListener = {
-            // Only Speaking resets to Idle - speech that happens to play while a
-            // plan sits in PlanProposed must not knock the approval gate over.
-            if (agentLoop.agentState.value is AgentState.Speaking) {
-                agentLoop.setAgentState(AgentState.Idle)
+            // Bind Agent Loop TTS
+            agentLoop.onSpeakCallback = { text ->
+                textToSpeechEngine.speak(text)
             }
-            if (pendingApprovalListen) {
-                pendingApprovalListen = false
-                startListeningForApproval()
-            }
-        }
 
+            // Set TTS completion listener to transition back to Idle
+            textToSpeechEngine.onCompletionListener = {
+                // Only Speaking resets to Idle - speech that happens to play while a
+                // plan sits in PlanProposed must not knock the approval gate over.
+                if (agentLoop.agentState.value is AgentState.Speaking) {
+                    agentLoop.setAgentState(AgentState.Idle)
+                }
+                if (pendingApprovalListen) {
+                    pendingApprovalListen = false
+                    startListeningForApproval()
+                }
+            }
+
+            mcpServer.start()
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Engine startup failed", e)
+            destroyInitializedEngines()
+            stopSelf()
+            return
+        }
         enginesInitialized = true
-        mcpServer.start()
 
         // Monitor floating button config to start/stop wake word detection dynamically
         serviceScope.launch {
@@ -267,13 +276,25 @@ class OpenDroidService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        // onCreate bails out before engine construction when the foreground start is
-        // refused; the lateinit fields are unset on that path.
+        // onCreate bails out before or during engine construction when the foreground
+        // start is refused or a later step throws; enginesInitialized is only true once
+        // every engine below is guaranteed constructed.
         if (!enginesInitialized) return
         mcpServer.stop()
         wakeWordDetector.destroy()
         speechRecognitionEngine.destroy()
         textToSpeechEngine.destroy()
+    }
+
+    /**
+     * Cleans up whichever engines got constructed before onCreate's startup try block
+     * threw. Each lateinit field is guarded individually since a failure can land after
+     * some engines were built and before others.
+     */
+    private fun destroyInitializedEngines() {
+        if (::wakeWordDetector.isInitialized) wakeWordDetector.destroy()
+        if (::speechRecognitionEngine.isInitialized) speechRecognitionEngine.destroy()
+        if (::textToSpeechEngine.isInitialized) textToSpeechEngine.destroy()
     }
 
     private fun createNotificationChannel() {

@@ -9,18 +9,20 @@ import org.junit.Test
 class ForegroundServiceStartPolicyTest {
 
     @Test
-    fun `boot auto start allowed below Android 14`() {
+    fun `boot auto start allowed below Android 14 regardless of mic grant`() {
         listOf(26, 29, 30, 31, 32, 33).forEach { sdk ->
-            assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk))
+            assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = true))
+            assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = false))
         }
     }
 
     @Test
-    fun `boot auto start blocked from Android 14 up`() {
-        // microphone FGS is banned from BOOT_COMPLETED on 34+, specialUse on 35+,
-        // so neither the preferred type nor the fallback can legally start there.
+    fun `boot auto start blocked from Android 14 up only when mic is granted`() {
+        // microphone FGS is banned from BOOT_COMPLETED on 34+; specialUse is not, so a
+        // boot start without the mic grant (which selects specialUse) stays allowed.
         listOf(34, 35, 36).forEach { sdk ->
-            assertFalse("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk))
+            assertFalse("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = true))
+            assertTrue("sdk $sdk", ForegroundServiceStartPolicy.isBootAutoStartAllowed(sdk, micGranted = false))
         }
     }
 
