@@ -75,17 +75,28 @@ for arg in "$@"; do
     --body-file | --body-file=* | --editor | --editor=* | --web | --web=*)
       die "flag not allowed: $arg"
       ;;
+    # --jq evaluates its expression with jq's env/$ENV builtins in scope, and gh
+    # inherits GH_TOKEN from the export below, so `--json number --jq
+    # env.GH_TOKEN` prints the credential straight back to the caller - defeating
+    # the root-owned file, which only stops the token being *read from disk*.
+    # --json on its own is fine; parse the JSON rather than filtering it here.
+    # --template is left alone: Go templates cannot reach the environment, and -t
+    # is --title on `issue create`.
+    --jq | --jq=*)
+      die "flag not allowed: $arg (use --json and parse the output)"
+      ;;
   esac
 
   # Short flags, including clusters (-qR) and attached values (-Rowner/name).
   # Only the leading run of letters is inspected, so a value that happens to
-  # contain R, F, e or w is not mistaken for a flag.
+  # contain R, F, e, w or q is not mistaken for a flag.
   case "$arg" in
     -[!-]*)
       letters="${arg#-}"
       letters="${letters%%[!A-Za-z]*}"
       case "$letters" in
         *R*) die "the repository is fixed to $REPO; remove '$arg'" ;;
+        *q*) die "flag not allowed: $arg (-q is --jq; use --json and parse the output)" ;;
         *[Few]*) die "flag not allowed: $arg" ;;
       esac
       ;;
