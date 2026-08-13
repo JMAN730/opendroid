@@ -115,21 +115,31 @@ for arg in "$@"; do
   # Matched against a lowercased copy because hostnames are case-insensitive
   # (https://GITHUB.COM/... reaches the same host) and so are GitHub owner and
   # repository names.
+  #
+  # One argument can carry several URLs: gh's relationship flags take
+  # comma-separated lists (--blocked-by 200,201 - and each element may be a URL),
+  # and a body can quote more than one link. Stopping at the first github.com
+  # would let a later one name the upstream, so every occurrence is walked.
   lower="${arg,,}"
-  case "$lower" in
-    *github.com[/:]*)
-      rest="${lower#*github.com}"
-      rest="${rest#[/:]}"
-      owner="${rest%%/*}"
-      remainder="${rest#*/}"
-      name="${remainder%%/*}"
-      name="${name%%\?*}"
-      name="${name%%#*}"
-      name="${name%.git}"
-      [ "$owner/$name" = "${REPO,,}" ] ||
-        die "the repository is fixed to $REPO; '$arg' names $owner/$name"
-      ;;
-  esac
+  rest="$lower"
+  while [ "$rest" != "${rest#*github.com}" ]; do
+    rest="${rest#*github.com}"
+    # Only a / or : after the host starts a repository path; github.community
+    # and friends are not repository references.
+    case "$rest" in
+      [/:]*) ;;
+      *) continue ;;
+    esac
+    target="${rest#[/:]}"
+    owner="${target%%/*}"
+    owner="${owner%%[?#,]*}"
+    remainder="${target#*/}"
+    name="${remainder%%/*}"
+    name="${name%%[?#,]*}"
+    name="${name%.git}"
+    [ "$owner/$name" = "${REPO,,}" ] ||
+      die "the repository is fixed to $REPO; '$arg' names $owner/$name"
+  done
 done
 
 GH_TOKEN="$(sudo -n /bin/cat "$TOKEN_FILE" 2>/dev/null)" ||
