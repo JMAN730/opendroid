@@ -6,11 +6,25 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 readonly WRAPPER="$SCRIPT_DIR/gh-repo.sh"
 
+run_with_stubbed_sudo() {
+  sed "s|readonly SUDO='/usr/bin/sudo'|readonly SUDO='/bin/echo'|" "$WRAPPER" |
+    bash -s -- "$@"
+}
+
 expect_rejected() {
-  if bash "$WRAPPER" "$@" >/dev/null 2>&1; then
+  local output
+  if output="$(run_with_stubbed_sudo "$@" 2>&1)"; then
     printf 'unexpectedly allowed: %s\n' "$*" >&2
     return 1
   fi
+
+  case "$output" in
+    gh-repo:*) ;;
+    *)
+      printf 'unexpected rejection for %s:\n%s\n' "$*" "$output" >&2
+      return 1
+      ;;
+  esac
 }
 
 expect_rejected issue list --jq env.GH_TOKEN
@@ -27,9 +41,7 @@ expect_rejected api repos/JMAN730/opendroid/issues
 # Substitute echo for sudo so the final command can be asserted without a
 # privileged test account or a live credential. The wrapper still constructs
 # the exact clean environment and gh invocation used on the runner.
-actual="$({
-  sed "s|readonly SUDO='/usr/bin/sudo'|readonly SUDO='/bin/echo'|" "$WRAPPER"
-} | bash -s -- issue list --state open)"
+actual="$(run_with_stubbed_sudo issue list --state open)"
 expected='-u ghrepo -- env -i HOME=/var/lib/ghrepo PATH=/usr/local/bin:/usr/bin:/bin GH_CONFIG_DIR=/var/lib/ghrepo/.config/gh GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 gh issue list --repo JMAN730/opendroid --state open'
 
 if [ "$actual" != "$expected" ]; then
