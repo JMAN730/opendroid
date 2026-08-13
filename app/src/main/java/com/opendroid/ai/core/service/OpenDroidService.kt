@@ -173,7 +173,7 @@ class OpenDroidService : Service() {
 
         val preferred = ForegroundServiceStartPolicy.preferredType(sdkInt, micGranted)
         if (startForegroundWithType(notification, preferred)) {
-            micForegroundEligible = preferred == android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            micForegroundEligible = preferred == ForegroundServiceStartPolicy.TYPE_MICROPHONE
             return true
         }
 
