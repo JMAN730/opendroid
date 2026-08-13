@@ -1,0 +1,149 @@
+name: Claude Code
+
+# Mention @claude in an issue or PR comment (or in a new issue's title/body) and
+# Claude responds in a comment on that same thread, pushing commits when asked.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  # Only 'opened': without an assignee_trigger configured, 'assigned' would
+  # start a second run for every assignment of an issue still containing
+  # @claude.
+  issues:
+    types: [opened]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    name: Respond to @claude
+    # Keeps a runner from starting on the comments that don't mention @claude.
+    # The action re-checks the trigger phrase itself before responding.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write # Required for the action's GitHub App authentication
+      # Scopes the workflow's own GITHUB_TOKEN. It does NOT reach the App token
+      # Claude actually uses - see additional_permissions on the step below.
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+
+      # There is no JDK or Gradle setup here on purpose: this job does not build
+      # the project. A mention can arrive on a pull request from a fork, whose
+      # gradlew and build scripts the action checks out into the workspace, and
+      # running those would execute contributor-controlled code beside a
+      # credential. android-ci.yml is where builds belong.
+
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB (set below) strips the action's GH_TOKEN
+      # from every Bash subprocess, and the runner carries no stored gh login, so
+      # gh would fail with "gh auth login". Give gh its own account instead. The
+      # runner user - which is what Claude's tools and anything a pull request
+      # contributes run as - can neither read that account's config nor rewrite
+      # the wrapper, and the wrapper hands gh an environment with no credential
+      # in it at all, so no output format gh supports can print one. The token is
+      # this job's own GITHUB_TOKEN, capped by the permissions block above and
+      # expiring with the job.
+      - name: Install the gh wrapper and give gh its own account
+        env:
+          GH_CREDENTIAL: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Not the workspace copy: on a review event the checkout above is the
+          # pull request's merge ref, so a fork could supply the very script
+          # that is about to be trusted with the credential. Take it from the
+          # default branch, which only a merged change can alter - the same
+          # place this workflow file itself comes from.
+          git fetch --no-tags --depth 1 origin "$DEFAULT_BRANCH"
+          git show "FETCH_HEAD:.github/scripts/gh-repo.sh" > "$RUNNER_TEMP/gh-repo"
+          sudo install -m 755 -o root -g root "$RUNNER_TEMP/gh-repo" /usr/local/bin/gh-repo
+
+          sudo groupadd --system ghrepo
+          sudo useradd --system --gid ghrepo --home-dir /var/lib/ghrepo \
+            --create-home --shell /usr/sbin/nologin ghrepo
+          sudo install -d -m 700 -o ghrepo -g ghrepo /var/lib/ghrepo/.config/gh
+
+          # config.yml pins the schema version. Without it gh treats the config
+          # as pre-multi-account and runs a migration that resolves a username
+          # over the API - which GITHUB_TOKEN cannot do - and every call fails
+          # before it starts.
+          printf 'version: "1"\n' |
+            sudo tee /var/lib/ghrepo/.config/gh/config.yml > /dev/null
+          printf 'github.com:\n    users:\n        x-access-token:\n            oauth_token: %s\n    user: x-access-token\n    git_protocol: https\n    oauth_token: %s\n' \
+            "$GH_CREDENTIAL" "$GH_CREDENTIAL" |
+            sudo tee /var/lib/ghrepo/.config/gh/hosts.yml > /dev/null
+          sudo chown ghrepo:ghrepo /var/lib/ghrepo/.config/gh/config.yml /var/lib/ghrepo/.config/gh/hosts.yml
+          sudo chmod 600 /var/lib/ghrepo/.config/gh/config.yml /var/lib/ghrepo/.config/gh/hosts.yml
+
+          # Fail here, loudly, rather than on every mention: this is where a gh
+          # release that changes the config layout would show up. Prints
+          # nothing - it only has to exit 0.
+          sudo -n -u ghrepo -- env -i \
+            HOME=/var/lib/ghrepo PATH=/usr/local/bin:/usr/bin:/bin \
+            GH_CONFIG_DIR=/var/lib/ghrepo/.config/gh \
+            gh auth token --hostname github.com > /dev/null
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        env:
+          # Off unless set: action.yml only defaults it on for
+          # allowed_non_write_users. Scrubs Anthropic/cloud/Actions secrets from
+          # subprocess environments, so no command Claude runs can read the
+          # OAuth token out of its own env, and adds PID-namespace isolation
+          # where bubblewrap is available.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: 1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # The job-level actions: read above scopes GITHUB_TOKEN, but Claude
+          # authenticates as the Claude GitHub App, whose token is minted by a
+          # separate exchange. That exchange sends contents/pull_requests/issues
+          # write and nothing else unless additional_permissions is set, so
+          # without this the mcp__github_ci__* tools fail on every API call.
+          additional_permissions: |
+            actions: read
+
+          # These add to the tools the action already grants itself in tag mode
+          # (Read/Grep/Glob/LS, comment updating, CI log reading, git commit and
+          # push) - --allowedTools accumulates across flags rather than
+          # replacing. Anything not listed falls through to "ask", which a
+          # headless run denies, so new commands go here.
+          #
+          # gh-repo, installed above from .github/scripts/gh-repo.sh, is the only
+          # command on the allowlist. Bash(./gradlew:*) is deliberately absent:
+          # on a pull request the workspace holds contributor-controlled build
+          # scripts, and running them would be arbitrary code execution on a
+          # runner that holds an OAuth token and repository write access.
+          #
+          # Tracker access goes through the wrapper rather than bare gh because
+          # AGENTS.md scopes the tracker to this fork and forbids touching the
+          # yashab-cyber/opendroid upstream, and no environment setting can
+          # enforce that: GH_REPO is only a default, every gh issue/pr
+          # subcommand accepts -R/--repo, and several accept a positional URL
+          # that outranks --repo. The wrapper rejects all of those, appends its
+          # own --repo, and runs gh under the account that holds the credential
+          # the subprocess scrub removes.
+          #
+          # Subcommands are listed individually rather than as a single
+          # wildcard, so `gh api` (arbitrary writes), `gh pr merge`,
+          # `gh workflow run`, and `gh secret` stay out of reach of anything a
+          # mention injects - the wrapper enforces the same list itself.
+          claude_args: |
+            --max-turns 30
+            --append-system-prompt "AGENTS.md tells you to use the gh CLI for issue and PR work. In this workflow bare gh is not allowed: run gh-repo instead, with the same arguments you would pass to gh (for example: gh-repo issue list --state open). It targets JMAN730/opendroid, so never pass a repository, a URL from another repository, or -R/--repo. Bodies must be given inline with --body; file-reading, formatting, editor, and web flags are refused. Use --json on its own and read the JSON. This job cannot build the project - gradlew is not available, and android-ci.yml covers builds."
+            --allowedTools "Bash(gh-repo issue view:*),Bash(gh-repo issue list:*),Bash(gh-repo issue create:*),Bash(gh-repo issue comment:*),Bash(gh-repo issue edit:*),Bash(gh-repo issue close:*),Bash(gh-repo pr view:*),Bash(gh-repo pr list:*),Bash(gh-repo pr diff:*),Bash(gh-repo pr comment:*)"
