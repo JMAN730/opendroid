@@ -68,6 +68,32 @@ for arg in "$@"; do
   esac
 done
 
+# Rejecting the repo flags is not enough. gh documents `issue view {<number> |
+# <url>}` (and the same for comment/edit/close and the pr commands), and a
+# positional URL wins over --repo - so a bare
+# `issue view https://github.com/yashab-cyber/opendroid/issues/1` would read the
+# upstream despite the --repo appended below. Any argument naming a repository
+# must therefore name this one. Checking every argument rather than just the
+# positional target also stops a URL smuggled through --body, at the cost of
+# refusing to quote an upstream link in a comment - which AGENTS.md rules out
+# anyway.
+for arg in "$@"; do
+  case "$arg" in
+    *github.com[/:]*)
+      rest="${arg#*github.com}"
+      rest="${rest#[/:]}"
+      owner="${rest%%/*}"
+      remainder="${rest#*/}"
+      name="${remainder%%/*}"
+      name="${name%%\?*}"
+      name="${name%%#*}"
+      name="${name%.git}"
+      [ "$owner/$name" = "$REPO" ] ||
+        die "the repository is fixed to $REPO; '$arg' names $owner/$name"
+      ;;
+  esac
+done
+
 [ -r "$TOKEN_FILE" ] || die "no credential at $TOKEN_FILE"
 
 GH_TOKEN="$(<"$TOKEN_FILE")"
