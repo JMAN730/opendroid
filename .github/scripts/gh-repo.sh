@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 #
-# The only `gh` entry point the @claude workflow allowlists.
+# The only command the @claude workflow allowlists beyond the action's own
+# tools. The workflow installs this file to /usr/local/bin/gh-repo owned by
+# root, so the copy that actually runs is not the workspace copy: Claude's file
+# tools run as the runner user and cannot rewrite it, and neither can anything
+# else that a pull request contributes.
 #
-# Two invariants it enforces that the environment alone cannot:
+# What it enforces that the environment cannot:
 #
 #  1. Repository pinning. GH_REPO is only a default - every `gh issue`/`gh pr`
-#     subcommand still accepts -R/--repo and would happily target
-#     yashab-cyber/opendroid, which AGENTS.md forbids. This wrapper rejects any
-#     caller-supplied repo selector and appends its own -R.
+#     subcommand still accepts -R/--repo, and several accept a positional URL
+#     that outranks --repo. AGENTS.md scopes the tracker to this fork and
+#     forbids touching the yashab-cyber/opendroid upstream, so both routes are
+#     rejected here and the repository is appended by the wrapper itself.
 #  2. Authentication. CLAUDE_CODE_SUBPROCESS_ENV_SCRUB strips the action's
-#     GH_TOKEN from Bash subprocesses, and the runner has no stored gh login, so
-#     `gh` would fail with "gh auth login". The workflow stages the job's own
-#     GITHUB_TOKEN in a 0600 file beforehand and this wrapper feeds it to gh for
-#     the single command it runs - the credential never lives in the scrubbed
-#     environment Gradle sees.
+#     GH_TOKEN from Bash subprocesses and the runner has no stored gh login, so
+#     gh would fail with the `gh auth login` error. The credential lives in a
+#     root-owned file that the runner user cannot read; this wrapper fetches it
+#     with sudo for the single command it runs. Nothing on the allowlist can
+#     invoke sudo, or read the file, on its own.
+#  3. No file-reading flags. --body-file and friends would turn an allowed
+#     comment into a way to publish any file the runner can read - the
+#     credential git stores in .git/config, for instance.
 #
-# The subcommand allowlist below is defence in depth: the workflow already
-# allowlists each `<wrapper> <subcommand>` prefix individually, and neither list
-# admits `gh api`, `gh pr merge`, `gh workflow run`, or `gh secret`.
+# The subcommand allowlist below is defence in depth: the workflow allowlists
+# each `gh-repo <subcommand>` prefix individually, and neither list admits
+# `gh api` (arbitrary writes), `gh pr merge`, `gh workflow run`, or `gh secret`.
 
 set -euo pipefail
 
@@ -25,9 +33,9 @@ set -euo pipefail
 # that can influence the environment retarget the CLI.
 readonly REPO='JMAN730/opendroid'
 
-# HOME rather than RUNNER_TEMP: Actions-provided variables are among those the
-# subprocess scrub removes.
-readonly TOKEN_FILE="${HOME:-/home/runner}/.claude-gh-token"
+# Root-owned, mode 600. The path is fixed rather than read from the environment
+# because the subprocess scrub removes the Actions variables that would name it.
+readonly TOKEN_FILE='/etc/gh-repo.token'
 
 readonly ALLOWED_SUBCOMMANDS='
 issue view
@@ -43,11 +51,11 @@ pr comment
 '
 
 die() {
-  printf 'gh-repo.sh: %s\n' "$1" >&2
+  printf 'gh-repo: %s\n' "$1" >&2
   exit 1
 }
 
-[ "$#" -ge 2 ] || die 'usage: gh-repo.sh <command> <subcommand> [args...]'
+[ "$#" -ge 2 ] || die 'usage: gh-repo <command> <subcommand> [args...]'
 
 subcommand="$1 $2"
 case "$ALLOWED_SUBCOMMANDS" in
@@ -57,30 +65,49 @@ $subcommand
   *) die "subcommand not allowed: $subcommand" ;;
 esac
 
-# Reject every spelling of the repo selector: --repo, --repo=x, -R, -Rx, and
-# clustered short flags such as -qR. pflag does not accept abbreviated long
-# flags, so --repo and --repo= are the only long forms to worry about.
 for arg in "$@"; do
+  # Long flags. pflag does not accept abbreviated long flags, so each spelling
+  # is exactly two cases: bare and --flag=value.
   case "$arg" in
-    --repo | --repo=* | -[!-]*R* | -R*)
+    --repo | --repo=*)
       die "the repository is fixed to $REPO; remove '$arg'"
       ;;
+    --body-file | --body-file=* | --editor | --editor=* | --web | --web=*)
+      die "flag not allowed: $arg"
+      ;;
   esac
-done
 
-# Rejecting the repo flags is not enough. gh documents `issue view {<number> |
-# <url>}` (and the same for comment/edit/close and the pr commands), and a
-# positional URL wins over --repo - so a bare
-# `issue view https://github.com/yashab-cyber/opendroid/issues/1` would read the
-# upstream despite the --repo appended below. Any argument naming a repository
-# must therefore name this one. Checking every argument rather than just the
-# positional target also stops a URL smuggled through --body, at the cost of
-# refusing to quote an upstream link in a comment - which AGENTS.md rules out
-# anyway.
-for arg in "$@"; do
+  # Short flags, including clusters (-qR) and attached values (-Rowner/name).
+  # Only the leading run of letters is inspected, so a value that happens to
+  # contain R, F, e or w is not mistaken for a flag.
   case "$arg" in
+    -[!-]*)
+      letters="${arg#-}"
+      letters="${letters%%[!A-Za-z]*}"
+      case "$letters" in
+        *R*) die "the repository is fixed to $REPO; remove '$arg'" ;;
+        *[Few]*) die "flag not allowed: $arg" ;;
+      esac
+      ;;
+  esac
+
+  # Rejecting the repo flags is not enough. gh documents `issue view {<number> |
+  # <url>}` (and the same for comment/edit/close and the pr commands), and a
+  # positional URL wins over --repo - so a bare
+  # `issue view https://github.com/yashab-cyber/opendroid/issues/1` would read
+  # the upstream despite the --repo appended below. Any argument naming a
+  # repository must therefore name this one. Checking every argument rather than
+  # just the positional target also stops a URL smuggled through --body, at the
+  # cost of refusing to quote an upstream link in a comment - which AGENTS.md
+  # rules out anyway.
+  #
+  # Matched against a lowercased copy because hostnames are case-insensitive
+  # (https://GITHUB.COM/... reaches the same host) and so are GitHub owner and
+  # repository names.
+  lower="${arg,,}"
+  case "$lower" in
     *github.com[/:]*)
-      rest="${arg#*github.com}"
+      rest="${lower#*github.com}"
       rest="${rest#[/:]}"
       owner="${rest%%/*}"
       remainder="${rest#*/}"
@@ -88,15 +115,15 @@ for arg in "$@"; do
       name="${name%%\?*}"
       name="${name%%#*}"
       name="${name%.git}"
-      [ "$owner/$name" = "$REPO" ] ||
+      [ "$owner/$name" = "${REPO,,}" ] ||
         die "the repository is fixed to $REPO; '$arg' names $owner/$name"
       ;;
   esac
 done
 
-[ -r "$TOKEN_FILE" ] || die "no credential at $TOKEN_FILE"
-
-GH_TOKEN="$(<"$TOKEN_FILE")"
+GH_TOKEN="$(sudo -n /bin/cat "$TOKEN_FILE" 2>/dev/null)" ||
+  die "could not read the credential at $TOKEN_FILE"
+[ -n "$GH_TOKEN" ] || die "the credential at $TOKEN_FILE is empty"
 export GH_TOKEN
 export GH_HOST=github.com
 
