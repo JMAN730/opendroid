@@ -3,6 +3,29 @@ package com.opendroid.ai.core.service
 import android.os.Build
 
 /**
+ * Foreground service type this app may ask the platform for.
+ *
+ * Deliberately not the raw `ServiceInfo.FOREGROUND_SERVICE_TYPE_*` ints: those fields are
+ * compile-time constants that lint flags as `InlinedApi` whenever they are referenced below
+ * their API level, and [ForegroundServiceStartPolicy] has to reason about API levels above
+ * `minSdk` on every device. Resolving the enum to a platform int is [OpenDroidService]'s job,
+ * behind a real `Build.VERSION.SDK_INT` check.
+ */
+enum class ForegroundServiceType {
+    /** Let the manifest-declared types apply; [android.app.Service.startForeground] takes no type. */
+    MANIFEST,
+
+    /** `microphone`, available from API 30. The only type that carries microphone eligibility. */
+    MICROPHONE,
+
+    /** `specialUse`, available from API 34. Never restricted at boot, but grants no microphone access. */
+    SPECIAL_USE,
+
+    /** No usable type on this platform - nothing left to try. */
+    NONE,
+}
+
+/**
  * Platform rules for starting [OpenDroidService] as a foreground service.
  *
  * Kept as pure functions of the SDK level so the version gates are unit-testable
@@ -10,23 +33,6 @@ import android.os.Build
  * Android 14+ hardware.
  */
 object ForegroundServiceStartPolicy {
-
-    /** Let the manifest-declared types apply; [android.app.Service.startForeground] takes no type. */
-    const val TYPE_MANIFEST = 0
-
-    /** No usable fallback type on this platform. */
-    const val TYPE_NONE = -1
-
-    // ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE / SPECIAL_USE are API 30 / 34
-    // constants; minSdk here is 26. preferredType/fallbackType guard their use behind
-    // sdkInt checks, but those checks read a parameter rather than Build.VERSION.SDK_INT,
-    // which lint's InlinedApi detector does not recognize — so the values are inlined
-    // here to avoid referencing API-only fields unconditionally.
-    /** [android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE] (API 30). */
-    const val TYPE_MICROPHONE = 0x00000080
-
-    /** [android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE] (API 34). */
-    const val TYPE_SPECIAL_USE = 0x40000000
 
     /**
      * Android 14 bans starting a `microphone` foreground service from BOOT_COMPLETED
@@ -45,17 +51,29 @@ object ForegroundServiceStartPolicy {
      * Android 14+ rejects a `microphone` FGS when RECORD_AUDIO is not granted, so the agent
      * loop runs under `specialUse` until the microphone is actually usable.
      */
-    fun preferredType(sdkInt: Int, micGranted: Boolean): Int = when {
-        sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !micGranted -> TYPE_SPECIAL_USE
-        sdkInt >= Build.VERSION_CODES.R -> TYPE_MICROPHONE
-        else -> TYPE_MANIFEST
+    fun preferredType(sdkInt: Int, micGranted: Boolean): ForegroundServiceType = when {
+        sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !micGranted -> ForegroundServiceType.SPECIAL_USE
+        sdkInt >= Build.VERSION_CODES.R -> ForegroundServiceType.MICROPHONE
+        else -> ForegroundServiceType.MANIFEST
     }
 
-    /** Retry type when [preferredType] is refused, or [TYPE_NONE] when there is nothing left to try. */
-    fun fallbackType(sdkInt: Int, micGranted: Boolean): Int =
+    /**
+     * Retry type when [preferredType] is refused, or [ForegroundServiceType.NONE] when there
+     * is nothing left to try.
+     */
+    fun fallbackType(sdkInt: Int, micGranted: Boolean): ForegroundServiceType =
         if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && micGranted) {
-            TYPE_SPECIAL_USE
+            ForegroundServiceType.SPECIAL_USE
         } else {
-            TYPE_NONE
+            ForegroundServiceType.NONE
         }
+
+    /**
+     * True when a foreground start of [type] leaves the service eligible to use the
+     * microphone while in the background. `specialUse` never does - Android 14+ requires the
+     * `microphone` type for the while-in-use RECORD_AUDIO grant - while below API 30 the
+     * manifest-declared types apply and no per-type restriction exists yet.
+     */
+    fun carriesMicrophoneEligibility(type: ForegroundServiceType): Boolean =
+        type == ForegroundServiceType.MICROPHONE || type == ForegroundServiceType.MANIFEST
 }

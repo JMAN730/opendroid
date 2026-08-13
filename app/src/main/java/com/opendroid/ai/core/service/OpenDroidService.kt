@@ -51,6 +51,9 @@ class OpenDroidService : Service() {
      * A `specialUse` fallback (e.g. after a boot start) doesn't carry microphone foreground
      * eligibility, so [WakeWordDetector] would just fail onError -> restart every second
      * forever; wake word is gated on this instead of being started unconditionally.
+     *
+     * Not final: [promoteToMicrophoneIfPossible] retries the promotion on every subsequent
+     * start, so opening the app or granting the permission recovers wake word detection.
      */
     private var micForegroundEligible = false
 
@@ -165,37 +168,68 @@ class OpenDroidService : Service() {
      * reaches the foreground is killed with ForegroundServiceDidNotStartInTimeException.
      */
     private fun startForegroundCompat(): Boolean {
-        val notification = createNotification()
         val sdkInt = android.os.Build.VERSION.SDK_INT
-        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.RECORD_AUDIO
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val micGranted = isMicPermissionGranted()
 
         val preferred = ForegroundServiceStartPolicy.preferredType(sdkInt, micGranted)
-        if (startForegroundWithType(notification, preferred)) {
-            micForegroundEligible = preferred == ForegroundServiceStartPolicy.TYPE_MICROPHONE
+        if (startForegroundWithType(preferred)) {
+            micForegroundEligible = ForegroundServiceStartPolicy.carriesMicrophoneEligibility(preferred)
             return true
         }
 
         // Both a missing RECORD_AUDIO grant and a disallowed start context reject the
         // microphone type; specialUse still works in the former case. A specialUse start
         // never carries microphone eligibility, so micForegroundEligible stays false and
-        // wake word detection is suppressed until the service is next created from a
-        // context (e.g. a foreground activity) allowed to promote to microphone.
+        // wake word detection is suppressed until a later start from a context allowed to
+        // promote to microphone - see promoteToMicrophoneIfPossible.
         val fallback = ForegroundServiceStartPolicy.fallbackType(sdkInt, micGranted)
-        if (fallback != ForegroundServiceStartPolicy.TYPE_NONE &&
-            startForegroundWithType(notification, fallback)
-        ) {
+        if (fallback != ForegroundServiceType.NONE && startForegroundWithType(fallback)) {
+            micForegroundEligible = ForegroundServiceStartPolicy.carriesMicrophoneEligibility(fallback)
             return true
         }
         return false
     }
 
-    private fun startForegroundWithType(notification: Notification, type: Int): Boolean = try {
-        if (type == ForegroundServiceStartPolicy.TYPE_MANIFEST) {
-            startForeground(NOTIFICATION_ID, notification)
-        } else {
-            androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+    /**
+     * Second chance at the `microphone` foreground type for a service that had to settle for
+     * `specialUse`, which happens whenever the first start came from BOOT_COMPLETED (Android 14
+     * bans a microphone FGS started from boot). Android delivers later `startForegroundService`
+     * calls - from the launcher activity or right after the RECORD_AUDIO grant - to
+     * [onStartCommand] without rerunning [onCreate], so without this the boot fallback would
+     * leave wake word detection off until the service is destroyed and recreated.
+     *
+     * Calling `startForeground` again on a running service adds the type when the app is
+     * currently eligible for it, and throws otherwise - which [startForegroundWithType] absorbs,
+     * leaving the existing `specialUse` foreground state untouched so we simply try again on
+     * the next start.
+     */
+    private fun promoteToMicrophoneIfPossible() {
+        if (micForegroundEligible) return
+        val sdkInt = android.os.Build.VERSION.SDK_INT
+        if (!isMicPermissionGranted()) return
+
+        val preferred = ForegroundServiceStartPolicy.preferredType(sdkInt, micGranted = true)
+        if (!ForegroundServiceStartPolicy.carriesMicrophoneEligibility(preferred)) return
+        if (!startForegroundWithType(preferred)) return
+
+        micForegroundEligible = true
+        // Wake word was suppressed while ineligible; start it now unless the user drives the
+        // agent with the floating button instead.
+        if (!showFloatingButton) startWakeWordDetection()
+    }
+
+    private fun isMicPermissionGranted(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun startForegroundWithType(type: ForegroundServiceType): Boolean = try {
+        val notification = createNotification()
+        when (type) {
+            ForegroundServiceType.MANIFEST -> startForeground(NOTIFICATION_ID, notification)
+            else -> androidx.core.app.ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification, platformTypeOf(type)
+            )
         }
         true
     } catch (e: Exception) {
@@ -203,6 +237,26 @@ class OpenDroidService : Service() {
         // SecurityException, so both have to be absorbed here.
         android.util.Log.w(TAG, "startForeground refused for type $type", e)
         false
+    }
+
+    /**
+     * Resolves a [ForegroundServiceType] to the platform constant, behind a real SDK check so
+     * a type is never requested on a platform that does not know it.
+     */
+    private fun platformTypeOf(type: ForegroundServiceType): Int = when (type) {
+        ForegroundServiceType.MICROPHONE ->
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                0
+            }
+        ForegroundServiceType.SPECIAL_USE ->
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                0
+            }
+        ForegroundServiceType.MANIFEST, ForegroundServiceType.NONE -> 0
     }
 
     private fun startWakeWordDetection() {
@@ -272,6 +326,10 @@ class OpenDroidService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // Every start is a chance to escape a boot-time specialUse fallback: this one may be
+        // coming from the foreground app or a fresh RECORD_AUDIO grant, both of which make the
+        // microphone type reachable again.
+        promoteToMicrophoneIfPossible()
         if (intent?.action == ACTION_TRIGGER_RECORD) {
             startListeningForQuery()
         }
