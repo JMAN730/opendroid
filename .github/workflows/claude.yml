@@ -57,15 +57,23 @@ jobs:
         with:
           cache-read-only: true
 
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB (set below) strips the action's GH_TOKEN
+      # from every Bash subprocess, and the runner carries no stored gh login, so
+      # gh would fail with "gh auth login". Hand the wrapper a credential through
+      # a 0600 file instead: it is this job's own GITHUB_TOKEN, so it is capped by
+      # the permissions block above and expires with the job.
+      - name: Stage a gh credential outside the scrubbed environment
+        env:
+          GH_CREDENTIAL: ${{ github.token }}
+        run: |
+          install -m 600 /dev/null "$HOME/.claude-gh-token"
+          printf '%s' "$GH_CREDENTIAL" > "$HOME/.claude-gh-token"
+          chmod +x .github/scripts/gh-repo.sh
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
         env:
-          # AGENTS.md scopes the issue tracker to this fork and forbids touching
-          # the yashab-cyber/opendroid upstream. gh resolves a fork's default
-          # repo to its parent, so pin it explicitly rather than relying on
-          # every gh call passing --repo.
-          GH_REPO: ${{ github.repository }}
           # Off unless set: action.yml only defaults it on for
           # allowed_non_write_users. Scrubs Anthropic/cloud/Actions secrets from
           # subprocess environments, so a Gradle task can't read the OAuth token
@@ -89,10 +97,18 @@ jobs:
           # replacing. Anything not listed falls through to "ask", which a
           # headless run denies, so new commands go here.
           #
-          # gh is authenticated: the action exports GH_TOKEN for its own use.
-          # Subcommands are listed individually rather than as Bash(gh:*) to
-          # keep `gh api` (arbitrary writes), `gh pr merge`, `gh workflow run`,
-          # and `gh secret` out of reach of anything a mention injects.
+          # Tracker access goes through .github/scripts/gh-repo.sh, never bare
+          # gh. AGENTS.md scopes the tracker to this fork and forbids touching
+          # the yashab-cyber/opendroid upstream, and GH_REPO cannot enforce that
+          # - it is only a default, and every gh issue/pr subcommand accepts
+          # -R/--repo. The wrapper rejects those flags, appends its own --repo,
+          # and supplies the credential the subprocess scrub removes.
+          #
+          # Subcommands are listed individually rather than as a single
+          # wildcard, so `gh api` (arbitrary writes), `gh pr merge`,
+          # `gh workflow run`, and `gh secret` stay out of reach of anything a
+          # mention injects - the wrapper enforces the same list itself.
           claude_args: |
             --max-turns 30
-            --allowedTools "Bash(./gradlew:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh issue close:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
+            --append-system-prompt "AGENTS.md tells you to use the gh CLI for issue and PR work. In this workflow bare gh is not allowed: run .github/scripts/gh-repo.sh instead, with the same arguments you would pass to gh (for example: .github/scripts/gh-repo.sh issue list --state open). The wrapper targets JMAN730/opendroid and rejects -R/--repo, so never pass a repository."
+            --allowedTools "Bash(./gradlew:*),Bash(.github/scripts/gh-repo.sh issue view:*),Bash(.github/scripts/gh-repo.sh issue list:*),Bash(.github/scripts/gh-repo.sh issue create:*),Bash(.github/scripts/gh-repo.sh issue comment:*),Bash(.github/scripts/gh-repo.sh issue edit:*),Bash(.github/scripts/gh-repo.sh issue close:*),Bash(.github/scripts/gh-repo.sh pr view:*),Bash(.github/scripts/gh-repo.sh pr list:*),Bash(.github/scripts/gh-repo.sh pr diff:*),Bash(.github/scripts/gh-repo.sh pr comment:*)"
