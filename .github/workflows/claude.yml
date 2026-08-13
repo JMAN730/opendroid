@@ -51,14 +51,14 @@ jobs:
 
       # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB (set below) strips the action's GH_TOKEN
       # from every Bash subprocess, and the runner carries no stored gh login, so
-      # gh would fail with "gh auth login". Give the wrapper a credential the
-      # runner user cannot read instead: root owns both the file and the copy of
-      # the wrapper that runs, so Claude's file tools can neither read the token
-      # nor rewrite the script that enforces the repository pin, and only that
-      # script's sudo call can retrieve it. The token is this job's own
-      # GITHUB_TOKEN, capped by the permissions block above and expiring with the
-      # job.
-      - name: Install the gh wrapper and its credential as root
+      # gh would fail with "gh auth login". Give gh its own account instead. The
+      # runner user - which is what Claude's tools and anything a pull request
+      # contributes run as - can neither read that account's config nor rewrite
+      # the wrapper, and the wrapper hands gh an environment with no credential
+      # in it at all, so no output format gh supports can print one. The token is
+      # this job's own GITHUB_TOKEN, capped by the permissions block above and
+      # expiring with the job.
+      - name: Install the gh wrapper and give gh its own account
         env:
           GH_CREDENTIAL: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -71,8 +71,31 @@ jobs:
           git fetch --no-tags --depth 1 origin "$DEFAULT_BRANCH"
           git show "FETCH_HEAD:.github/scripts/gh-repo.sh" > "$RUNNER_TEMP/gh-repo"
           sudo install -m 755 -o root -g root "$RUNNER_TEMP/gh-repo" /usr/local/bin/gh-repo
-          sudo install -m 600 -o root -g root /dev/null /etc/gh-repo.token
-          printf '%s' "$GH_CREDENTIAL" | sudo tee /etc/gh-repo.token > /dev/null
+
+          sudo groupadd --system ghrepo
+          sudo useradd --system --gid ghrepo --home-dir /var/lib/ghrepo \
+            --create-home --shell /usr/sbin/nologin ghrepo
+          sudo install -d -m 700 -o ghrepo -g ghrepo /var/lib/ghrepo/.config/gh
+
+          # config.yml pins the schema version. Without it gh treats the config
+          # as pre-multi-account and runs a migration that resolves a username
+          # over the API - which GITHUB_TOKEN cannot do - and every call fails
+          # before it starts.
+          printf 'version: "1"\n' |
+            sudo tee /var/lib/ghrepo/.config/gh/config.yml > /dev/null
+          printf 'github.com:\n    users:\n        x-access-token:\n            oauth_token: %s\n    user: x-access-token\n    git_protocol: https\n    oauth_token: %s\n' \
+            "$GH_CREDENTIAL" "$GH_CREDENTIAL" |
+            sudo tee /var/lib/ghrepo/.config/gh/hosts.yml > /dev/null
+          sudo chown ghrepo:ghrepo /var/lib/ghrepo/.config/gh/config.yml /var/lib/ghrepo/.config/gh/hosts.yml
+          sudo chmod 600 /var/lib/ghrepo/.config/gh/config.yml /var/lib/ghrepo/.config/gh/hosts.yml
+
+          # Fail here, loudly, rather than on every mention: this is where a gh
+          # release that changes the config layout would show up. Prints
+          # nothing - it only has to exit 0.
+          sudo -n -u ghrepo -- env -i \
+            HOME=/var/lib/ghrepo PATH=/usr/local/bin:/usr/bin:/bin \
+            GH_CONFIG_DIR=/var/lib/ghrepo/.config/gh \
+            gh auth token --hostname github.com > /dev/null
 
       - name: Run Claude Code
         id: claude
@@ -113,7 +136,8 @@ jobs:
           # enforce that: GH_REPO is only a default, every gh issue/pr
           # subcommand accepts -R/--repo, and several accept a positional URL
           # that outranks --repo. The wrapper rejects all of those, appends its
-          # own --repo, and supplies the credential the subprocess scrub removes.
+          # own --repo, and runs gh under the account that holds the credential
+          # the subprocess scrub removes.
           #
           # Subcommands are listed individually rather than as a single
           # wildcard, so `gh api` (arbitrary writes), `gh pr merge`,
@@ -121,5 +145,5 @@ jobs:
           # mention injects - the wrapper enforces the same list itself.
           claude_args: |
             --max-turns 30
-            --append-system-prompt "AGENTS.md tells you to use the gh CLI for issue and PR work. In this workflow bare gh is not allowed: run gh-repo instead, with the same arguments you would pass to gh (for example: gh-repo issue list --state open). It targets JMAN730/opendroid, so never pass a repository, a URL from another repository, or -R/--repo. Bodies must be given inline with --body; --body-file is refused. This job cannot build the project - gradlew is not available, and android-ci.yml covers builds."
+            --append-system-prompt "AGENTS.md tells you to use the gh CLI for issue and PR work. In this workflow bare gh is not allowed: run gh-repo instead, with the same arguments you would pass to gh (for example: gh-repo issue list --state open). It targets JMAN730/opendroid, so never pass a repository, a URL from another repository, or -R/--repo. Bodies must be given inline with --body; file-reading, formatting, editor, and web flags are refused. Use --json on its own and read the JSON. This job cannot build the project - gradlew is not available, and android-ci.yml covers builds."
             --allowedTools "Bash(gh-repo issue view:*),Bash(gh-repo issue list:*),Bash(gh-repo issue create:*),Bash(gh-repo issue comment:*),Bash(gh-repo issue edit:*),Bash(gh-repo issue close:*),Bash(gh-repo pr view:*),Bash(gh-repo pr list:*),Bash(gh-repo pr diff:*),Bash(gh-repo pr comment:*)"

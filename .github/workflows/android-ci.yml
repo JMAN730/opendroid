@@ -32,6 +32,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Test the restricted gh wrapper
+        run: .github/scripts/test-gh-repo.sh
+
       # Must match JavaVersion.VERSION_21 / jvmTarget '21' in app/build.gradle.
       - name: Set up JDK 21
         uses: actions/setup-java@v4

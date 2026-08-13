@@ -13,15 +13,19 @@
 #     that outranks --repo. AGENTS.md scopes the tracker to this fork and
 #     forbids touching the yashab-cyber/opendroid upstream, so both routes are
 #     rejected here and the repository is appended by the wrapper itself.
-#  2. Authentication. CLAUDE_CODE_SUBPROCESS_ENV_SCRUB strips the action's
-#     GH_TOKEN from Bash subprocesses and the runner has no stored gh login, so
-#     gh would fail with the `gh auth login` error. The credential lives in a
-#     root-owned file that the runner user cannot read; this wrapper fetches it
-#     with sudo for the single command it runs. Nothing on the allowlist can
-#     invoke sudo, or read the file, on its own.
+#  2. Authentication the caller cannot reach. CLAUDE_CODE_SUBPROCESS_ENV_SCRUB
+#     strips the action's GH_TOKEN from Bash subprocesses and the runner has no
+#     stored gh login, so gh would fail with the `gh auth login` error. Rather
+#     than export a token - which put the credential in the environment gh's own
+#     --jq expression could read back with jq's `env` builtin - gh runs as a
+#     separate account whose config holds the credential, reached through sudo.
+#     The caller is the runner user: it cannot read that config, cannot sudo
+#     (nothing on the allowlist runs a shell), and the environment gh does get
+#     is built from scratch by `env -i` below, so there is nothing in it to
+#     print.
 #  3. No file-reading flags. --body-file and friends would turn an allowed
-#     comment into a way to publish any file the runner can read - the
-#     credential git stores in .git/config, for instance.
+#     comment into a way to publish any file the account running gh can read -
+#     its own credential, or the one git stores in .git/config.
 #
 # The subcommand allowlist below is defence in depth: the workflow allowlists
 # each `gh-repo <subcommand>` prefix individually, and neither list admits
@@ -33,9 +37,18 @@ set -euo pipefail
 # that can influence the environment retarget the CLI.
 readonly REPO='JMAN730/opendroid'
 
-# Root-owned, mode 600. The path is fixed rather than read from the environment
-# because the subprocess scrub removes the Actions variables that would name it.
-readonly TOKEN_FILE='/etc/gh-repo.token'
+# The account that holds the credential, and the environment gh is given. All
+# fixed rather than read from the environment: the caller must not be able to
+# redirect gh at a config directory of its own, and the subprocess scrub removes
+# the Actions variables anyway. Every directory on that PATH is root-owned.
+readonly GH_USER='ghrepo'
+readonly GH_HOME='/var/lib/ghrepo'
+readonly GH_CONFIG_DIR='/var/lib/ghrepo/.config/gh'
+readonly GH_PATH='/usr/local/bin:/usr/bin:/bin'
+
+# Absolute: the caller cannot put its own sudo earlier on PATH, but there is no
+# reason to let PATH decide at all.
+readonly SUDO='/usr/bin/sudo'
 
 readonly ALLOWED_SUBCOMMANDS='
 issue view
@@ -72,16 +85,16 @@ for arg in "$@"; do
     --repo | --repo=*)
       die "the repository is fixed to $REPO; remove '$arg'"
       ;;
-    --body-file | --body-file=* | --editor | --editor=* | --web | --web=*)
+    --body-file | --body-file=* | --editor | --editor=* | --template | --template=* | --web | --web=*)
       die "flag not allowed: $arg"
       ;;
-    # --jq evaluates its expression with jq's env/$ENV builtins in scope, and gh
-    # inherits GH_TOKEN from the export below, so `--json number --jq
-    # env.GH_TOKEN` prints the credential straight back to the caller - defeating
-    # the root-owned file, which only stops the token being *read from disk*.
-    # --json on its own is fine; parse the JSON rather than filtering it here.
-    # --template is left alone: Go templates cannot reach the environment, and -t
-    # is --title on `issue create`.
+    # --jq evaluates its expression with jq's env/$ENV builtins in scope, which
+    # read the environment of the gh process. gh no longer has a credential
+    # there, so this is defence in depth rather than the fix: it holds even if
+    # authentication ever moves back into the environment. --json on its own is
+    # fine; parse the JSON rather than filtering it here. --template is blocked
+    # above because on `issue create` it loads a template file; -T is blocked
+    # below for the same reason. -t remains allowed because it is --title there.
     --jq | --jq=*)
       die "flag not allowed: $arg (use --json and parse the output)"
       ;;
@@ -97,7 +110,7 @@ for arg in "$@"; do
       case "$letters" in
         *R*) die "the repository is fixed to $REPO; remove '$arg'" ;;
         *q*) die "flag not allowed: $arg (-q is --jq; use --json and parse the output)" ;;
-        *[Few]*) die "flag not allowed: $arg" ;;
+        *[FTew]*) die "flag not allowed: $arg" ;;
       esac
       ;;
   esac
@@ -115,7 +128,6 @@ for arg in "$@"; do
   # Matched against a lowercased copy because hostnames are case-insensitive
   # (https://GITHUB.COM/... reaches the same host) and so are GitHub owner and
   # repository names.
-  #
   # One argument can carry several URLs: gh's relationship flags take
   # comma-separated lists (--blocked-by 200,201 - and each element may be a URL),
   # and a body can quote more than one link. Stopping at the first github.com
@@ -142,12 +154,19 @@ for arg in "$@"; do
   done
 done
 
-GH_TOKEN="$(sudo -n /bin/cat "$TOKEN_FILE" 2>/dev/null)" ||
-  die "could not read the credential at $TOKEN_FILE"
-[ -n "$GH_TOKEN" ] || die "the credential at $TOKEN_FILE is empty"
-export GH_TOKEN
-export GH_HOST=github.com
-
+# gh runs as the account that owns the credential, under an environment built
+# from nothing by `env -i`: no token is passed, so there is nothing for a
+# formatter to print, and no caller-supplied variable survives to redirect gh's
+# config. sudo resolves `env` through the root-owned secure_path from
+# /etc/sudoers, and `env` then resolves gh through GH_PATH, so neither binary is
+# chosen by the caller.
+#
 # --repo goes right after the subcommand rather than at the end so a trailing
 # '--' or positional argument cannot swallow it.
-exec gh "$1" "$2" --repo "$REPO" "${@:3}"
+exec "$SUDO" -n -u "$GH_USER" -- env -i \
+  "HOME=$GH_HOME" \
+  "PATH=$GH_PATH" \
+  "GH_CONFIG_DIR=$GH_CONFIG_DIR" \
+  GH_NO_UPDATE_NOTIFIER=1 \
+  GH_PROMPT_DISABLED=1 \
+  gh "$1" "$2" --repo "$REPO" "${@:3}"
