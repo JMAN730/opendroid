@@ -4,9 +4,59 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.4 — Latest Release (August 10, 2026)
+## v1.0.5 — Latest Release (unreleased)
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
+
+### Highlights since v1.0.4
+
+#### 🚑 Foreground Service Startup (Android 14+)
+*   **Reboot Crash-Loop Fix**: `OpenDroidService` no longer crash-loops after a reboot on Android 14+. Boot-time starts select a foreground service type the OS will actually accept instead of throwing `ForegroundServiceStartNotAllowedException` and being restarted indefinitely.
+*   **specialUse Fallback**: When the `microphone` FGS type cannot be granted from the background, the service starts under `specialUse` and re-promotes to `microphone` once that becomes legal.
+*   **Wake-Word Suppression**: Wake-word capture is suppressed while running under the `specialUse` fallback, so the service never records audio without a mic-typed foreground service.
+*   **Boot Auto-Start**: Boot auto-start is permitted on Android 14+ once `RECORD_AUDIO` has been granted.
+*   **Detector Backoff**: `WakeWordDetector` backs off between restarts rather than tight-looping on recognizer failures.
+
+#### 🧠 On-Device Context Window
+*   **32K Context Window**: Users can raise the on-device model context window up to 32K from Settings.
+*   **Fallback Engine Reuse**: A prompt-budget rejection now reuses the cached fallback engine instead of retrying at the context window that just failed.
+*   **Persistence Rollback**: The selected context window rolls back when persistence is not in a `Ready` state, so the UI never reports a size that was not stored.
+*   **Cancellation Handling**: Budget rejections and cancellation are exempt from streaming-engine retirement, and cancellation is rethrown from `generate()`.
+
+#### 🔐 Security
+*   **MCP Action Hardening**: Hardened MCP action execution against unauthorized action dispatch.
+*   **Security Architecture Docs**: Documented the model in `docs/security_architecture.md`.
+
+#### 🧹 Cleanup
+*   **Provider & UI Refactor**: Reduced duplication across LLM providers, UI APIs, and shared helpers.
+*   **QA Test Plan**: Added `docs/qa/v1.0.5-test-plan.md`.
+*   **Version Bump**: Updated app version to `1.0.5` (`versionCode 6`).
+
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+Recorded when the release is cut and the signed artifacts are built.
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 6
+*   **Version Name**: 1.0.5
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.5`.
+
+---
+
+## v1.0.4 (August 10, 2026)
 
 ### Highlights since v1.0.3 (PR #46 by @JMAN730)
 
@@ -57,8 +107,6 @@ Current release. Sideload the APK for direct install, or use the AAB for Play St
 ---
 
 ## v1.0.3 (August 5, 2026)
-
-Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
 ### Highlights since v1.0.2 (PR #30 by @JMAN730)
 
