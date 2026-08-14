@@ -145,7 +145,9 @@ const stars = ghStats.querySelector('[data-stat="stars"]');
 const forks = ghStats.querySelector('[data-stat="forks"]');
 if (stars) stars.textContent = data.stargazers_count.toLocaleString();
 if (forks) forks.textContent = data.forks_count.toLocaleString();
-ghStats.setAttribute('data-loaded', 'true');
 })
-.catch(() => { /* leave hidden, no broken UI on failure */ });
+.catch(() => { /* leave fallback numbers */ })
+.finally(() => {
+ghStats.setAttribute('data-loaded', 'true');
+});
 }
