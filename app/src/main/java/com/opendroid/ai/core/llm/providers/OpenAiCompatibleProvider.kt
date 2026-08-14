@@ -13,6 +13,7 @@ import com.opendroid.ai.core.llm.toOpenAIMessages
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -72,6 +73,13 @@ abstract class OpenAiCompatibleProvider(
      */
     protected open val defaultModel: String get() = ProviderCatalog.defaultModel(name)
 
+    /**
+     * POSTs one chat completion and returns the parsed reply.
+     *
+     * Error bodies never reach the caller verbatim — [toSafeProviderException] classifies
+     * them and strips the credential and prompt first, since providers routinely echo both
+     * back in failure messages.
+     */
     override suspend fun complete(request: LLMRequest): LLMResponse {
         val config = settingsRepository.llmConfig.first()
         val endpoint = resolveEndpoint(config, request)
@@ -100,35 +108,56 @@ abstract class OpenAiCompatibleProvider(
             .build()
 
         return withContext(Dispatchers.IO) {
-            client.newCall(httpRequest).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw response.toSafeProviderException(
-                        provider = errorProvider,
-                        request = request,
-                        knownSecrets = listOfNotNull(endpoint.apiKey)
+            // execute() blocks in a way coroutine cancellation cannot interrupt, so a
+            // cancelled request would otherwise hold its thread and socket until the
+            // server replied. Bridge cancellation to the call itself, and release the
+            // handle on the normal path so a completed request stops pinning the Job.
+            val call = client.newCall(httpRequest)
+            val cancellationHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
+                if (cause != null) call.cancel()
+            }
+            try {
+                call.execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw response.toSafeProviderException(
+                            provider = errorProvider,
+                            request = request,
+                            knownSecrets = listOfNotNull(endpoint.apiKey)
+                        )
+                    }
+                    val payload = response.body.string()
+                    if (payload.isBlank()) throw IOException("Empty response body from $name")
+
+                    val json = gson.fromJson(payload, JsonObject::class.java)
+                    val message = json.getAsJsonArray("choices")[0]
+                        .asJsonObject
+                        .getAsJsonObject("message")
+
+                    LLMResponse(
+                        content = message.get("content").asString,
+                        tokensUsed = json.getAsJsonObject("usage")?.get("total_tokens")?.asInt ?: 0,
+                        model = selectedModel,
+                        provider = name,
+                        latencyMs = System.currentTimeMillis() - startTime
                     )
                 }
-                val payload = response.body.string()
-                if (payload.isBlank()) throw IOException("Empty response body from $name")
-
-                val json = gson.fromJson(payload, JsonObject::class.java)
-                val message = json.getAsJsonArray("choices")[0]
-                    .asJsonObject
-                    .getAsJsonObject("message")
-
-                LLMResponse(
-                    content = message.get("content").asString,
-                    tokensUsed = json.getAsJsonObject("usage")?.get("total_tokens")?.asInt ?: 0,
-                    model = selectedModel,
-                    provider = name,
-                    latencyMs = System.currentTimeMillis() - startTime
-                )
+            } finally {
+                cancellationHandle?.dispose()
             }
         }
     }
 
+    /**
+     * Replays a completed response word by word. Not real streaming — these backends are
+     * called through a blocking endpoint, so nothing is emitted until the whole reply
+     * has arrived. See [simulatedWordStream].
+     */
     override fun streamComplete(request: LLMRequest): Flow<String> = simulatedWordStream(request)
 
+    /**
+     * True once a key is stored for this provider. Subclasses reachable without a
+     * credential (self-hosted backends) override this.
+     */
     override suspend fun isAvailable(): Boolean =
         !settingsRepository.llmConfig.first().apiKeys[name].isNullOrBlank()
 

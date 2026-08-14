@@ -244,7 +244,8 @@ class LiteRTLMProvider @Inject constructor(
         tools: List<ToolDefinition>,
         modelId: String?
     ): Flow<StreamChunk> = flow {
-        val resolvedModelId = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(name)
+        val resolvedModelId = modelId?.takeIf { it.isNotBlank() }
+            ?: settingsRepository.llmConfig.first().selectedModelFor(name)
         try {
             val spec = resolveRequestSpec(resolvedModelId)
             checkSdkCompatibility(spec)

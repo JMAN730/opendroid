@@ -60,10 +60,20 @@ class ContactResolver @Inject constructor(
     companion object {
         private const val TAG = "ContactResolver"
 
-        /** True when [input] looks like a dialable number rather than a contact name. */
+        /**
+         * True when [input] looks like a dialable number rather than a contact name.
+         *
+         * Only formatting characters are stripped — spaces, hyphens, dots, slashes and
+         * bracketed area codes. Anything else disqualifies the input, so a name that
+         * happens to contain digits ("Rob 2nd phone") is treated as a name, not a number.
+         * The remainder must be 7+ digits with at most one leading "+", which rejects
+         * shapes like "12+345+6" that a plain character filter would let through.
+         */
         fun isPhoneNumber(input: String): Boolean {
-            val digitsOnly = input.trim().replace(Regex("[^0-9+]"), "")
-            return digitsOnly.length >= 7 && digitsOnly.all { it.isDigit() || it == '+' }
+            val stripped = input.trim().replace(Regex("[\\s\\-.()/]"), "")
+            if (stripped.isEmpty()) return false
+            val digits = stripped.removePrefix("+")
+            return digits.length >= 7 && digits.all { it.isDigit() }
         }
 
         /**

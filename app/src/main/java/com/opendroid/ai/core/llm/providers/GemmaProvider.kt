@@ -127,7 +127,8 @@ class GemmaProvider @Inject constructor(
         modelId: String?
     ): Flow<StreamChunk> = flow {
         try {
-            val selectedModel = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(name)
+            val selectedModel = modelId?.takeIf { it.isNotBlank() }
+                ?: settingsRepository.llmConfig.first().selectedModelFor(name)
             val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             

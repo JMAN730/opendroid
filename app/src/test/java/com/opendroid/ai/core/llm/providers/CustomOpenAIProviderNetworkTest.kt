@@ -137,6 +137,25 @@ class CustomOpenAIProviderNetworkTest {
         assertFalse(failure.message.orEmpty().contains(filler))
     }
 
+    @Test
+    fun `an unconfigured endpoint fails instead of falling back to api openai com`() {
+        // No providerConfig endpoint and no stored custom endpoint. Defaulting here would
+        // ship the prompt and key to OpenAI, a host the user never named.
+        val request = LLMRequest(
+            systemPrompt = "you are a test",
+            messages = listOf(ChatMessage("1", prompt, ChatMessage.Sender.USER)),
+            model = "gpt-4o-mini",
+            providerConfig = ProviderRequestConfig(apiKey = apiKey, endpoint = "")
+        )
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            runBlocking { provider.complete(request) }
+        }
+
+        // resolveEndpoint runs before the request is built, so nothing was sent.
+        assertTrue(failure.message.orEmpty().contains("no endpoint configured"))
+    }
+
     private fun newRequest() = LLMRequest(
         systemPrompt = "you are a test",
         messages = listOf(ChatMessage("1", prompt, ChatMessage.Sender.USER)),

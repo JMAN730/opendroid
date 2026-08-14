@@ -149,6 +149,13 @@ class McpServer @Inject constructor(
                 "tools/call" -> response.put("result", callTool(request.optJSONObject("params") ?: JSONObject()))
                 else -> response.put("error", error(-32601, "Method not found"))
             }
+        } catch (failure: IllegalArgumentException) {
+            // Caller-supplied params the handlers reject via require(...): an unknown
+            // session id, an over-long command, a missing action. JSON-RPC calls that
+            // "Invalid params" (-32602), not a server fault, and the message is the
+            // handler's own text rather than anything internal.
+            Log.w(TAG, "MCP rejected invalid params", failure)
+            response.put("error", error(-32602, failure.message ?: "Invalid params"))
         } catch (failure: Exception) {
             Log.e(TAG, "MCP dispatch failed", failure)
             response.put("error", error(-32603, "Internal error"))

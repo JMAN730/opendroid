@@ -440,11 +440,18 @@ class ModelRepository @Inject constructor(
     /**
      * Emits true while a model's download work is scheduled but held back by its
      * network constraint. Without this the UI is indistinguishable from a dead button.
+     *
+     * ENQUEUED on its own is not that signal — it also covers backoff delays, retries,
+     * and work that is free to run on the current network — so the metered state of the
+     * active network is required as well. Re-evaluation is driven by work-info updates;
+     * a network change alone does not re-emit, so the value can lag until the work state
+     * next changes.
      */
     fun isWaitingForUnmeteredFlow(modelId: String): Flow<Boolean> =
         workManager.getWorkInfosForUniqueWorkFlow("download_$modelId")
             .map { infos ->
-                infos.any { it.state == androidx.work.WorkInfo.State.ENQUEUED }
+                infos.any { it.state == androidx.work.WorkInfo.State.ENQUEUED } &&
+                    isActiveNetworkMetered()
             }
             .distinctUntilChanged()
 

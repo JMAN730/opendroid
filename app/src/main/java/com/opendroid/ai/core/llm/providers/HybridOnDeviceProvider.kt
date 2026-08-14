@@ -149,7 +149,8 @@ class HybridOnDeviceProvider @Inject constructor(
         tools: List<ToolDefinition>,
         modelId: String?
     ): Flow<StreamChunk> = flow {
-        val selectedModel = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
+        val selectedModel = modelId?.takeIf { it.isNotBlank() }
+            ?: settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
         val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)

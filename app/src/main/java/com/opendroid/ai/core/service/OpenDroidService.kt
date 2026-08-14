@@ -348,6 +348,10 @@ class OpenDroidService : Service() {
         // every engine below is guaranteed constructed.
         if (!enginesInitialized) return
         mcpServer.stop()
+        // Same singleton hazard as the startup-failure rollback: agentLoop outlives the
+        // service, so drop the callback before the engine backing it goes away.
+        agentLoop.onSpeakCallback = null
+        textToSpeechEngine.onCompletionListener = null
         wakeWordDetector.destroy()
         speechRecognitionEngine.destroy()
         textToSpeechEngine.destroy()
@@ -359,9 +363,20 @@ class OpenDroidService : Service() {
      * some engines were built and before others.
      */
     private fun destroyInitializedEngines() {
+        // agentLoop is a singleton that outlives this service, so its callback must be
+        // cleared before the engine it captures is destroyed. Leaving it set would route
+        // every later speak() into a TextToSpeechEngine belonging to a failed startup.
+        agentLoop.onSpeakCallback = null
+        if (::textToSpeechEngine.isInitialized) textToSpeechEngine.onCompletionListener = null
+
         if (::wakeWordDetector.isInitialized) wakeWordDetector.destroy()
         if (::speechRecognitionEngine.isInitialized) speechRecognitionEngine.destroy()
         if (::textToSpeechEngine.isInitialized) textToSpeechEngine.destroy()
+
+        // mcpServer.start() is the last step of startup, but it can bind its listener
+        // and then fail; stop() is idempotent, so roll it back unconditionally.
+        runCatching { mcpServer.stop() }
+            .onFailure { android.util.Log.w(TAG, "MCP server rollback failed", it) }
     }
 
     private fun createNotificationChannel() {

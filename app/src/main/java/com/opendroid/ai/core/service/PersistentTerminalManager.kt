@@ -25,6 +25,10 @@ class PersistentTerminalManager @Inject constructor(
     private val creationLock = Mutex()
 
     suspend fun create(): TerminalSessionInfo = creationLock.withLock {
+        // A shell that died on its own is still holding its slot until something prunes
+        // it, so reap before measuring — otherwise MAX_SESSIONS dead entries lock out
+        // every subsequent create() for the life of the process.
+        pruneDeadSessions()
         require(sessions.size < MAX_SESSIONS) { "Terminal session limit reached" }
         withContext(Dispatchers.IO) {
             val (backend, process) = commandExecutor.startShell()
@@ -62,6 +66,17 @@ class PersistentTerminalManager @Inject constructor(
 
     fun closeAll() {
         sessions.keys().toList().forEach(::close)
+    }
+
+    /**
+     * Drops sessions whose shell process has exited, releasing their slots. Uses the
+     * same removal path as [close] so the backend map never outlives its process entry.
+     */
+    private fun pruneDeadSessions() {
+        sessions.entries
+            .filterNot { it.value.isAlive }
+            .map { it.key }
+            .forEach(::close)
     }
 
     private fun requireSession(id: String): Process = sessions[id]

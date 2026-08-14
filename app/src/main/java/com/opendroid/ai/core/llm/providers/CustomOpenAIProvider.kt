@@ -24,12 +24,15 @@ class CustomOpenAIProvider @Inject constructor(
     override val defaultModel: String = "gpt-4o"
 
     override suspend fun resolveEndpoint(config: LLMConfig, request: LLMRequest): Endpoint {
-        val baseUrl = request.providerConfig?.endpoint?.takeIf { it.isNotBlank() }
-            ?.let { UrlUtils.formatBaseUrl(it, "https://api.openai.com/v1") }
-            ?: UrlUtils.formatBaseUrl(
-                config.customEndpoints[name] ?: "",
-                "https://api.openai.com/v1"
-            )
+        // No silent fallback to api.openai.com. This provider exists to reach a
+        // user-supplied backend, so an unconfigured endpoint must fail loudly rather
+        // than ship the prompt (and any key) to a host the user never named.
+        val configured = request.providerConfig?.endpoint?.takeIf { it.isNotBlank() }
+            ?: config.customEndpoints[name]?.takeIf { it.isNotBlank() }
+        val baseUrl = UrlUtils.formatBaseUrl(configured)
+        check(baseUrl.isNotEmpty()) {
+            "$name has no endpoint configured. Set one in Settings before using this provider."
+        }
         // Authorization is only attached when the key is non-blank (base class).
         // Local/self-hosted OpenAI-compatible servers often need no key.
         return Endpoint(
