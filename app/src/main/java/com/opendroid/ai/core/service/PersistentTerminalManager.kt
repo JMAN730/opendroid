@@ -1,6 +1,8 @@
 package com.opendroid.ai.core.service
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.util.UUID
@@ -20,13 +22,17 @@ class PersistentTerminalManager @Inject constructor(
 
     private val sessions = ConcurrentHashMap<String, Process>()
     private val backends = ConcurrentHashMap<String, CommandBackend>()
+    private val creationLock = Mutex()
 
-    suspend fun create(): TerminalSessionInfo = withContext(Dispatchers.IO) {
-        val (backend, process) = commandExecutor.startShell()
-        val id = UUID.randomUUID().toString()
-        sessions[id] = process
-        backends[id] = backend
-        TerminalSessionInfo(id, backend)
+    suspend fun create(): TerminalSessionInfo = creationLock.withLock {
+        require(sessions.size < MAX_SESSIONS) { "Terminal session limit reached" }
+        withContext(Dispatchers.IO) {
+            val (backend, process) = commandExecutor.startShell()
+            val id = UUID.randomUUID().toString()
+            sessions[id] = process
+            backends[id] = backend
+            TerminalSessionInfo(id, backend)
+        }
     }
 
     suspend fun write(id: String, command: String) = withContext(Dispatchers.IO) {
@@ -90,6 +96,7 @@ class PersistentTerminalManager @Inject constructor(
     private companion object {
         const val MAX_COMMAND_LENGTH = 4096
         const val MAX_OUTPUT_BYTES = 64 * 1024
+        const val MAX_SESSIONS = 4
         const val READ_TIMEOUT_MS = 1000L
         const val READ_POLL_INTERVAL_MS = 10L
         const val NANOS_PER_MILLISECOND = 1_000_000L

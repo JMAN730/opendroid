@@ -283,7 +283,9 @@ class SystemActions @Inject constructor(
                         }, null)
                         callbackRegistered = true
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.w("FlashlightAction", "Torch callback registration failed", e)
+                }
             }
 
             return try {
@@ -1005,7 +1007,9 @@ class SystemActions @Inject constructor(
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(context, question, android.widget.Toast.LENGTH_LONG).show()
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.w("AskUserAction", "Toast failed", e)
+            }
             val response = agentLoop.get().awaitUserResponse().trim()
             return ActionResult(true, response, null)
         }
@@ -1035,9 +1039,9 @@ class SystemActions @Inject constructor(
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
                 }
-            } catch (_: Exception) {}
-
-            // Return success IMMEDIATELY — never wait for user
+            } catch (e: Exception) {
+                Log.w("DisplayInfo", "Toast failed", e)
+            }
             return ActionResult.Success(
                 dataMap = mapOf(
                     "message" to message,

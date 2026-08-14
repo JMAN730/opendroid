@@ -276,7 +276,9 @@ class OpenDroidNotificationListener : NotificationListenerService() {
                 }
                 emailRegex.find(person)?.value?.let { return it }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.d(TAG, "EXTRA_PEOPLE parse failed", e)
+        }
 
         return null
     }

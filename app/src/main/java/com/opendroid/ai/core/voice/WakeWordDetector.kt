@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import java.util.Locale
 
 class WakeWordDetector(private val context: Context) {
@@ -16,6 +17,14 @@ class WakeWordDetector(private val context: Context) {
     private var intent: Intent? = null
     private var onWakeWordDetectedCallback: (() -> Unit)? = null
     private var isListening = false
+
+    /**
+     * Consecutive failures that are not part of normal listening (see [isTransientListeningError]).
+     * They are what a recognizer that simply cannot run produces - a missing microphone
+     * foreground-service eligibility, for instance - and left at a flat 1s retry they would spin
+     * the recognizer once a second forever, so the restart delay backs off with this count.
+     */
+    private var consecutiveFailures = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private val restartRunnable = Runnable {
@@ -38,6 +47,7 @@ class WakeWordDetector(private val context: Context) {
         if (isListening) return
         this.onWakeWordDetectedCallback = onWakeWordDetected
         isListening = true
+        consecutiveFailures = 0
         startSpeechListening()
     }
 
@@ -51,10 +61,12 @@ class WakeWordDetector(private val context: Context) {
             try {
                 speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
             } catch (e: Exception) {
+                consecutiveFailures++
                 scheduleRestart()
                 return
             }
         } else {
+            consecutiveFailures++
             scheduleRestart()
             return
         }
@@ -68,6 +80,11 @@ class WakeWordDetector(private val context: Context) {
             
             override fun onError(error: Int) {
                 // Restart listening loop on error or timeout after a delay
+                if (isTransientListeningError(error)) {
+                    consecutiveFailures = 0
+                } else {
+                    consecutiveFailures++
+                }
                 scheduleRestart()
             }
 
@@ -81,6 +98,7 @@ class WakeWordDetector(private val context: Context) {
                         }
                     }
                 }
+                consecutiveFailures = 0
                 scheduleRestart()
             }
 
@@ -102,6 +120,7 @@ class WakeWordDetector(private val context: Context) {
         try {
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
+            consecutiveFailures++
             scheduleRestart()
         }
     }
@@ -113,18 +132,21 @@ class WakeWordDetector(private val context: Context) {
     private fun scheduleRestart() {
         handler.removeCallbacks(restartRunnable)
         if (isListening) {
-            // Post restart with 1000ms delay to let the audio system settle and prevent rapid flickering/beeping
-            handler.postDelayed(restartRunnable, 1000)
+            handler.postDelayed(restartRunnable, restartDelayMillis(consecutiveFailures))
         }
     }
 
     private fun cleanupRecognizer() {
         try {
             speechRecognizer?.stopListening()
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.d(TAG, "stopListening during cleanup failed", e)
+        }
         try {
             speechRecognizer?.destroy()
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.d(TAG, "destroy during cleanup failed", e)
+        }
         speechRecognizer = null
     }
 
@@ -137,5 +159,33 @@ class WakeWordDetector(private val context: Context) {
 
     fun destroy() {
         stopListening()
+    }
+
+    companion object {
+        private const val TAG = "WakeWordDetector"
+
+        /** Delay used while the recognizer is healthy - long enough to stop audio flickering. */
+        const val BASE_RESTART_DELAY_MS = 1000L
+
+        /** Ceiling for the backoff, so a permanently unusable recognizer costs ~2 wakeups a minute. */
+        const val MAX_RESTART_DELAY_MS = 30_000L
+
+        /**
+         * Errors that happen during healthy operation: the user simply said nothing this round.
+         * These must not back the loop off, or the wake word would stop being responsive.
+         */
+        fun isTransientListeningError(error: Int): Boolean =
+            error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+
+        /**
+         * Exponential backoff on [consecutiveFailures], capped at [MAX_RESTART_DELAY_MS]:
+         * 1s, 2s, 4s ... 30s. Zero failures keeps the normal [BASE_RESTART_DELAY_MS] cadence.
+         */
+        fun restartDelayMillis(consecutiveFailures: Int): Long {
+            if (consecutiveFailures <= 0) return BASE_RESTART_DELAY_MS
+            val exponent = consecutiveFailures.coerceAtMost(16)
+            val delay = BASE_RESTART_DELAY_MS shl exponent
+            return if (delay <= 0L) MAX_RESTART_DELAY_MS else delay.coerceAtMost(MAX_RESTART_DELAY_MS)
+        }
     }
 }

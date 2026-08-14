@@ -5,7 +5,9 @@ import kotlinx.serialization.Serializable
 import com.opendroid.ai.core.llm.AIModel
 import com.opendroid.ai.core.llm.ClaudeModelCatalog
 import com.opendroid.ai.core.llm.ProviderCatalog
+import com.opendroid.ai.core.llm.OnDeviceContextWindow
 import com.opendroid.ai.core.llm.OnDeviceLatencyProfile
+import com.opendroid.ai.core.llm.OnDeviceModelSpec
 
 private const val TAG = "LLMConfig"
 
@@ -42,6 +44,13 @@ data class LLMConfig(
     val latencyBenchmarks: Map<String, Long> = emptyMap(), // Provider -> latency Ms
     /** Per-device, per-model-tier local planning measurements. */
     val onDeviceLatencyProfiles: Map<String, OnDeviceLatencyProfile> = emptyMap(),
+    /**
+     * User-chosen context-window sizes for on-device models, keyed by model id.
+     * A missing entry means "use the size the catalog ships for that model".
+     * Values are clamped through [OnDeviceContextWindow] before use — a persisted
+     * number is never handed to the native engine as-is.
+     */
+    val onDeviceContextWindows: Map<String, Int> = emptyMap(),
     /** Provider names explicitly allowed as planning fallbacks; empty means none. */
     val fallbackProviders: List<String> = emptyList(),
     val elevenLabsApiKey: String = "",
@@ -60,6 +69,25 @@ fun LLMConfig.resolvedAutoMode(): AutoMode =
 
 fun LLMConfig.effectiveGrantedActions(): Map<String, Long> =
     grantedActions ?: AutoMode.DEFAULT_GRANTS.associateWith { 0L }
+
+/**
+ * The context window to run [spec] with: the user's override when one is set,
+ * otherwise the catalog size. Overrides are clamped, so a corrupt or stale
+ * persisted value degrades to a supported size instead of reaching the engine.
+ */
+fun LLMConfig.effectiveContextWindow(spec: OnDeviceModelSpec): Int =
+    onDeviceContextWindows[spec.id]?.let(OnDeviceContextWindow::clamp) ?: spec.contextWindow
+
+/** Sets ([tokens]) or clears (`null`) the context-window override for [modelId]. */
+fun LLMConfig.withOnDeviceContextWindow(modelId: String, tokens: Int?): LLMConfig {
+    require(modelId.isNotBlank()) { "Model id must not be blank." }
+    val updated = if (tokens == null) {
+        onDeviceContextWindows - modelId
+    } else {
+        onDeviceContextWindows + (modelId to OnDeviceContextWindow.clamp(tokens))
+    }
+    return copy(onDeviceContextWindows = updated)
+}
 
 data class ApprovalSettings(
     val mode: AutoMode,

@@ -23,7 +23,8 @@ sealed class StreamChunk {
 interface AIProvider {
     suspend fun generate(
         messages: List<ChatMessage>,
-        tools: List<ToolDefinition> = emptyList()
+        tools: List<ToolDefinition> = emptyList(),
+        modelId: String? = null
     ): Flow<StreamChunk>
 }
 
@@ -36,12 +37,14 @@ interface LLMProvider : AIProvider {
 
     override suspend fun generate(
         messages: List<ChatMessage>,
-        tools: List<ToolDefinition>
+        tools: List<ToolDefinition>,
+        modelId: String?
     ): Flow<StreamChunk> {
         val systemPrompt = "You are an autonomous AI agent for Android."
         val request = LLMRequest(
             systemPrompt = systemPrompt,
             messages = messages,
+            model = modelId,
             tools = tools.map { Tool(it.name, it.description, it.parameters) }
         )
         return kotlinx.coroutines.flow.flow {

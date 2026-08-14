@@ -123,10 +123,11 @@ class GemmaProvider @Inject constructor(
 
     override suspend fun generate(
         messages: List<ChatMessage>,
-        tools: List<ToolDefinition>
+        tools: List<ToolDefinition>,
+        modelId: String?
     ): Flow<StreamChunk> = flow {
         try {
-            val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(name)
+            val selectedModel = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(name)
             val generativeModel = getClientForModel(selectedModel)
             val status = generativeModel.checkStatus()
             

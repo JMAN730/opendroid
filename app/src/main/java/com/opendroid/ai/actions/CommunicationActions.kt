@@ -84,15 +84,10 @@ class CommunicationActions @Inject constructor(
             if (contact.startsWith("$")) {
                 throw IllegalArgumentException("Unresolved contact placeholder: $contact")
             }
-            val cleaned = contact.replace(" ", "").replace("-", "")
-            if (cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })) {
-                return cleaned
+            when (val result = ContactResolver.resolve(context, contact)) {
+                is ContactResolver.ContactResult.Found -> return result.phoneNumber
+                else -> throw IllegalArgumentException("Contact '$contact' not found in your contacts")
             }
-            val result = ContactResolver.resolve(context, contact)
-            if (result is ContactResolver.ContactResult.Found) {
-                return result.phoneNumber
-            }
-            throw IllegalArgumentException("Contact '$contact' not found in your contacts")
         }
     }
 

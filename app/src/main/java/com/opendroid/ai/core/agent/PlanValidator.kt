@@ -1,10 +1,7 @@
 package com.opendroid.ai.core.agent
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.provider.ContactsContract
-import androidx.core.content.ContextCompat
+import android.util.Log
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
@@ -18,19 +15,6 @@ class PlanValidator @Inject constructor(
     private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
     private val unknownActionDao: dagger.Lazy<UnknownActionDao>
 ) {
-
-    companion object {
-        private val DATA_PRODUCING_ACTIONS = setOf(
-            "GET_DIRECTIONS", "GET_WEATHER", "GET_NEWS", "CALCULATE",
-            "CURRENCY_CONVERT", "TRANSLATE", "WEB_SEARCH", "SUMMARIZE_URL",
-            "CHECK_STOCK", "DEFINE_WORD", "CONVERT_UNITS", "FACT_CHECK",
-            "GET_SYSTEM_INFO", "CHECK_TRAFFIC", "CHECK_FLIGHT", "TRACK_DELIVERY",
-            "CHECK_BALANCE", "LIST_CALENDAR_TODAY", "LIST_CALENDAR_WEEK",
-            "READ_MESSAGES", "READ_EMAILS", "READ_NOTES", "READ_FILE",
-            "LIST_FILES", "GET_SCREEN_TEXT", "LIST_INSTALLED_APPS",
-            "ASK_USER", "SPLIT_BILL"
-        )
-    }
 
     fun validatePlan(plan: Plan): List<String> {
         val errors = mutableListOf<String>()
@@ -95,26 +79,40 @@ class PlanValidator @Inject constructor(
             val commActions = listOf("SEND_WHATSAPP", "MAKE_CALL", "SEND_SMS", "MAKE_VIDEO_CALL")
             if (commActions.contains(updatedStep.action.uppercase()) && updatedStep.params.containsKey("contact")) {
                 val contactName = updatedStep.params["contact"] ?: ""
-                if (contactName.isNotEmpty() && !isPhoneNumber(contactName)) {
-                    val resolvedPhone = resolveContactToPhoneNumber(context, contactName)
-                    if (resolvedPhone != null) {
-                        val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", resolvedPhone) }
-                        updatedStep = updatedStep.copy(order = currentOrder++, params = updatedParams)
-                        finalSteps.add(updatedStep)
-                    } else {
-                        val askStepId = "${updatedStep.stepId}_ask"
-                        val askStep = PlanStep(
-                            stepId = askStepId, order = currentOrder++,
-                            description = "Ask user for contact number of '$contactName'",
-                            action = "ASK_USER",
-                            params = mapOf("question" to "I couldn't find a contact named '$contactName'. What is their phone number?"),
-                            fallback = ""
-                        )
-                        finalSteps.add(askStep)
-                        val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", "$$askStepId") }
-                        val updatedDependsOn = updatedStep.dependsOn.toMutableList().apply { if (!contains(askStepId)) add(askStepId) }
-                        updatedStep = updatedStep.copy(order = currentOrder++, params = updatedParams, dependsOn = updatedDependsOn)
-                        finalSteps.add(updatedStep)
+                if (contactName.isNotEmpty() && !ContactResolver.isPhoneNumber(contactName)) {
+                    when (val resolved = ContactResolver.resolve(context, contactName)) {
+                        is ContactResolver.ContactResult.Found -> {
+                            val updatedParams = updatedStep.params.toMutableMap().apply {
+                                put("contact", resolved.phoneNumber)
+                            }
+                            updatedStep = updatedStep.copy(order = currentOrder++, params = updatedParams)
+                            finalSteps.add(updatedStep)
+                        }
+                        else -> {
+                            val askStepId = "${updatedStep.stepId}_ask"
+                            val askStep = PlanStep(
+                                stepId = askStepId, order = currentOrder++,
+                                description = "Ask user for contact number of '$contactName'",
+                                action = "ASK_USER",
+                                params = mapOf(
+                                    "question" to "I couldn't find a contact named '$contactName'. What is their phone number?"
+                                ),
+                                fallback = ""
+                            )
+                            finalSteps.add(askStep)
+                            val updatedParams = updatedStep.params.toMutableMap().apply {
+                                put("contact", "$$askStepId")
+                            }
+                            val updatedDependsOn = updatedStep.dependsOn.toMutableList().apply {
+                                if (!contains(askStepId)) add(askStepId)
+                            }
+                            updatedStep = updatedStep.copy(
+                                order = currentOrder++,
+                                params = updatedParams,
+                                dependsOn = updatedDependsOn
+                            )
+                            finalSteps.add(updatedStep)
+                        }
                     }
                 } else {
                     updatedStep = updatedStep.copy(order = currentOrder++)
@@ -146,44 +144,23 @@ class PlanValidator @Inject constructor(
             unknownActionDao.get().insertUnknownAction(
                 UnknownActionEntity(attemptedAction = attemptedAction, goal = goal, fixStatus = fixStatus)
             )
-        } catch (e: Exception) { }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist unknown action log", e)
+        }
     }
 
-    private fun isPhoneNumber(contact: String): Boolean {
-        val cleaned = contact.replace(" ", "").replace("-", "")
-        return cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })
-    }
+    companion object {
+        private const val TAG = "PlanValidator"
 
-    // lint false positive: both cursors are closed by `?.use { }` on every path,
-    // but the Recycle detector does not model Kotlin's use() inlining. See #67.
-    @Suppress("Recycle")
-    private fun resolveContactToPhoneNumber(context: Context, contact: String): String? {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
-        try {
-            val contentResolver = context.contentResolver
-            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-            val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            val selectionExact = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
-            contentResolver.query(uri, projection, selectionExact, arrayOf(contact.trim()), null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (idx >= 0) {
-                        val number = cursor.getString(idx)
-                        if (!number.isNullOrBlank()) return number.replace(" ", "").replace("-", "")
-                    }
-                }
-            }
-            val selectionLike = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-            contentResolver.query(uri, projection, selectionLike, arrayOf("%${contact.trim()}%"), null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (idx >= 0) {
-                        val number = cursor.getString(idx)
-                        if (!number.isNullOrBlank()) return number.replace(" ", "").replace("-", "")
-                    }
-                }
-            }
-        } catch (e: Exception) { }
-        return null
+        private val DATA_PRODUCING_ACTIONS = setOf(
+            "GET_DIRECTIONS", "GET_WEATHER", "GET_NEWS", "CALCULATE",
+            "CURRENCY_CONVERT", "TRANSLATE", "WEB_SEARCH", "SUMMARIZE_URL",
+            "CHECK_STOCK", "DEFINE_WORD", "CONVERT_UNITS", "FACT_CHECK",
+            "GET_SYSTEM_INFO", "CHECK_TRAFFIC", "CHECK_FLIGHT", "TRACK_DELIVERY",
+            "CHECK_BALANCE", "LIST_CALENDAR_TODAY", "LIST_CALENDAR_WEEK",
+            "READ_MESSAGES", "READ_EMAILS", "READ_NOTES", "READ_FILE",
+            "LIST_FILES", "GET_SCREEN_TEXT", "LIST_INSTALLED_APPS",
+            "ASK_USER", "SPLIT_BILL"
+        )
     }
 }

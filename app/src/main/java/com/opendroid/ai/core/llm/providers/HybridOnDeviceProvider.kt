@@ -146,9 +146,10 @@ class HybridOnDeviceProvider @Inject constructor(
 
     override suspend fun generate(
         messages: List<ChatMessage>,
-        tools: List<ToolDefinition>
+        tools: List<ToolDefinition>,
+        modelId: String?
     ): Flow<StreamChunk> = flow {
-        val selectedModel = settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
+        val selectedModel = modelId ?: settingsRepository.llmConfig.first().selectedModelFor(PROVIDER_NAME)
         val backend = resolveBackend(selectedModel)
         val primary = delegateFor(backend)
         val fallback = fallbackFor(backend)
@@ -163,13 +164,13 @@ class HybridOnDeviceProvider @Inject constructor(
         }
 
         try {
-            activeProvider.generate(messages, tools).collect { chunk ->
+            activeProvider.generate(messages, tools, modelId = selectedModel).collect { chunk ->
                 emit(chunk)
             }
         } catch (e: Exception) {
             if (activeProvider == primary && fallback.isAvailable()) {
                 Log.w(TAG, "Generate failed on ${primary.name}, retrying with ${fallback.name}")
-                fallback.generate(messages, tools).collect { chunk ->
+                fallback.generate(messages, tools, modelId = selectedModel).collect { chunk ->
                     emit(chunk)
                 }
             } else {

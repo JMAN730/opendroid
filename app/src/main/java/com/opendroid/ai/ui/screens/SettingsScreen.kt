@@ -6,13 +6,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -35,8 +37,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.effectiveContextWindow
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
+import com.opendroid.ai.core.llm.OnDeviceContextWindow
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
@@ -57,7 +61,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import kotlinx.coroutines.launch
@@ -107,9 +111,15 @@ fun SettingsScreen(
     var keysSectionExpanded by remember { mutableStateOf(false) }
     var voiceSectionExpanded by remember { mutableStateOf(false) }
     var planningSectionExpanded by remember { mutableStateOf(false) }
+    var fallbackSectionExpanded by remember { mutableStateOf(false) }
 
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
+    // Set when the user tapped Download while only a metered network is available;
+    // holds the model id awaiting an explicit "yes, use cellular" confirmation.
+    var meteredDownloadPrompt by remember {
+        mutableStateOf<com.opendroid.ai.core.llm.OnDeviceModelSpec?>(null)
+    }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
     var importAsCustomModel by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -298,7 +308,7 @@ fun SettingsScreen(
                                     }
                                 )
                                 
-                                Divider(color = BorderColor, thickness = 1.dp)
+                                HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
                                 DropdownMenuItem(
                                     text = { 
@@ -488,44 +498,62 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "EXPLICIT PLANNING FALLBACKS",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = AccentCyan
-                        )
-                        Text(
-                            text = "Only selected providers may receive a retry after an unusable low-impact local plan. High-impact plans never switch automatically.",
-                            fontSize = 10.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                        )
-                        providers
-                            .filter { it != config.activeProvider && it != "On-Device AI" }
-                            .forEach { fallbackProvider ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = config.fallbackProviders.contains(fallbackProvider),
-                                        onCheckedChange = { enabled ->
-                                            viewModel.updateFallbackProvider(fallbackProvider, enabled)
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = AccentNeonGreen,
-                                            uncheckedColor = BorderColor,
-                                            checkmarkColor = DarkBackground
-                                        )
-                                    )
-                                    Text(
-                                        text = fallbackProvider,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { fallbackSectionExpanded = !fallbackSectionExpanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "EXPLICIT PLANNING FALLBACKS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Icon(
+                                imageVector = if (fallbackSectionExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Toggle Explicit Planning Fallbacks Section",
+                                tint = AccentCyan
+                            )
+                        }
+
+                        AnimatedVisibility(visible = fallbackSectionExpanded) {
+                            Column {
+                                Text(
+                                    text = "Only selected providers may receive a retry after an unusable low-impact local plan. High-impact plans never switch automatically.",
+                                    fontSize = 10.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                                )
+                                providers
+                                    .filter { it != config.activeProvider && it != "On-Device AI" }
+                                    .forEach { fallbackProvider ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = config.fallbackProviders.contains(fallbackProvider),
+                                                onCheckedChange = { enabled ->
+                                                    viewModel.updateFallbackProvider(fallbackProvider, enabled)
+                                                },
+                                                colors = CheckboxDefaults.colors(
+                                                    checkedColor = AccentNeonGreen,
+                                                    uncheckedColor = BorderColor,
+                                                    checkmarkColor = DarkBackground
+                                                )
+                                            )
+                                            Text(
+                                                text = fallbackProvider,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
                             }
+                        }
 
                         // Model names are never bundled with the app, so when the
                         // live list is unavailable the reason is shown rather than
@@ -752,7 +780,7 @@ fun SettingsScreen(
                                             }
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreenButton),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("Download Gemma 4 (AI Core)", color = DarkBackground)
@@ -805,7 +833,7 @@ fun SettingsScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(16.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // ─── Hugging Face Section ───
@@ -949,7 +977,7 @@ fun SettingsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
                             
                             // ─── LiteRT-LM Backend Section ───
@@ -1160,6 +1188,21 @@ fun SettingsScreen(
                                             }
                                         }
 
+                                        // Work sits ENQUEUED behind its network constraint until
+                                        // Wi-Fi appears; without this the card looks untouched.
+                                        val waitingForUnmetered by viewModel
+                                            .isWaitingForUnmetered(spec.id)
+                                            .collectAsState(initial = false)
+                                        if (isApiCompatible && waitingForUnmetered) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Waiting for Wi-Fi — this download is queued and will start automatically.",
+                                                fontSize = 10.sp,
+                                                color = Color(0xFFFF9800),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+
                                         if (isApiCompatible && status == ModelStatus.FAILED) {
                                             Spacer(modifier = Modifier.height(8.dp))
                                             val errorText = modelEntity?.etaString ?: "Download failed"
@@ -1186,7 +1229,7 @@ fun SettingsScreen(
                                         AnimatedVisibility(visible = expanded) {
                                             Column {
                                                 Spacer(modifier = Modifier.height(10.dp))
-                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                HorizontalDivider(color = BorderColor, thickness = 0.5.dp)
                                                 Spacer(modifier = Modifier.height(8.dp))
                                                 
                                                 Row(
@@ -1201,6 +1244,8 @@ fun SettingsScreen(
                                                                     if (spec.authRequired && hfTokenVal.isBlank()) {
                                                                         showAuthRequiredDialog = spec.displayName
                                                                         licenseUrlForDialog = spec.licenseUrl
+                                                                    } else if (viewModel.isActiveNetworkMetered()) {
+                                                                        meteredDownloadPrompt = spec
                                                                     } else {
                                                                         viewModel.downloadModel(spec.id)
                                                                     }
@@ -1231,13 +1276,13 @@ fun SettingsScreen(
                                                          Button(
                                                              onClick = { viewModel.loadModel(spec.id) },
                                                              colors = ButtonDefaults.buttonColors(
-                                                                 containerColor = if (config.activeModel == spec.id) AccentNeonGreen else AccentCyan
+                                                                 containerColor = if (config.activeModel == spec.id) AccentGreenButton else AccentCyan
                                                              ),
                                                              modifier = Modifier.weight(1f).height(32.dp),
                                                              contentPadding = PaddingValues(horizontal = 4.dp)
                                                          ) {
                                                              Icon(
-                                                                 if (config.activeModel == spec.id) Icons.Default.Check else Icons.Default.ArrowForward,
+                                                                 if (config.activeModel == spec.id) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
                                                                  contentDescription = null,
                                                                  modifier = Modifier.size(12.dp),
                                                                  tint = DarkBackground
@@ -1267,6 +1312,13 @@ fun SettingsScreen(
                                                         Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = TextSecondary)
                                                     }
                                                 }
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                ContextWindowPicker(
+                                                    defaultWindow = spec.contextWindow,
+                                                    selectedWindow = config.effectiveContextWindow(spec),
+                                                    onSelect = { viewModel.updateOnDeviceContextWindow(spec.id, it) }
+                                                )
                                             }
                                         }
                                     }
@@ -1275,7 +1327,7 @@ fun SettingsScreen(
 
                             // ─── Custom LiteRT imports ───
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "CUSTOM LITERT MODELS",
@@ -1356,7 +1408,7 @@ fun SettingsScreen(
                                         AnimatedVisibility(visible = expanded) {
                                             Column {
                                                 Spacer(modifier = Modifier.height(10.dp))
-                                                Divider(color = BorderColor, thickness = 0.5.dp)
+                                                HorizontalDivider(color = BorderColor, thickness = 0.5.dp)
                                                 Spacer(modifier = Modifier.height(8.dp))
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
@@ -1396,6 +1448,17 @@ fun SettingsScreen(
                                                         )
                                                     }
                                                 }
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                val customDefault =
+                                                    OnDeviceModelRegistry.CUSTOM_DEFAULT_CONTEXT_WINDOW
+                                                ContextWindowPicker(
+                                                    defaultWindow = customDefault,
+                                                    selectedWindow = config.onDeviceContextWindows[entity.id]
+                                                        ?.let(OnDeviceContextWindow::clamp)
+                                                        ?: customDefault,
+                                                    onSelect = { viewModel.updateOnDeviceContextWindow(entity.id, it) }
+                                                )
                                             }
                                         }
                                     }
@@ -1403,7 +1466,7 @@ fun SettingsScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = BorderColor, thickness = 1.dp)
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // ─── Storage Cleanup Section ───
@@ -1973,7 +2036,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2014,7 +2077,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2060,7 +2123,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2101,7 +2164,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2147,7 +2210,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2193,7 +2256,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2239,7 +2302,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2285,7 +2348,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2331,7 +2394,7 @@ fun SettingsScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = "Go",
                             tint = TextSecondary
                         )
@@ -2392,6 +2455,47 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showAuthRequiredDialog = null }) {
                     Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CardBackground,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
+    }
+
+    meteredDownloadPrompt?.let { pendingSpec ->
+        val sizeText = if (pendingSpec.expectedSize > 0L) {
+            " (~${formatBytes(pendingSpec.expectedSize)})"
+        } else {
+            ""
+        }
+        AlertDialog(
+            onDismissRequest = { meteredDownloadPrompt = null },
+            title = { Text("Download over cellular?", color = TextPrimary) },
+            text = {
+                Text(
+                    text = "You are not on Wi-Fi. Downloading ${pendingSpec.displayName}$sizeText now will use your mobile data.\n\n" +
+                        "Wait for Wi-Fi to queue it instead — it will start on its own once Wi-Fi is available.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.downloadModel(pendingSpec.id, allowMetered = true)
+                        meteredDownloadPrompt = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                ) {
+                    Text("Use cellular", color = DarkBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.downloadModel(pendingSpec.id)
+                    meteredDownloadPrompt = null
+                }) {
+                    Text("Wait for Wi-Fi", color = TextSecondary)
                 }
             },
             containerColor = CardBackground,
@@ -2486,6 +2590,63 @@ private fun formatBytes(bytes: Long): String {
         bytes / Math.pow(1024.0, digitGroups.toDouble()),
         units[digitGroups]
     )
+}
+
+/**
+ * Lets the user run an on-device model with a larger context window than the one
+ * it ships with, so longer chats and multi-step plans stop hitting the limit.
+ * Selecting the model's own size clears the override.
+ */
+@Composable
+private fun ContextWindowPicker(
+    defaultWindow: Int,
+    selectedWindow: Int,
+    onSelect: (Int?) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "CONTEXT WINDOW",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color = AccentCyan
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "Total tokens for prompt + reply. Higher fits longer chats and " +
+                "multi-step plans, but uses more RAM — if the model will not load at " +
+                "your choice, it runs at ${OnDeviceContextWindow.label(defaultWindow)} instead.",
+            fontSize = 10.sp,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OnDeviceContextWindow.optionsFor(defaultWindow).forEach { option ->
+                val isSelected = option == selectedWindow
+                Button(
+                    onClick = { onSelect(if (option == defaultWindow) null else option) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) AccentCyan else BorderColor
+                    ),
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = OnDeviceContextWindow.label(option) +
+                            if (option == defaultWindow) " · default" else "",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) DarkBackground else TextPrimary
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

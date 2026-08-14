@@ -6,6 +6,7 @@ import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.withActiveProvider
+import com.opendroid.ai.data.models.withOnDeviceContextWindow
 import com.opendroid.ai.data.models.withSelectedModel
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -714,6 +715,40 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Sets the context window an on-device model runs with, or clears the choice
+     * with `null` so the model's catalog size applies again. The engine is rebuilt
+     * on the next request, so the change takes effect without restarting the app.
+     */
+    fun updateOnDeviceContextWindow(modelId: String, tokens: Int?) {
+        val previous = _llmConfig.value.onDeviceContextWindows[modelId]
+        val updated = _llmConfig.value.withOnDeviceContextWindow(modelId, tokens)
+        val applied = updated.onDeviceContextWindows[modelId]
+        _llmConfig.value = updated
+        viewModelScope.launch {
+            val persistenceState = try {
+                settingsRepository.updateConfig { current ->
+                    current.withOnDeviceContextWindow(modelId, tokens)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Failed to update context window: ${e.message}", e)
+                null
+            }
+            val failed = persistenceState == null || persistenceState != ProviderCredentialPersistenceState.Ready
+            if (failed) {
+                android.util.Log.e(
+                    "SettingsViewModel",
+                    "Failed to persist context window: ${persistenceState ?: "exception"}"
+                )
+            }
+            // Only roll back if the picker selection hasn't moved on since this
+            // failed write, so a newer selection is never clobbered.
+            if (failed && _llmConfig.value.onDeviceContextWindows[modelId] == applied) {
+                _llmConfig.value = _llmConfig.value.withOnDeviceContextWindow(modelId, previous)
+            }
+        }
+    }
+
     // ── On-Device Model Lifecycle Management ──
 
     val allModels = modelRepository.allModelsFlow.stateIn(
@@ -728,14 +763,20 @@ class SettingsViewModel @Inject constructor(
         initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
     )
 
-    fun downloadModel(modelId: String) {
+    fun downloadModel(modelId: String, allowMetered: Boolean = false) {
         viewModelScope.launch {
             val spec = com.opendroid.ai.core.llm.OnDeviceModelRegistry.findById(modelId)
             spec?.let {
-                modelRepository.startDownload(it)
+                modelRepository.startDownload(it, allowMetered)
             }
         }
     }
+
+    /** True when starting a download now would block on the unmetered constraint. */
+    fun isActiveNetworkMetered(): Boolean = modelRepository.isActiveNetworkMetered()
+
+    fun isWaitingForUnmetered(modelId: String) =
+        modelRepository.isWaitingForUnmeteredFlow(modelId)
 
     fun pauseDownload(modelId: String) {
         viewModelScope.launch {
