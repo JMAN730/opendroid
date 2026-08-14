@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <code>Contract: GwnzGtKh6L2prU9UiJmmW99zsC19XECnnfYW529upump</code>
+</p>
+
+<p align="center">
   <a href="https://github.com/yashab-cyber/opendroid/releases"><img src="https://img.shields.io/github/v/release/yashab-cyber/opendroid?style=for-the-badge&color=00FF88&labelColor=0D1117&logo=android&logoColor=white" alt="Release"></a>
   <a href="https://github.com/yashab-cyber/opendroid/stargazers"><img src="https://img.shields.io/github/stars/yashab-cyber/opendroid?style=for-the-badge&color=FFD700&labelColor=0D1117&logo=github&logoColor=white" alt="Stars"></a>
   <a href="https://github.com/yashab-cyber/opendroid/blob/main/LICENSE"><img src="https://img.shields.io/github/license/yashab-cyber/opendroid?style=for-the-badge&color=00BFFF&labelColor=0D1117" alt="License"></a>
