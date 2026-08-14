@@ -94,31 +94,75 @@ document.querySelectorAll('.code-copy').forEach(wrapper => {
   btn.setAttribute('aria-label', 'Copy to clipboard');
   btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 
+  let opId = 0;
+  let activeTimeout = null;
+
   btn.addEventListener('click', async () => {
+    const myOp = ++opId;
     const text = codeEl.textContent;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(text);
+      copied = true;
     } catch (e) {
-      // Clipboard API unavailable (older browser / insecure context) — fall back silently.
+      // Clipboard API unavailable (older browser / insecure context) — fall back.
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); } catch (e2) { /* give up quietly */ }
+      try { copied = document.execCommand('copy'); } catch (e2) { copied = false; }
       document.body.removeChild(ta);
     }
-    btn.setAttribute('data-copied', 'true');
-    btn.setAttribute('aria-label', 'Copied');
-    setTimeout(() => {
+    // A later click may have already started while this one was awaiting
+    // the clipboard — ignore this result and let the newer one own the UI.
+    if (myOp !== opId) return;
+    if (activeTimeout) clearTimeout(activeTimeout);
+
+    if (copied) {
+      btn.setAttribute('data-copied', 'true');
+      btn.removeAttribute('data-copy-failed');
+      btn.setAttribute('aria-label', 'Copied');
+    } else {
+      btn.setAttribute('data-copy-failed', 'true');
       btn.removeAttribute('data-copied');
+      btn.setAttribute('aria-label', 'Copy failed — copy manually');
+    }
+    activeTimeout = setTimeout(() => {
+      if (myOp !== opId) return;
+      btn.removeAttribute('data-copied');
+      btn.removeAttribute('data-copy-failed');
       btn.setAttribute('aria-label', 'Copy to clipboard');
+      activeTimeout = null;
     }, 1800);
   });
 
   wrapper.appendChild(btn);
 });
+
+// ── Hero video pause/play control ──
+// Required for WCAG 2.2.2 (Pause, Stop, Hide) since the video
+// autoplays and loops indefinitely.
+const heroVideo = document.getElementById('hero-video');
+const heroVideoToggle = document.getElementById('hero-video-toggle');
+if (heroVideo && heroVideoToggle) {
+  const syncState = () => {
+    const paused = heroVideo.paused;
+    heroVideoToggle.classList.toggle('paused', paused);
+    heroVideoToggle.setAttribute('aria-label', paused ? 'Play video' : 'Pause video');
+  };
+  heroVideoToggle.addEventListener('click', () => {
+    if (heroVideo.paused) {
+      heroVideo.play();
+    } else {
+      heroVideo.pause();
+    }
+  });
+  heroVideo.addEventListener('play', syncState);
+  heroVideo.addEventListener('pause', syncState);
+  syncState();
+}
 
 // ── Live GitHub stats ──
 // Fetches star/fork counts for the upstream repo. Fails silently
