@@ -223,6 +223,11 @@ html[data-theme="light"] .theme-toggle .tt-light{display:inline;}
 .video-container{position:relative;z-index:1;border-radius:var(--radius-xl);overflow:hidden;border:1px solid var(--surface-border);box-shadow:var(--shadow-lg);transition:all 0.4s cubic-bezier(0.4,0,0.2,1);background:#000;}
 .video-container:hover{transform:translateY(-6px);box-shadow:0 20px 60px rgba(79,190,114,0.15),var(--shadow-lg);border-color:var(--accent);}
 .video-container video{width:100%;height:auto;display:block;}
+.video-pause-btn{position:absolute;bottom:14px;right:14px;z-index:2;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.55);color:#fff;cursor:pointer;transition:background-color var(--transition),border-color var(--transition);}
+.video-pause-btn:hover{background:rgba(0,0,0,0.75);border-color:var(--accent);}
+.video-pause-btn .icon-play{display:none;}
+.video-pause-btn.paused .icon-pause{display:none;}
+.video-pause-btn.paused .icon-play{display:block;}
 .video-caption{text-align:center;margin-top:20px;font-size:0.9rem;color:var(--text-muted);font-weight:500;position:relative;z-index:1;}
 @media (max-width:600px){.video-showcase{max-width:100%;}
 .video-container{border-radius:var(--radius-lg);}
@@ -280,6 +285,7 @@ html[data-theme="light"] .profile-username:hover{color:var(--accent);}
 .copy-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .copy-btn svg{width:13px;height:13px;}
 .copy-btn[data-copied="true"]{color:var(--accent);border-color:var(--accent);}
+.copy-btn[data-copy-failed="true"]{color:#e5484d;border-color:#e5484d;}
 /* ── Live GitHub stats badge ── Populated client-side from the GitHub API;hidden until it resolves so there's no empty placeholder flash on slow networks. */ .gh-stats{display:inline-flex;align-items:center;gap:16px;margin-top:18px;opacity:0;transition:opacity 0.3s ease;}
 .gh-stats[data-loaded="true"]{opacity:1;}
 .gh-stats .gh-stat{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-display);font-size:0.82rem;color:var(--text-muted);}
