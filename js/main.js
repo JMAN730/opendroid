@@ -138,16 +138,14 @@ syncState();
 }
 const ghStats = document.getElementById('gh-stats');
 if (ghStats) {
-fetch('https://api.github.com/repos/yashab-cyber/opendroid')
+fetch('https://api.github.com/repos/JMAN730/opendroid')
 .then(res => (res.ok ? res.json() : Promise.reject(res.status)))
 .then(data => {
 const stars = ghStats.querySelector('[data-stat="stars"]');
 const forks = ghStats.querySelector('[data-stat="forks"]');
 if (stars) stars.textContent = data.stargazers_count.toLocaleString();
 if (forks) forks.textContent = data.forks_count.toLocaleString();
-})
-.catch(() => { /* leave fallback numbers */ })
-.finally(() => {
 ghStats.setAttribute('data-loaded', 'true');
-});
+})
+.catch(() => { /* leave hidden, no broken UI on failure */ });
 }
