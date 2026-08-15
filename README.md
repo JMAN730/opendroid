@@ -23,6 +23,9 @@
   <a href="https://www.producthunt.com/products/opendroid?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-opendroid" target="_blank" rel="noopener noreferrer"><img alt="Opendroid  - Autonomous A.I agent for Android. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205420&amp;theme=light&amp;t=1784972318707"></a>
 </p>
 
+> [!IMPORTANT]
+> **No affiliation with any cryptocurrency token.** This fork is not associated with, and does not endorse, any coin, token, or "contract address" (CA) promoted in connection with the OpenDroid name. This project has **no token**. Do not buy any coin claiming to represent it. Nothing here is investment advice or a solicitation to buy any asset.
+
 <p align="center">
   <a href="#-features">Features</a> •
   <a href="#-architecture">Architecture</a> •
