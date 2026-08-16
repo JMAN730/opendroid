@@ -1366,6 +1366,7 @@ code {
 .gh-stats {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 18px;
   opacity: 0;
@@ -1382,3 +1383,5 @@ code {
 }
 .gh-stats .gh-stat svg { width: 14px; height: 14px; color: var(--accent); }
 .gh-stats .gh-stat strong { color: var(--text-primary); font-weight: 600; }
+.gh-stats .ca-stat { max-width: 100%; }
+.gh-stats .ca-code { font-size: 0.8rem; word-break: break-all; }
