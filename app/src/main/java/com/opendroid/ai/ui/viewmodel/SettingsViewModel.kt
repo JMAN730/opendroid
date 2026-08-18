@@ -32,6 +32,9 @@ import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.data.models.resolveClaudeModelOrNull
 import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
@@ -727,6 +730,26 @@ class SettingsViewModel @Inject constructor(
         started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
         initialValue = com.opendroid.ai.data.repository.ModelRepository.StorageInfo(0L, 0L, 0L)
     )
+
+    fun isCellularNetwork(): Boolean {
+        return try {
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val network = connectivityManager.activeNetwork ?: return false
+                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    connectivityManager.isActiveNetworkMetered
+            } else {
+                @Suppress("DEPRECATION")
+                val networkInfo = connectivityManager.activeNetworkInfo ?: return false
+                @Suppress("DEPRECATION")
+                networkInfo.type == ConnectivityManager.TYPE_MOBILE
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun downloadModel(modelId: String) {
         viewModelScope.launch {

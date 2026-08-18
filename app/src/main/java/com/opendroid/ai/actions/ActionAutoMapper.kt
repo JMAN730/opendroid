@@ -282,6 +282,36 @@ class ActionAutoMapper @Inject constructor() {
         "ROUTE"                   to "GET_DIRECTIONS",
         "FIND_ROUTE"              to "GET_DIRECTIONS",
 
+        // ── Read & Remember / Screen Understanding ───────────────────
+        "READ_SCREEN_AND_SAVE"    to "READ_AND_REMEMBER_SCREEN",
+        "READ_SCREEN_TO_NOTES"    to "READ_AND_REMEMBER_SCREEN",
+        "SAVE_SCREEN_TO_NOTES"    to "READ_AND_REMEMBER_SCREEN",
+        "REMEMBER_SCREEN"         to "READ_AND_REMEMBER_SCREEN",
+        "EXTRACT_SCREEN_INFO"     to "READ_AND_REMEMBER_SCREEN",
+        "READ_AND_SAVE"           to "READ_AND_REMEMBER_SCREEN",
+        "SAVE_SCREEN_INFO"        to "READ_AND_REMEMBER_SCREEN",
+        "REMEMBER_THIS"           to "READ_AND_REMEMBER_SCREEN",
+        "SAVE_THIS"               to "READ_AND_REMEMBER_SCREEN",
+        "SCREEN_UNDERSTANDING"    to "READ_AND_REMEMBER_SCREEN",
+        "READ_AND_REMEMBER"       to "READ_AND_REMEMBER_SCREEN",
+
+        // ── Notes / Memory variants ───────────────────────────────────
+        "SAVE_TO_NOTES"           to "ADD_NOTE",
+        "CREATE_NOTE"             to "ADD_NOTE",
+        "SAVE_NOTE"               to "ADD_NOTE",
+        "NEW_NOTE"                to "ADD_NOTE",
+        "MAKE_NOTE"               to "ADD_NOTE",
+        "SEARCH_NOTES"            to "READ_NOTES",
+        "VIEW_NOTES"              to "READ_NOTES",
+        "SHOW_NOTES"              to "READ_NOTES",
+        "GET_NOTES"               to "READ_NOTES",
+        "LIST_NOTES"              to "READ_NOTES",
+        "SEARCH_MEMORY"           to "RECALL_MEMORY",
+        "GET_MEMORY"              to "RECALL_MEMORY",
+        "QUERY_MEMORY"            to "RECALL_MEMORY",
+        "RECALL"                  to "RECALL_MEMORY",
+        "RECALL_FACTS"            to "RECALL_MEMORY",
+
         // ── Security/privacy hallucinations → SKIP ──────────────────
         "CONFIRM_CONTACT"         to SKIP,
         "VERIFY_CONTACT"          to SKIP,

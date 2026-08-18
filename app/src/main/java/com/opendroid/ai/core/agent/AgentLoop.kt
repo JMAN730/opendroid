@@ -409,6 +409,28 @@ class AgentLoop @Inject constructor(
                             return
                         }
                     }
+
+                    // 1d. Read & Remember screen shortcut — bypass LLM for screen reading/saving
+                    if (AliasResolver.isReadAndRememberRequest(query)) {
+                        val topic = AliasResolver.extractTopicForReadAndRemember(query)
+                        val readAndRememberHint = AliasResolver.ActionHint(
+                            "READ_AND_REMEMBER_SCREEN",
+                            mapOf("topic" to topic, "save_as" to "note")
+                        )
+                        executeAliasDirect(readAndRememberHint, query, context, sessionId)
+                        return
+                    }
+
+                    // 1e. Recall memory shortcut — bypass LLM for querying saved notes/memory
+                    if (AliasResolver.isRecallMemoryRequest(query)) {
+                        val recallQuery = AliasResolver.extractRecallQuery(query)
+                        val recallHint = AliasResolver.ActionHint(
+                            "RECALL_MEMORY",
+                            mapOf("query" to recallQuery)
+                        )
+                        executeAliasDirect(recallHint, query, context, sessionId)
+                        return
+                    }
                 }
 
                 // 2. Intent Classification
@@ -1233,7 +1255,9 @@ class AgentLoop @Inject constructor(
         val screenPhrases = listOf(
             "screen", "screenshot", "looking at", "this page", "this app",
             "what am i", "what's this", "what is this", "read this",
-            "displayed", "showing", "what do you see"
+            "displayed", "showing", "what do you see", "remember this",
+            "save this", "save meeting details", "save the meeting", "important information",
+            "save to notes", "add to notes", "add this to my notes", "read and remember"
         )
         return screenPhrases.any { lower.contains(it) }
     }
@@ -1717,6 +1741,10 @@ class AgentLoop @Inject constructor(
             "SET_BRIGHTNESS" -> "Sure, adjusting brightness."
             "OPEN_APP" -> "Opening that for you."
             "ANALYZE_SCREENSHOT" -> "Let me take a look at your screen."
+            "READ_AND_REMEMBER_SCREEN" -> "Reading your screen and saving the important details."
+            "READ_NOTES" -> "Let me look up your notes."
+            "RECALL_MEMORY" -> "Searching your saved memories."
+            "ADD_NOTE" -> "Saving that note for you."
             "SET_RINGER_MODE" -> "Changing your ringer mode."
             "PLAY_MUSIC" -> "Let me play that for you."
             "MAKE_CALL" -> "Calling now."

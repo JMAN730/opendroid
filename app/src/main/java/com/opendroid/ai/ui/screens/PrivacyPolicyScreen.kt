@@ -87,7 +87,7 @@ fun PrivacyPolicyScreen(
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Last updated: May 2026",
+                                text = "Last updated: August 2026",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )

@@ -28,7 +28,8 @@ class PlanValidator @Inject constructor(
             "CHECK_BALANCE", "LIST_CALENDAR_TODAY", "LIST_CALENDAR_WEEK",
             "READ_MESSAGES", "READ_EMAILS", "READ_NOTES", "READ_FILE",
             "LIST_FILES", "GET_SCREEN_TEXT", "LIST_INSTALLED_APPS",
-            "ASK_USER", "SPLIT_BILL"
+            "ASK_USER", "SPLIT_BILL", "ANALYZE_SCREENSHOT",
+            "READ_AND_REMEMBER_SCREEN", "RECALL_MEMORY"
         )
     }
 

@@ -499,9 +499,41 @@ object ActionSchema {
         ActionDefinition(
             name = "READ_NOTES",
             description = "Reads saved notes",
-            params = listOf(ParamDefinition("filter", ParamType.STRING, false, "Filter criteria")),
-            examples = listOf("read my notes", "show notes"),
+            params = listOf(
+                ParamDefinition("query", ParamType.STRING, false, "Search query or topic filter", defaultValue = "")
+            ),
+            examples = listOf("read my notes", "show notes", "show my notes about meeting"),
             category = ActionCategory.PRODUCTIVITY
+        ),
+        ActionDefinition(
+            name = "READ_AND_REMEMBER_SCREEN",
+            description = "Reads the current screen, extracts important information, meeting details, dates, or notes, and saves it to memory/notes.",
+            params = listOf(
+                ParamDefinition("topic", ParamType.STRING, false, "Topic or details to extract (e.g. 'meeting details', 'important information', 'notes')", defaultValue = "important information"),
+                ParamDefinition("save_as", ParamType.STRING, false, "Target format or destination: 'note', 'memory', or 'event'", defaultValue = "note")
+            ),
+            examples = listOf(
+                "read this screen and save the important information to my notes",
+                "read this whatsapp message and save the meeting details",
+                "remember this screen",
+                "save this information to my notes",
+                "read screen and remember"
+            ),
+            category = ActionCategory.PRODUCTIVITY
+        ),
+        ActionDefinition(
+            name = "RECALL_MEMORY",
+            description = "Searches saved notes, screen memories, and facts previously stored by OpenDroid.",
+            params = listOf(
+                ParamDefinition("query", ParamType.STRING, true, "Search query or topic to recall")
+            ),
+            examples = listOf(
+                "what did i save about marketing meeting",
+                "what did i save about X",
+                "what do you remember about my doctor appointment",
+                "what did i save about friday meeting"
+            ),
+            category = ActionCategory.INFORMATION
         ),
 
         // ── INFORMATION ─────────────────────────────────

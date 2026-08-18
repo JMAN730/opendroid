@@ -38,7 +38,7 @@ class ModelDownloadTestApplication : Application()
 class ModelDownloadSchedulingTest {
 
     @Test
-    fun `model downloads wait for an unmetered network and retain retry input`() {
+    fun `model downloads wait for a connected network and retain retry input`() {
         val input = Data.Builder()
             .putString("model_id", "test-model")
             .putString("download_url", "https://example.test/model")
@@ -46,7 +46,7 @@ class ModelDownloadSchedulingTest {
 
         val request = ModelDownloadWorkRequest.create(input, "test-model")
 
-        assertEquals(NetworkType.UNMETERED, request.workSpec.constraints.requiredNetworkType)
+        assertEquals(NetworkType.CONNECTED, request.workSpec.constraints.requiredNetworkType)
         assertEquals(BackoffPolicy.EXPONENTIAL, request.workSpec.backoffPolicy)
         assertEquals(
             TimeUnit.SECONDS.toMillis(ModelDownloadWorkRequest.RETRY_BACKOFF_SECONDS),
@@ -61,7 +61,7 @@ class ModelDownloadSchedulingTest {
         val request = ModelDownloadWorkRequest.create(Data.EMPTY, "test-model")
         val constraints = request.workSpec.constraints
 
-        // Only the unmetered-network requirement is intended; charging, idle,
+        // Only the connected-network requirement is intended; charging, idle,
         // battery and storage constraints would leave multi-GB transfers unrunnable.
         assertFalse(constraints.requiresCharging())
         assertFalse(constraints.requiresDeviceIdle())

@@ -12,24 +12,33 @@ import android.provider.CalendarContract
 import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.VisionEngine
+import com.opendroid.ai.data.models.Memory
+import com.opendroid.ai.data.models.MemoryType
+import com.opendroid.ai.data.repository.MemoryRepository
 import java.util.Calendar
 import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CalendarActions @Inject constructor() {
+class CalendarActions @Inject constructor(
+    private val memoryRepository: MemoryRepository,
+    private val visionEngine: dagger.Lazy<VisionEngine>
+) {
 
     fun getActions(): List<Action> = listOf(
         CreateCalendarEventAction(),
         SetAlarmAction(),
         SetTimerAction(),
-        AddNoteAction(),
+        AddNoteAction(memoryRepository),
         ListCalendarTodayAction(),
         ListCalendarWeekAction(),
         SetReminderAction(),
         CreateTaskAction(),
-        ReadNotesAction()
+        ReadNotesAction(memoryRepository),
+        ReadAndRememberScreenAction(visionEngine, memoryRepository),
+        RecallMemoryAction(memoryRepository)
     )
 
     private class CreateCalendarEventAction : Action {
@@ -270,13 +279,33 @@ class CalendarActions @Inject constructor() {
         }
     }
 
-    private class AddNoteAction : Action {
+    private class AddNoteAction(
+        private val memoryRepository: MemoryRepository
+    ) : Action {
         override val name: String = "ADD_NOTE"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val title = params["title"] ?: "Quick Note"
-            val content = params["content"] ?: ""
+            val title = params["title"] ?: params["name"] ?: "Quick Note"
+            val content = params["content"] ?: params["text"] ?: params["body"] ?: ""
+            if (content.isBlank() && title == "Quick Note") {
+                return ActionResult(false, null, "Note content is empty.")
+            }
+
+            val timestamp = System.currentTimeMillis()
+            val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            val dateStr = dateFormat.format(java.util.Date(timestamp))
+            val sanitizedTitle = title.replace(Regex("[^a-zA-Z0-9_]"), "_").take(30)
+            val key = "note_${sanitizedTitle}_$timestamp"
+            val memoryValue = "Title: $title\nCreated: $dateStr\n$content".trim()
+
             return try {
-                // Return success immediately (can be stored in database as well)
+                memoryRepository.saveMemory(
+                    Memory(
+                        key = key,
+                        value = memoryValue,
+                        type = MemoryType.SEMANTIC,
+                        timestamp = timestamp
+                    )
+                )
                 ActionResult(true, "Got it! Note '$title' saved.", null)
             } catch (e: Exception) {
                 Log.e("AddNote", "Note failed: ${e.localizedMessage}")
@@ -361,11 +390,116 @@ class CalendarActions @Inject constructor() {
         }
     }
 
-    private class ReadNotesAction : Action {
+    private class ReadNotesAction(
+        private val memoryRepository: MemoryRepository
+    ) : Action {
         override val name: String = "READ_NOTES"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val mockNotes = "1. Buy groceries\n2. Call doctor at 3 PM\n3. Finish Android development tasks"
-            return ActionResult(true, "Here are your notes:\n$mockNotes", null)
+            val query = params["query"] ?: params["topic"] ?: ""
+            return try {
+                val allSemantic = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
+                val noteMemories = allSemantic.filter {
+                    it.key.startsWith("note_") || it.key.startsWith("screen_note_") ||
+                    it.value.contains("Title:", ignoreCase = true) || it.value.contains("Topic:", ignoreCase = true)
+                }
+
+                val matchingNotes = if (query.isNotBlank()) {
+                    noteMemories.filter {
+                        it.key.contains(query, ignoreCase = true) || it.value.contains(query, ignoreCase = true)
+                    }
+                } else {
+                    noteMemories
+                }
+
+                if (matchingNotes.isEmpty()) {
+                    val msg = if (query.isNotBlank()) "No notes found matching '$query'." else "You don't have any saved notes yet."
+                    return ActionResult(true, msg, null)
+                }
+
+                val formattedNotes = matchingNotes.sortedByDescending { it.timestamp }.take(10).joinToString("\n\n---\n\n") { memory ->
+                    memory.value
+                }
+                ActionResult(true, "Here are your saved notes:\n\n$formattedNotes", null)
+            } catch (e: Exception) {
+                Log.e("ReadNotes", "Failed to read notes: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't read your notes right now.")
+            }
+        }
+    }
+
+    private class ReadAndRememberScreenAction(
+        private val visionEngine: dagger.Lazy<VisionEngine>,
+        private val memoryRepository: MemoryRepository
+    ) : Action {
+        override val name: String = "READ_AND_REMEMBER_SCREEN"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val topic = params["topic"] ?: params["query"] ?: "important information"
+
+            return try {
+                val extractedInfo = visionEngine.get().extractAndStructureScreenInfo(topic)
+                if (extractedInfo.isBlank() || extractedInfo.startsWith("Could not capture") || extractedInfo.startsWith("Please ensure the Accessibility")) {
+                    return ActionResult(false, null, extractedInfo)
+                }
+
+                val timestamp = System.currentTimeMillis()
+                val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                val dateStr = dateFormat.format(java.util.Date(timestamp))
+                val sanitizedTopic = topic.replace(Regex("[^a-zA-Z0-9_]"), "_").take(30)
+                val key = "screen_note_${sanitizedTopic}_$timestamp"
+                val memoryValue = "Topic: $topic\nDate Recorded: $dateStr\n\n$extractedInfo"
+
+                memoryRepository.saveMemory(
+                    Memory(
+                        key = key,
+                        value = memoryValue,
+                        type = MemoryType.SEMANTIC,
+                        timestamp = timestamp
+                    )
+                )
+
+                val confirmation = "I've read the screen and saved this to your notes:\n\n$extractedInfo"
+                ActionResult.Success(
+                    dataMap = mapOf(
+                        "message" to confirmation,
+                        "key" to key,
+                        "topic" to topic,
+                        "summary" to extractedInfo,
+                        "saved" to "true"
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("ReadAndRemember", "Failed to read and remember screen: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't read and save the screen info right now: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    private class RecallMemoryAction(
+        private val memoryRepository: MemoryRepository
+    ) : Action {
+        override val name: String = "RECALL_MEMORY"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val query = params["query"] ?: params["topic"]
+                ?: return ActionResult(false, null, "Please specify what you would like to recall.")
+
+            return try {
+                val allMemories = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
+                val matches = allMemories.filter {
+                    it.key.contains(query, ignoreCase = true) || it.value.contains(query, ignoreCase = true)
+                }
+
+                if (matches.isEmpty()) {
+                    return ActionResult(true, "I don't have any saved information or notes about '$query'.", null)
+                }
+
+                val formatted = matches.sortedByDescending { it.timestamp }.take(5).joinToString("\n\n---\n\n") { memory ->
+                    memory.value
+                }
+                ActionResult(true, "Here is what I found about '$query':\n\n$formatted", null)
+            } catch (e: Exception) {
+                Log.e("RecallMemory", "Failed to recall memory: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't retrieve memory right now.")
+            }
         }
     }
 }

@@ -111,11 +111,12 @@ OpenDroid supports **Macros**—user-defined or system-defined sequences of acti
 
 ---
 
-## 6. Vision Engine: Screen Analysis
+## 6. Vision Engine: Screen Analysis & "Read & Remember"
 
-OpenDroid integrates a multimodal **Vision Engine** for visual reasoning.
+OpenDroid integrates a multimodal **Vision Engine** for visual reasoning, layout analysis, and intelligent memory extraction.
 
-*   **Action**: `ANALYZE_SCREENSHOT` (or voice trigger: *"Take a screenshot and analyze it"*)
+### Screen Analysis
+*   **Action**: `ANALYZE_SCREENSHOT` (or voice trigger: *"Take a screenshot and analyze it"*, *"What's on my screen?"*)
 *   **Dual-Tier Execution**:
     1.  **Tier 1 (Image Analysis)**: The engine captures the active screen buffer via `AccessibilityService.takeScreenshot()` (supported on Android 11/API 30+), encodes it into base64, and dispatches it to a multimodal LLM for visual analysis.
     2.  **Tier 2 (Text-Only Fallback)**: On older Android versions (API < 30) or if a screenshot is temporarily blocked, the engine automatically scrapes all visible accessibility nodes (`getScreenText()`) and feeds the raw layout hierarchy to the LLM.
@@ -123,6 +124,21 @@ OpenDroid integrates a multimodal **Vision Engine** for visual reasoning.
     *   Reading active chat windows.
     *   Describing open settings menus.
     *   Translating dynamic screen contents.
+
+### 🧠 Screen Understanding → “Read & Remember”
+*   **Action**: `READ_AND_REMEMBER_SCREEN`
+*   **Voice / Chat Triggers**:
+    *   *"Read this screen and save the important information to my notes."*
+    *   *"Read this WhatsApp message and save the meeting details."*
+    *   *"Remember this."* / *"Remember this screen."*
+    *   *"Save this information to my notes."*
+    *   *"Add this to my notes."*
+*   **How it works**:
+    1.  **Captures Current Screen**: Captures screenshot or active accessibility node tree with explicit user permission / accessibility enablement.
+    2.  **Understands Visible Text / UI**: Analyzes text, messages, dates, times, locations, participants, and structured details.
+    3.  **Extracts & Summarizes**: Identifies meeting names, dates, times, agenda, locations, participants, and action items.
+    4.  **Stores in Structured Memory & Notes**: Persists the summary to Semantic Memory / Notes with searchable tags.
+    5.  **Query Anytime**: Later ask *"What did I save about X?"*, *"Read my notes"*, or *"What do you remember about the meeting?"* (`RECALL_MEMORY`, `READ_NOTES`).
 
 ---
 

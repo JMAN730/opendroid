@@ -25,7 +25,7 @@ class IntentClassifier @Inject constructor(
             "pay", "check", "split", "run", "create", "schedule", "list", "read", "write", "delete", "click",
             "type", "scroll", "get", "show", "whatsapp", "call", "sms", "email", "alarm", "timer", "reminder",
             "note", "notes", "calendar", "weather", "news", "flashlight", "flash", "wifi", "bluetooth",
-            "brightness", "volume", "screenshot", "dnd", "mute", "unmute"
+            "brightness", "volume", "screenshot", "dnd", "mute", "unmute", "remember", "save", "extract"
         )
         val hasActionKeyword = actionKeywords.any { query.contains(it, ignoreCase = true) }
 
@@ -42,7 +42,9 @@ class IntentClassifier @Inject constructor(
             "screenshot", "flashlight", "torch", "flash",
             "wifi", "bluetooth", "brightness", "volume", "dnd", "hotspot",
             "news", "translate", "convert", "calculate",
-            "book uber", "book ola"
+            "book uber", "book ola",
+            "read screen", "remember this", "save this", "save to notes", "read notes", "my notes",
+            "what did i save", "what did i remember"
         )
         val isForcedAction = forcedActionPatterns.any { query.contains(it, ignoreCase = true) }
         if (isForcedAction) return true
@@ -93,6 +95,11 @@ class IntentClassifier @Inject constructor(
         //    the exact same phrasing straight to the working single-shot PLAY_YOUTUBE
         //    action, so this must be checked BEFORE the compound-indicator check below.
         if (AliasResolver.extractYoutubeQuery(lowercaseQuery) != null) {
+            return QueryComplexity.SIMPLE
+        }
+
+        // ── Fast-path: Read & Remember screen and Recall memory queries
+        if (AliasResolver.isReadAndRememberRequest(lowercaseQuery) || AliasResolver.isRecallMemoryRequest(lowercaseQuery)) {
             return QueryComplexity.SIMPLE
         }
 

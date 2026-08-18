@@ -154,4 +154,52 @@ class AliasResolverTest {
     fun `contextual resolver returns null without prior action`() {
         assertNull(AliasResolver.resolveContextual("turn it off", null, null))
     }
+
+    // ── Read & Remember / Screen Understanding ─────────────────────────
+
+    @Test
+    fun `read screen and remember resolves to ActionHint`() {
+        val hint = AliasResolver.resolve("read screen and remember")
+        assertNotNull(hint)
+        assertEquals("READ_AND_REMEMBER_SCREEN", hint!!.action)
+        assertEquals("important information", hint.baseParams["topic"])
+    }
+
+    @Test
+    fun `remember this resolves to ActionHint`() {
+        val hint = AliasResolver.resolve("remember this")
+        assertNotNull(hint)
+        assertEquals("READ_AND_REMEMBER_SCREEN", hint!!.action)
+    }
+
+    @Test
+    fun `read my notes resolves to ActionHint`() {
+        val hint = AliasResolver.resolve("read my notes")
+        assertNotNull(hint)
+        assertEquals("READ_NOTES", hint!!.action)
+    }
+
+    @Test
+    fun `isReadAndRememberRequest detects screen saving phrases`() {
+        assertTrue(AliasResolver.isReadAndRememberRequest("read this screen and save the important information to my notes"))
+        assertTrue(AliasResolver.isReadAndRememberRequest("read this whatsapp message and save the meeting details"))
+        assertTrue(AliasResolver.isReadAndRememberRequest("remember this screen"))
+        assertTrue(AliasResolver.isReadAndRememberRequest("save this information to my notes"))
+        assertTrue(AliasResolver.isReadAndRememberRequest("add this to my notes"))
+    }
+
+    @Test
+    fun `extractTopicForReadAndRemember extracts meeting details and notes`() {
+        assertEquals("meeting details", AliasResolver.extractTopicForReadAndRemember("read this whatsapp message and save the meeting details"))
+        assertEquals("important information", AliasResolver.extractTopicForReadAndRemember("read this screen and save the important information to my notes"))
+        assertEquals("notes", AliasResolver.extractTopicForReadAndRemember("add this to my notes"))
+    }
+
+    @Test
+    fun `isRecallMemoryRequest and extractRecallQuery match user queries`() {
+        assertTrue(AliasResolver.isRecallMemoryRequest("what did i save about marketing meeting?"))
+        assertEquals("marketing meeting", AliasResolver.extractRecallQuery("what did i save about marketing meeting?"))
+        assertEquals("friday meeting", AliasResolver.extractRecallQuery("what did i save about friday meeting"))
+        assertEquals("doctor appointment", AliasResolver.extractRecallQuery("what do you remember about doctor appointment?"))
+    }
 }

@@ -84,6 +84,30 @@ object AliasResolver {
         "look at screen"                to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
         "look at my screen"             to ActionHint("ANALYZE_SCREENSHOT", emptyMap()),
 
+        // ── SCREEN UNDERSTANDING & NOTES ─────────────────
+        "read screen and remember"          to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "read and remember screen"          to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "read this screen and remember"     to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "remember this screen"              to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "remember this"                     to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "save this information"             to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "save this info"                    to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "save this screen"                  to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "important information")),
+        "save screen to notes"              to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "save this screen to notes"         to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "save this to my notes"             to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "save this to notes"                to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "add this to my notes"              to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "add this to notes"                 to ActionHint("READ_AND_REMEMBER_SCREEN", mapOf("topic" to "notes")),
+        "read my notes"                     to ActionHint("READ_NOTES", emptyMap()),
+        "read notes"                        to ActionHint("READ_NOTES", emptyMap()),
+        "show my notes"                     to ActionHint("READ_NOTES", emptyMap()),
+        "show notes"                        to ActionHint("READ_NOTES", emptyMap()),
+        "view my notes"                     to ActionHint("READ_NOTES", emptyMap()),
+        "view notes"                        to ActionHint("READ_NOTES", emptyMap()),
+        "list my notes"                     to ActionHint("READ_NOTES", emptyMap()),
+        "list notes"                        to ActionHint("READ_NOTES", emptyMap()),
+
         // ── WIFI ─────────────────────────────────────────
         "wifi"              to ActionHint("TOGGLE_WIFI", mapOf("state" to "toggle")),
         "wifi on"           to ActionHint("TOGGLE_WIFI", mapOf("state" to "on")),
@@ -417,5 +441,78 @@ object AliasResolver {
         }
         cleaned = cleaned.replace("set a", " ").replace("set", " ").trim()
         return DurationParser.parseToSeconds(cleaned)
+    }
+
+    private val readAndRememberPhrases = listOf(
+        "read this screen and save",
+        "read screen and save",
+        "read and save",
+        "read and remember",
+        "read this and save",
+        "remember this screen",
+        "save this screen",
+        "save screen to notes",
+        "save this information to my notes",
+        "save this information",
+        "save the meeting details",
+        "save meeting details",
+        "add this to my notes",
+        "save to my notes",
+        "save to notes",
+        "remember this",
+        "read this whatsapp message and save",
+        "read this message and save"
+    )
+
+    fun isReadAndRememberRequest(input: String): Boolean {
+        val lower = input.lowercase().trim()
+        return readAndRememberPhrases.any { lower.contains(it) } ||
+               (lower.contains("screen") && (lower.contains("save") || lower.contains("remember") || lower.contains("notes"))) ||
+               (lower.contains("read") && (lower.contains("save") || lower.contains("remember")) && (lower.contains("screen") || lower.contains("message") || lower.contains("notes") || lower.contains("details")))
+    }
+
+    fun extractTopicForReadAndRemember(input: String): String {
+        val lower = input.lowercase().trim()
+        val topicRegex = Regex("""(?:save|extract|remember)\s+(?:the\s+)?(meeting details|important information|meeting info|notes|details|info|events?|tasks?|[a-zA-Z0-9\s]+?)(?:\s+to\s+my\s+notes|\s+to\s+notes|\s+in\s+my\s+notes|\s+in\s+notes|$)""", RegexOption.IGNORE_CASE)
+        val match = topicRegex.find(lower)
+        val matchedTopic = match?.groupValues?.getOrNull(1)?.trim()
+        return if (!matchedTopic.isNullOrBlank() && matchedTopic.length > 2 && matchedTopic != "this" && matchedTopic != "it") {
+            matchedTopic
+        } else if (lower.contains("meeting")) {
+            "meeting details"
+        } else if (lower.contains("note")) {
+            "notes"
+        } else {
+            "important information"
+        }
+    }
+
+    private val recallPrefixes = listOf(
+        "what did i save about",
+        "what did i remember about",
+        "what do you remember about",
+        "what's in my notes about",
+        "whats in my notes about",
+        "search notes for",
+        "recall memory about",
+        "what did i save on",
+        "search memory for",
+        "what did i save"
+    )
+
+    fun isRecallMemoryRequest(input: String): Boolean {
+        val lower = input.lowercase().trim()
+        return recallPrefixes.any { lower.startsWith(it) }
+    }
+
+    fun extractRecallQuery(input: String): String {
+        val lower = input.lowercase().trim()
+        for (prefix in recallPrefixes.sortedByDescending { it.length }) {
+            if (lower.startsWith(prefix)) {
+                val query = lower.substring(prefix.length).trim().removeSuffix("?").trim()
+                if (query.isNotEmpty()) return query
+            }
+        }
+        return input.trim().removeSuffix("?").trim()
     }
 }

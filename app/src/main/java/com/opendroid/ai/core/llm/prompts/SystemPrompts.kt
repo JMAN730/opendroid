@@ -248,6 +248,8 @@ $schema
             - SEND_SMS: Implemented via SmsManager + messaging app fallback
             - OPEN_APP: Implemented via PackageManager
             - ANALYZE_SCREENSHOT: Implemented via Accessibility + Vision LLM
+            - READ_AND_REMEMBER_SCREEN: Implemented via Vision Engine + Semantic Memory / Notes
+            - RECALL_MEMORY: Implemented via Semantic Memory query lookup
             If an action fails, the app handles the error automatically.
             Your job is to dispatch the action, not judge if it will work.
             Always dispatch. Never refuse.

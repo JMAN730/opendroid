@@ -164,4 +164,125 @@ class VisionEngine @Inject constructor(
             "I read the screen text but couldn't analyze it: ${e.message}"
         }
     }
+
+    /**
+     * Reads the current screen, extracts structured information (meeting details, key points, notes),
+     * and returns a structured summary suitable for storage in notes or memory.
+     */
+    suspend fun extractAndStructureScreenInfo(
+        topic: String = "important information"
+    ): String {
+        val base64Image = captureScreenBase64()
+        if (base64Image != null) {
+            return extractWithImage(base64Image, topic)
+        }
+
+        val screenText = getScreenText()
+        if (screenText != null) {
+            return extractWithText(screenText, topic)
+        }
+
+        return "Could not capture or read the screen. Please ensure the Accessibility Service is enabled in Settings > Accessibility > OpenDroid."
+    }
+
+    private suspend fun extractWithImage(
+        base64Image: String,
+        topic: String
+    ): String {
+        val extractionPrompt = """
+            Analyze this Android screenshot and extract the requested information.
+            Target topic: $topic
+            
+            Instructions:
+            1. Thoroughly inspect all visible messages, notes, dates, times, locations, and details.
+            2. Extract and structure all relevant information relating to "$topic".
+            3. If this contains a meeting, event, or schedule, extract and format cleanly:
+               • Meeting / Subject: <Name or purpose>
+               • Date: <Date/Day>
+               • Time: <Time>
+               • Location: <Platform/Address/Link/Room>
+               • Participants: <People mentioned>
+               • Notes / Action Items: <Key details>
+            4. If this is a general note, message, or article, format into concise bullet points.
+            5. Keep formatting clean, markdown-friendly, and easy to read.
+        """.trimIndent()
+
+        return try {
+            val provider = llmProviderFactory.getActiveProvider()
+            val imageMessage = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = extractionPrompt,
+                sender = ChatMessage.Sender.USER,
+                imageBase64 = base64Image
+            )
+            val response = provider.complete(
+                LLMRequest(
+                    systemPrompt = "You are an expert information extraction and summarization AI for Android. Extract clean, structured notes from screenshots.",
+                    messages = listOf(imageMessage),
+                    temperature = 0.2f,
+                    maxTokens = 600,
+                    responseFormat = ResponseFormat.TEXT
+                )
+            )
+            response.content.trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Image extraction failed: ${e.message}")
+            val screenText = getScreenText()
+            if (screenText != null) {
+                extractWithText(screenText, topic)
+            } else {
+                "I captured the screenshot but couldn't extract the details: ${e.localizedMessage ?: e.message}"
+            }
+        }
+    }
+
+    private suspend fun extractWithText(
+        screenText: String,
+        topic: String
+    ): String {
+        val extractionPrompt = """
+            The following text was extracted from the user's Android screen:
+            
+            ---
+            $screenText
+            ---
+            
+            Target topic: $topic
+            
+            Instructions:
+            1. Thoroughly read the screen text above.
+            2. Extract and structure all relevant information relating to "$topic".
+            3. If this contains a meeting, event, or schedule, format cleanly:
+               • Meeting / Subject: <Name or purpose>
+               • Date: <Date/Day>
+               • Time: <Time>
+               • Location: <Platform/Address/Link/Room>
+               • Participants: <People mentioned>
+               • Notes / Action Items: <Key details>
+            4. If this is a general note, message, or info, format into concise bullet points.
+            5. Keep formatting clean, markdown-friendly, and easy to read.
+        """.trimIndent()
+
+        return try {
+            val provider = llmProviderFactory.getActiveProvider()
+            val message = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                text = extractionPrompt,
+                sender = ChatMessage.Sender.USER
+            )
+            val response = provider.complete(
+                LLMRequest(
+                    systemPrompt = "You are an expert information extraction and summarization AI for Android. Extract clean, structured notes from screen text.",
+                    messages = listOf(message),
+                    temperature = 0.2f,
+                    maxTokens = 600,
+                    responseFormat = ResponseFormat.TEXT
+                )
+            )
+            response.content.trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Text extraction failed: ${e.message}")
+            "I read the screen text but couldn't extract the details: ${e.localizedMessage ?: e.message}"
+        }
+    }
 }

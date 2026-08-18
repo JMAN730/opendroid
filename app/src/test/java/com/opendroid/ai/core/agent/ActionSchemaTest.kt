@@ -131,4 +131,24 @@ class ActionSchemaTest {
         assertTrue(simple.contains("TOGGLE_FLASHLIGHT")) // isSimple = true
         assertFalse(simple.contains("SEND_EMAIL"))       // isSimple = false
     }
+
+    @Test
+    fun `read and remember screen action has defaults applied`() {
+        assertNotNull(ActionSchema.getAction("READ_AND_REMEMBER_SCREEN"))
+        val (result, params) = ActionSchema.validateParams("READ_AND_REMEMBER_SCREEN", emptyMap())
+        assertTrue(result is ActionSchema.ValidationResult.Valid)
+        assertEquals("important information", params["topic"])
+        assertEquals("note", params["save_as"])
+    }
+
+    @Test
+    fun `recall memory requires query parameter`() {
+        assertNotNull(ActionSchema.getAction("RECALL_MEMORY"))
+        val (invalid, _) = ActionSchema.validateParams("RECALL_MEMORY", emptyMap())
+        assertTrue(invalid is ActionSchema.ValidationResult.MissingParams)
+
+        val (valid, params) = ActionSchema.validateParams("RECALL_MEMORY", mapOf("query" to "marketing meeting"))
+        assertTrue(valid is ActionSchema.ValidationResult.Valid)
+        assertEquals("marketing meeting", params["query"])
+    }
 }

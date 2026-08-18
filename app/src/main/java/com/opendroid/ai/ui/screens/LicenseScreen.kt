@@ -100,7 +100,7 @@ fun LicenseScreen(
                 PolicySection(
                     title = "APACHE LICENSE 2.0",
                     content = "Copyright (c) 2026 OpenDroid Contributors\n" +
-                            "Last Updated: August 13, 2026\n\n" +
+                            "Last Updated: August 18, 2026\n\n" +
                             "Licensed under the Apache License, Version 2.0 (the \"License\"); " +
                             "you may not use this file except in compliance with the License.\n" +
                             "You may obtain a copy of the License at:\n\n" +

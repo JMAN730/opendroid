@@ -2,9 +2,9 @@
 
 ## Document Control
 * **Document Version:** v1.1.0
-* **Last Updated:** June 4, 2026
+* **Last Updated:** August 18, 2026
 * **Status:** Draft / Approved
-* **Author:** yashab-cyber & Antigravity (Google DeepMind Team)
+* **Author:** yashab-cyber
 
 ---
 
@@ -103,7 +103,7 @@ All sensitive settings (e.g. OpenAI/Anthropic/ElevenLabs API keys, Hugging Face 
 
 ### 3.4. Background Model Downloader (WorkManager)
 * **ModelDownloadWorker**: Implements background downloading via OkHttp. Features:
-  * Long-running `dataSync` foreground execution for user-initiated multi-GB transfers, gated on an unmetered network.
+  * Long-running `dataSync` foreground execution for user-initiated multi-GB transfers, running on connected networks (with cellular data warnings).
   * Chunk-based byte copying with active cancellation checks (mapping to worker stop signals).
   * Partial-file preservation and stop-reason diagnostics for safe WorkManager retry with HTTP Range resumption.
   * Real-time transfer speed calculation and ETA estimation.

@@ -46,4 +46,4 @@ For more details on screenshot specifications and usage, refer to [`screenshot/r
 
 ---
 
-**Last Updated:** August 13, 2026
+**Last Updated:** August 18, 2026

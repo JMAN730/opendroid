@@ -110,6 +110,8 @@ fun SettingsScreen(
 
     var showAuthRequiredDialog by remember { mutableStateOf<String?>(null) }
     var licenseUrlForDialog by remember { mutableStateOf("") }
+    var showCellularWarningDialog by remember { mutableStateOf<String?>(null) }
+    var pendingCellularResumeModelId by remember { mutableStateOf<String?>(null) }
     var activeImportModelId by remember { mutableStateOf<String?>(null) }
     var importAsCustomModel by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -1138,7 +1140,13 @@ fun SettingsScreen(
                                                     }
                                                 } else if (status == ModelStatus.PAUSED) {
                                                     Button(
-                                                        onClick = { viewModel.resumeDownload(spec.id) },
+                                                        onClick = {
+                                                            if (viewModel.isCellularNetwork()) {
+                                                                pendingCellularResumeModelId = spec.id
+                                                            } else {
+                                                                viewModel.resumeDownload(spec.id)
+                                                            }
+                                                        },
                                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
                                                         modifier = Modifier.height(28.dp).padding(horizontal = 4.dp),
                                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
@@ -1201,6 +1209,8 @@ fun SettingsScreen(
                                                                     if (spec.authRequired && hfTokenVal.isBlank()) {
                                                                         showAuthRequiredDialog = spec.displayName
                                                                         licenseUrlForDialog = spec.licenseUrl
+                                                                    } else if (viewModel.isCellularNetwork()) {
+                                                                        showCellularWarningDialog = spec.id
                                                                     } else {
                                                                         viewModel.downloadModel(spec.id)
                                                                     }
@@ -2391,6 +2401,72 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAuthRequiredDialog = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CardBackground,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
+    }
+
+    if (showCellularWarningDialog != null) {
+        val modelIdToDownload = showCellularWarningDialog!!
+        AlertDialog(
+            onDismissRequest = { showCellularWarningDialog = null },
+            title = { Text("Cellular Network Warning", color = TextPrimary) },
+            text = {
+                Text(
+                    text = "You are downloading model on cellular network, data charges may apply.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCellularWarningDialog = null
+                        viewModel.downloadModel(modelIdToDownload)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                ) {
+                    Text("Download", color = DarkBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCellularWarningDialog = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CardBackground,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
+    }
+
+    if (pendingCellularResumeModelId != null) {
+        val modelIdToResume = pendingCellularResumeModelId!!
+        AlertDialog(
+            onDismissRequest = { pendingCellularResumeModelId = null },
+            title = { Text("Cellular Network Warning", color = TextPrimary) },
+            text = {
+                Text(
+                    text = "You are downloading model on cellular network, data charges may apply.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingCellularResumeModelId = null
+                        viewModel.resumeDownload(modelIdToResume)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                ) {
+                    Text("Resume", color = DarkBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCellularResumeModelId = null }) {
                     Text("Cancel", color = TextSecondary)
                 }
             },

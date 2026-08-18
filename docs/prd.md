@@ -2,9 +2,9 @@
 
 ## Document Control
 * **Document Version:** v1.1.0
-* **Last Updated:** June 4, 2026
+* **Last Updated:** August 18, 2026
 * **Status:** Draft / Approved
-* **Author:** yashab-cyber & Antigravity (Google DeepMind Team)
+* **Author:** yashab-cyber
 
 ---
 
