@@ -4,11 +4,65 @@ This document tracks release updates, changelogs, and binary verification checks
 
 ---
 
-## v1.0.4 — Latest Release (August 10, 2026)
+## v1.0.5 — Latest Release (August 18, 2026)
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
-### Highlights since v1.0.3 (PR #46 by @JMAN730)
+### Highlights since v1.0.4
+
+#### 🧠 Screen Understanding → “Read & Remember”
+*   **Multimodal Screen Extraction**: Added `extractAndStructureScreenInfo` to `VisionEngine` combining screen captures with text accessibility tree fallback to automatically extract meeting details (*Title, Date, Time, Location, Participants, Action Items*), key points, and notes.
+*   **`READ_AND_REMEMBER_SCREEN` Action**: Added dedicated action and natural language fast-paths for triggers such as *"Read this screen and save the important information to my notes"*, *"Read this WhatsApp message and save the meeting details"*, *"Remember this"*, and *"Add this to my notes"*.
+*   **`RECALL_MEMORY` Action**: Allows querying and recalling stored screen notes, facts, and memories (*"What did I save about X?"*, *"Read my notes"*).
+*   **Persistent Room Storage**: Screen extractions persist into SQLite via `MemoryRepository` under `MemoryType.SEMANTIC` and automatically surface in Memory and LLM context.
+
+#### 📈 Personal Growth Memory (Personal Knowledge Graph & Tiered Memory)
+*   **Personal Knowledge Graph**: Organizes learned intelligence into a structured knowledge graph with entity nodes (`KnowledgeNode`), categories (`KnowledgeCategory`: `CONTACT`, `TASK_ROUTINE`, `APP_PREFERENCE`, `SCHEDULE`, `PROJECT`, `RESOURCE`, `NOTE_FACT`, `USER_PREFERENCE`), and relations (`KnowledgeRelation`).
+*   **4-Tier Security & Retention Hierarchy**:
+    1.  **⚡ Level 1: Temporary Memory (`TEMPORARY`)**: Current task/session working context, active plan state, and intermediate tool results.
+    2.  **🧠 Level 2: Long-Term Memory (`LONG_TERM`)**: Explicit user facts, active projects, and custom preferences with confidence rating `1.0`.
+    3.  **📈 Level 3: Learned Patterns (`LEARNED_PATTERN`)**: Behaviors inferred from activity (frequently contacted people, preferred media apps, ride hailing choices, recurring alarm routines, frequent websites) with dynamic confidence scoring (50% → 85% → 95%).
+    4.  **🔒 Level 4: Sensitive Data (`SENSITIVE`)**: High-security confidential records (passwords, PINs, tokens) encrypted at rest using Android Keystore AES-256-GCM via `SensitiveMemoryStore`.
+*   **Knowledge Actions**: Added `QUERY_KNOWLEDGE_GRAPH`, `UPDATE_PREFERENCE`, and `SAVE_SENSITIVE_INFO` actions.
+*   **UI Growth Graph Screen**: Added interactive **GROWTH GRAPH** view in `MemoryScreen` with level filtering chips, category chips, confidence badges, one-tap pattern-to-preference promotion, and encrypted secret creation.
+
+#### 🌐 On-Device AI Cellular Network Download Warning & Support
+*   **Cellular Network Download**: Allowed LiteRT on-device AI model downloads to proceed over cellular network connections in addition to Wi-Fi.
+*   **Data Charges Warning Dialog**: Added interactive warning dialog before starting cellular downloads alert users to potential data carrier charges.
+*   **Dynamic WorkManager Network Constraints**: Configured `ModelDownloadWorkRequest` with flexible network constraints based on user choice.
+
+#### 🛠️ Toolchain & Version Bump
+*   **Version Bump**: Updated app version to `1.0.5` (`versionCode 6`).
+*   **Java 21 Alignment**: Standardized compilation on Java 21 compatibility.
+
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+*   **`app-debug.apk`**: `857a3d7f1891f61717e23f8352479c46270eb625c936f5b6bdcd14f4fedb3b4c`
+*   **`app-release.apk`**: `30b8827d99bea209be96c152456534607f23b15c03b909bd9f672880cdfdb397`
+*   **`app-debug.aab`**: `87cc9a0f468a5ac48d00829b3f8f4a2f4fabf2f9a73d77b20c3238be406410f7`
+*   **`app-release.aab`**: `05b14dce34c169a5dad812f2adf0b6838457d252407b3ad3e651344440678894`
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 6
+*   **Version Name**: 1.0.5
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.5`.
+
+---
+
+## v1.0.4 (August 10, 2026)
 
 #### 🤖 Dynamic Model Fetching & Catalog Updates
 *   **Runtime Model Lists**: Every remote LLM provider (Gemini, OpenAI, Cohere, Groq, OpenRouter, etc.) now dynamically fetches its available model list directly from its respective `/models` endpoint rather than shipping hardcoded fallback lists.
