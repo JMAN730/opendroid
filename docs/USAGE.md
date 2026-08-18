@@ -142,7 +142,42 @@ OpenDroid integrates a multimodal **Vision Engine** for visual reasoning, layout
 
 ---
 
-## 7. Fuzzy Contact Resolver
+## 7. Personal Growth Memory (Personal Knowledge Graph & Tiered Memory)
+
+Rather than maintaining an uncontrolled flat log of device data, OpenDroid organizes memory into a structured **Personal Knowledge Graph** with **4 distinct security and retention levels**:
+
+### 🛡️ Memory Levels (Tiers)
+
+1. **⚡ Level 1: Temporary Memory**
+   * Volatile context relevant only to the active task, active plan steps, and current working session.
+   * Cleared automatically when tasks finish or sessions reset; never leaks into permanent storage without explicit user intent.
+
+2. **🧠 Level 2: Long-Term Memory**
+   * Information the user explicitly asks OpenDroid to remember (e.g. project goals, important dates, dietary preferences, custom facts).
+   * Fully viewable, editable, and manageable from the **Personal Memory** screen.
+
+3. **📈 Level 3: Learned Patterns**
+   * Behaviors and routines inferred from user activity:
+     * **Frequently contacted people** and preferred communication channels (WhatsApp, Phone Call, SMS).
+     * **Preferred apps** for media playback, ride hailing, messaging, navigation.
+     * **Recurring tasks & routines** (alarm habits, timer patterns).
+     * **Common schedules** and frequent web resources.
+   * Scored with dynamic confidence ratings (e.g. 50% → 85% → 95% based on repeated usage).
+   * Can be promoted to explicit Long-Term preferences or cleared with one tap.
+
+4. **🔒 Level 4: Sensitive Data**
+   * Confidential data (passwords, PINs, security codes, private tokens).
+   * **Hardware-encrypted at rest** using Android Keystore AES-256-GCM authenticated cipher envelopes (`SensitiveMemoryStore`).
+   * Never included in general prompt contexts or crash logs; accessible only under strict authorization.
+
+### 🔍 Actions & Commands
+*   **Query Graph**: `QUERY_KNOWLEDGE_GRAPH` (*"Who do I contact most often?"*, *"What is my preferred music app?"*, *"Show my routines"*)
+*   **Save Preference**: `UPDATE_PREFERENCE` (*"Remember that my preferred music app is Spotify"*, *"Set my work location"*)
+*   **Save Secret**: `SAVE_SENSITIVE_INFO` (*"Securely remember locker code 4589"*)
+
+---
+
+## 8. Fuzzy Contact Resolver
 
 The **ContactResolver** acts as a bridge between the agent and your phone book:
 1.  **Exact Match**: Tries to match the search string directly with a contact name.

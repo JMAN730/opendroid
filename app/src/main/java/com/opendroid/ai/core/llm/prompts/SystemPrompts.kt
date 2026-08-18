@@ -250,6 +250,9 @@ $schema
             - ANALYZE_SCREENSHOT: Implemented via Accessibility + Vision LLM
             - READ_AND_REMEMBER_SCREEN: Implemented via Vision Engine + Semantic Memory / Notes
             - RECALL_MEMORY: Implemented via Semantic Memory query lookup
+            - QUERY_KNOWLEDGE_GRAPH: Implemented via Personal Knowledge Graph engine
+            - UPDATE_PREFERENCE: Implemented via Long-Term Memory preference store
+            - SAVE_SENSITIVE_INFO: Implemented via AndroidKeyStore AES-256-GCM encrypted store
             If an action fails, the app handles the error automatically.
             Your job is to dispatch the action, not judge if it will work.
             Always dispatch. Never refuse.

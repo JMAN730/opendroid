@@ -17,6 +17,9 @@ import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
 import java.util.Calendar
+import com.opendroid.ai.core.memory.graph.KnowledgeCategory
+import com.opendroid.ai.core.memory.graph.MemoryTier
+import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
 import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,7 +27,8 @@ import javax.inject.Singleton
 @Singleton
 class CalendarActions @Inject constructor(
     private val memoryRepository: MemoryRepository,
-    private val visionEngine: dagger.Lazy<VisionEngine>
+    private val visionEngine: dagger.Lazy<VisionEngine>,
+    private val personalGrowthEngine: dagger.Lazy<PersonalGrowthEngine>
 ) {
 
     fun getActions(): List<Action> = listOf(
@@ -38,7 +42,10 @@ class CalendarActions @Inject constructor(
         CreateTaskAction(),
         ReadNotesAction(memoryRepository),
         ReadAndRememberScreenAction(visionEngine, memoryRepository),
-        RecallMemoryAction(memoryRepository)
+        RecallMemoryAction(memoryRepository),
+        QueryKnowledgeGraphAction(personalGrowthEngine),
+        UpdatePreferenceAction(personalGrowthEngine),
+        SaveSensitiveInfoAction(personalGrowthEngine)
     )
 
     private class CreateCalendarEventAction : Action {
@@ -499,6 +506,98 @@ class CalendarActions @Inject constructor(
             } catch (e: Exception) {
                 Log.e("RecallMemory", "Failed to recall memory: ${e.localizedMessage}")
                 ActionResult(false, null, "Couldn't retrieve memory right now.")
+            }
+        }
+    }
+
+    private class QueryKnowledgeGraphAction(
+        private val personalGrowthEngine: dagger.Lazy<PersonalGrowthEngine>
+    ) : Action {
+        override val name: String = "QUERY_KNOWLEDGE_GRAPH"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val query = params["query"]?.trim().orEmpty()
+            val categoryFilter = params["category"]?.uppercase()?.trim() ?: "ALL"
+            val tierFilter = params["tier"]?.uppercase()?.trim() ?: "ALL"
+
+            return try {
+                val snapshot = personalGrowthEngine.get().getSnapshot()
+                var matched = snapshot.findNodes(query)
+                if (categoryFilter != "ALL") {
+                    matched = matched.filter { it.category.name.equals(categoryFilter, ignoreCase = true) }
+                }
+                if (tierFilter != "ALL") {
+                    matched = matched.filter { it.tier.name.equals(tierFilter, ignoreCase = true) }
+                }
+
+                if (matched.isEmpty()) {
+                    return ActionResult(true, "No knowledge graph entries found matching your query.", null)
+                }
+
+                val sb = StringBuilder("Here is what I found in your Personal Knowledge Graph:\n\n")
+                val grouped = matched.groupBy { it.tier }
+                for ((tier, nodes) in grouped) {
+                    sb.append("== Level: ${tier.name} ==\n")
+                    for (node in nodes) {
+                        val conf = if (node.tier == MemoryTier.LEARNED_PATTERN) " [${(node.confidence * 100).toInt()}% confidence]" else ""
+                        sb.append("• [${node.category.name}] ${node.label}: ${node.summary}$conf\n")
+                    }
+                    sb.append("\n")
+                }
+                ActionResult(true, sb.toString().trim(), null)
+            } catch (e: Exception) {
+                Log.e("QueryKnowledgeGraph", "Failed to query knowledge graph: ${e.message}")
+                ActionResult(false, null, "Couldn't query knowledge graph right now.")
+            }
+        }
+    }
+
+    private class UpdatePreferenceAction(
+        private val personalGrowthEngine: dagger.Lazy<PersonalGrowthEngine>
+    ) : Action {
+        override val name: String = "UPDATE_PREFERENCE"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val key = params["key"] ?: return ActionResult(false, null, "Preference key is required.")
+            val value = params["value"] ?: return ActionResult(false, null, "Preference value is required.")
+            val categoryStr = params["category"]?.uppercase() ?: "USER_PREFERENCE"
+            val category = try {
+                KnowledgeCategory.valueOf(categoryStr)
+            } catch (e: Exception) {
+                KnowledgeCategory.USER_PREFERENCE
+            }
+
+            return try {
+                val node = personalGrowthEngine.get().recordExplicitMemory(
+                    label = key,
+                    summary = value,
+                    category = category
+                )
+                ActionResult(true, "Saved preference '${node.label}' to your Long-Term Knowledge Graph: ${node.summary}", null)
+            } catch (e: Exception) {
+                Log.e("UpdatePreference", "Failed to update preference: ${e.message}")
+                ActionResult(false, null, "Failed to save preference.")
+            }
+        }
+    }
+
+    private class SaveSensitiveInfoAction(
+        private val personalGrowthEngine: dagger.Lazy<PersonalGrowthEngine>
+    ) : Action {
+        override val name: String = "SAVE_SENSITIVE_INFO"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val key = params["key"] ?: return ActionResult(false, null, "Sensitive key is required.")
+            val secret = params["secret"] ?: return ActionResult(false, null, "Sensitive secret value is required.")
+            val label = params["label"]?.ifBlank { key } ?: key
+
+            return try {
+                val success = personalGrowthEngine.get().recordSensitiveSecret(key, secret, label)
+                if (success) {
+                    ActionResult(true, "Securely saved '$label' in Level 4 hardware-encrypted storage.", null)
+                } else {
+                    ActionResult(false, null, "Failed to write to encrypted Keystore storage.")
+                }
+            } catch (e: Exception) {
+                Log.e("SaveSensitiveInfo", "Failed to save sensitive info: ${e.message}")
+                ActionResult(false, null, "Couldn't encrypt and store sensitive data.")
             }
         }
     }

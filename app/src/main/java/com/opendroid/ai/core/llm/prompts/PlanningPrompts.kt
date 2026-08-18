@@ -22,7 +22,7 @@ CRITICAL DEPENDENCY RULES:
 1. "dependsOn" defaults to [] (empty) for most steps. Steps already execute sequentially by order.
 2. ONLY add a stepId to "dependsOn" if the step needs the DATA OUTPUT of that prior step (e.g., using ${'$'}${'$'}stepId to reference its result).
 3. Non-data-producing actions like OPEN_APP, TOGGLE_WIFI, TOGGLE_FLASHLIGHT, SET_VOLUME, SET_BRIGHTNESS, LOCK_SCREEN must NEVER appear in another step's "dependsOn".
-4. Data-producing actions that CAN be referenced: WEB_SEARCH, GET_WEATHER, GET_NEWS, CALCULATE, ASK_USER, GET_SYSTEM_INFO, CHECK_BALANCE, SPLIT_BILL, TRANSLATE, CURRENCY_CONVERT, ANALYZE_SCREENSHOT, READ_AND_REMEMBER_SCREEN, RECALL_MEMORY, READ_NOTES.
+4. Data-producing actions that CAN be referenced: WEB_SEARCH, GET_WEATHER, GET_NEWS, CALCULATE, ASK_USER, GET_SYSTEM_INFO, CHECK_BALANCE, SPLIT_BILL, TRANSLATE, CURRENCY_CONVERT, ANALYZE_SCREENSHOT, READ_AND_REMEMBER_SCREEN, RECALL_MEMORY, READ_NOTES, QUERY_KNOWLEDGE_GRAPH.
 5. CONDITIONAL AND CONDITIONAL BRANCHING TASKS (e.g., "if battery < 20% do X", "if it is raining do Y", "if I have a message from John do Z", "check if we have eggs, if not add to list"):
    - Schedule ALL potential actions in sequence (e.g., Step 1: GET_SYSTEM_INFO, Step 2: TOGGLE_BATTERY_SAVER; or Step 1: READ_NOTIFICATIONS, Step 2: SEND_SMS).
    - Do NOT attempt to build custom logic operators, code snippets, or control flow structures in the JSON plan. Keep the steps sequential and flat.

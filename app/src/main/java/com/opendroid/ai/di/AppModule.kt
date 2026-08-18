@@ -2,8 +2,10 @@ package com.opendroid.ai.di
 
 import android.content.Context
 import com.opendroid.ai.core.security.AndroidProviderCredentialStore
+import com.opendroid.ai.core.security.AndroidSensitiveMemoryStore
 import com.opendroid.ai.core.security.AndroidUserProfileStore
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.security.SensitiveMemoryStore
 import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.core.settings.AndroidAppSettingsStore
 import com.opendroid.ai.core.settings.AppSettingsStore
@@ -42,6 +44,12 @@ object AppModule {
     @Singleton
     fun provideUserProfileStore(@ApplicationContext context: Context): UserProfileStore {
         return AndroidUserProfileStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSensitiveMemoryStore(@ApplicationContext context: Context): SensitiveMemoryStore {
+        return AndroidSensitiveMemoryStore(context)
     }
 
     @Provides

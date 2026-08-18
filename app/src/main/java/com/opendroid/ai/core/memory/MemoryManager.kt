@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +24,7 @@ class MemoryManager @Inject constructor(
     val episodicMemory: EpisodicMemory,
     val semanticMemory: SemanticMemory,
     val proceduralMemory: ProceduralMemory,
+    val personalGrowthEngine: PersonalGrowthEngine,
     private val memoryExtractor: MemoryExtractor,
     private val conversationRepository: ConversationRepository,
     private val memoryRepository: MemoryRepository,
@@ -125,6 +127,19 @@ class MemoryManager @Inject constructor(
             """.trimIndent()
         } else ""
 
+        val growthContext = try {
+            personalGrowthEngine.generateSynthesizedContext(currentGoal)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) { "" }
+        val growthSection = if (growthContext.isNotBlank()) {
+            """
+
+            [Personal Knowledge Graph — Tiered Memory]
+            $growthContext
+            """.trimIndent()
+        } else ""
+
         return """
             [Current Date & Time]
             Date: $currentDate
@@ -136,6 +151,7 @@ class MemoryManager @Inject constructor(
             [Working Session State]
             $activePlanStr
             Device State: Location=${workingMemory.locationContext}, Battery=${workingMemory.batteryLevel}%, WiFi=${workingMemory.wifiState}, Connection=${workingMemory.connectivity}, Internet=${if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE"}
+            $growthSection
             $notifSection
         """.trimIndent()
     }
@@ -233,6 +249,61 @@ class MemoryManager @Inject constructor(
             resultData = resultData,
             errorMessage = errorMessage
         )
+
+        // Learn behavioral patterns if execution was successful
+        if (success) {
+            try {
+                when (actionType.uppercase()) {
+                    "OPEN_APP" -> {
+                        params["appName"]?.let { personalGrowthEngine.recordAppUsage(it, "General App") }
+                    }
+                    "PLAY_MUSIC" -> {
+                        val player = params["app"] ?: "Default Music Player"
+                        personalGrowthEngine.recordAppUsage(player, "Music Playback")
+                    }
+                    "PLAY_YOUTUBE" -> {
+                        personalGrowthEngine.recordAppUsage("YouTube", "Video Playback")
+                    }
+                    "BOOK_UBER" -> {
+                        personalGrowthEngine.recordAppUsage("Uber", "Ride Booking")
+                    }
+                    "BOOK_OLA" -> {
+                        personalGrowthEngine.recordAppUsage("Ola", "Ride Booking")
+                    }
+                    "SEND_WHATSAPP" -> {
+                        val contact = params["contactName"] ?: params["recipient"] ?: params["phone"]
+                        if (!contact.isNullOrBlank()) {
+                            personalGrowthEngine.recordContactInteraction(contact, "WhatsApp")
+                        }
+                    }
+                    "MAKE_CALL" -> {
+                        val contact = params["contactName"] ?: params["recipient"] ?: params["phone"]
+                        if (!contact.isNullOrBlank()) {
+                            personalGrowthEngine.recordContactInteraction(contact, "Phone Call")
+                        }
+                    }
+                    "SEND_SMS" -> {
+                        val contact = params["contactName"] ?: params["recipient"] ?: params["phone"]
+                        if (!contact.isNullOrBlank()) {
+                            personalGrowthEngine.recordContactInteraction(contact, "SMS")
+                        }
+                    }
+                    "OPEN_URL", "OPEN_BROWSER" -> {
+                        val url = params["url"] ?: params["query"] ?: ""
+                        if (url.isNotBlank()) {
+                            val domain = url.substringAfter("://").substringBefore("/")
+                            personalGrowthEngine.recordWebsiteVisit(url, domain)
+                        }
+                    }
+                    "SET_ALARM" -> {
+                        val timeStr = params["time"] ?: params["hour"] ?: "Scheduled Time"
+                        personalGrowthEngine.recordTaskOrRoutine("Alarm at $timeStr", timeStr, "daily")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("MemoryManager", "Failed to record pattern for $actionType: ${e.message}")
+            }
+        }
     }
 
     // ── Contact preference methods ──────────────────────────

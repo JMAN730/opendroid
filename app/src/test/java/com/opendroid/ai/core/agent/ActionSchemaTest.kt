@@ -151,4 +151,43 @@ class ActionSchemaTest {
         assertTrue(valid is ActionSchema.ValidationResult.Valid)
         assertEquals("marketing meeting", params["query"])
     }
+
+    @Test
+    fun `query knowledge graph applies defaults`() {
+        assertNotNull(ActionSchema.getAction("QUERY_KNOWLEDGE_GRAPH"))
+        val (result, params) = ActionSchema.validateParams("QUERY_KNOWLEDGE_GRAPH", emptyMap())
+        assertTrue(result is ActionSchema.ValidationResult.Valid)
+        assertEquals("", params["query"])
+        assertEquals("ALL", params["category"])
+        assertEquals("ALL", params["tier"])
+    }
+
+    @Test
+    fun `update preference validates required key and value`() {
+        assertNotNull(ActionSchema.getAction("UPDATE_PREFERENCE"))
+        val (invalid, _) = ActionSchema.validateParams("UPDATE_PREFERENCE", mapOf("key" to "music_app"))
+        assertTrue(invalid is ActionSchema.ValidationResult.MissingParams)
+
+        val (valid, params) = ActionSchema.validateParams(
+            "UPDATE_PREFERENCE",
+            mapOf("key" to "music_app", "value" to "Spotify")
+        )
+        assertTrue(valid is ActionSchema.ValidationResult.Valid)
+        assertEquals("USER_PREFERENCE", params["category"])
+    }
+
+    @Test
+    fun `save sensitive info validates required key and secret`() {
+        assertNotNull(ActionSchema.getAction("SAVE_SENSITIVE_INFO"))
+        val (invalid, _) = ActionSchema.validateParams("SAVE_SENSITIVE_INFO", emptyMap())
+        assertTrue(invalid is ActionSchema.ValidationResult.MissingParams)
+
+        val (valid, params) = ActionSchema.validateParams(
+            "SAVE_SENSITIVE_INFO",
+            mapOf("key" to "wifi_password", "secret" to "secret123")
+        )
+        assertTrue(valid is ActionSchema.ValidationResult.Valid)
+        assertEquals("wifi_password", params["key"])
+        assertEquals("secret123", params["secret"])
+    }
 }

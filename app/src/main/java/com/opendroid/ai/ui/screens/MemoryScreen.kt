@@ -7,12 +7,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +27,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.opendroid.ai.core.memory.graph.KnowledgeCategory
+import com.opendroid.ai.core.memory.graph.KnowledgeNode
+import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Macro
 import com.opendroid.ai.data.models.Memory
@@ -33,13 +40,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+enum class MemoryScreenTab(val title: String) {
+    GROWTH_GRAPH("GROWTH GRAPH"),
+    SEMANTIC("LONG-TERM"),
+    WORKING("TEMPORARY"),
+    EPISODIC("EPISODIC"),
+    PROCEDURAL("MACROS")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryScreen(
     viewModel: MemoryViewModel,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(MemoryType.SEMANTIC) }
+    var selectedTab by remember { mutableStateOf(MemoryScreenTab.GROWTH_GRAPH) }
     var searchQuery by remember { mutableStateOf("") }
     var isAddingFact by remember { mutableStateOf(false) }
     
@@ -51,7 +66,7 @@ fun MemoryScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "PERSISTENT MEMORY",
+                        text = "PERSONAL MEMORY",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = AccentNeonGreen,
@@ -60,7 +75,15 @@ fun MemoryScreen(
                     )
                 },
                 actions = {
-                    TextButton(onClick = { viewModel.clearMemories(selectedTab) }) {
+                    TextButton(onClick = {
+                        when (selectedTab) {
+                            MemoryScreenTab.GROWTH_GRAPH -> viewModel.clearMemoryTier(MemoryTier.LEARNED_PATTERN)
+                            MemoryScreenTab.SEMANTIC -> viewModel.clearMemories(MemoryType.SEMANTIC)
+                            MemoryScreenTab.WORKING -> viewModel.clearMemories(MemoryType.WORKING)
+                            MemoryScreenTab.EPISODIC -> viewModel.clearMemories(MemoryType.EPISODIC)
+                            MemoryScreenTab.PROCEDURAL -> viewModel.clearMemories(MemoryType.PROCEDURAL)
+                        }
+                    }) {
                         Text("Wipe Category", color = AccentRed, fontSize = 12.sp)
                     }
                 },
@@ -84,20 +107,20 @@ fun MemoryScreen(
                 edgePadding = 0.dp,
                 divider = { Divider(color = BorderColor) }
             ) {
-                MemoryType.values().forEach { type ->
+                MemoryScreenTab.values().forEach { tab ->
                     Tab(
-                        selected = selectedTab == type,
+                        selected = selectedTab == tab,
                         onClick = { 
-                            selectedTab = type
+                            selectedTab = tab
                             searchQuery = "" // Reset search query when changing tabs
                             isAddingFact = false
                         },
                         text = {
                             Text(
-                                text = type.name,
+                                text = tab.title,
                                 fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace,
-                                fontWeight = if (selectedTab == type) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     )
@@ -107,7 +130,7 @@ fun MemoryScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Search Bar & Add Button (Conditional)
-            if (selectedTab != MemoryType.WORKING) {
+            if (selectedTab != MemoryScreenTab.WORKING) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -117,8 +140,9 @@ fun MemoryScreen(
                         onValueChange = { searchQuery = it },
                         placeholder = {
                             val hint = when (selectedTab) {
-                                MemoryType.EPISODIC -> "Search conversation logs..."
-                                MemoryType.PROCEDURAL -> "Search macros..."
+                                MemoryScreenTab.GROWTH_GRAPH -> "Search Knowledge Graph..."
+                                MemoryScreenTab.EPISODIC -> "Search conversation logs..."
+                                MemoryScreenTab.PROCEDURAL -> "Search macros..."
                                 else -> "Search facts..."
                             }
                             Text(hint, color = TextSecondary, fontSize = 13.sp)
@@ -133,7 +157,7 @@ fun MemoryScreen(
                         ),
                         modifier = Modifier.weight(1f)
                     )
-                    if (selectedTab == MemoryType.SEMANTIC) {
+                    if (selectedTab == MemoryScreenTab.SEMANTIC) {
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = { isAddingFact = !isAddingFact },
@@ -152,13 +176,16 @@ fun MemoryScreen(
             // Render Dynamic Tab Contents
             Box(modifier = Modifier.weight(1f)) {
                 when (selectedTab) {
-                    MemoryType.WORKING -> {
+                    MemoryScreenTab.GROWTH_GRAPH -> {
+                        KnowledgeGraphView(viewModel = viewModel, searchQuery = searchQuery)
+                    }
+                    MemoryScreenTab.WORKING -> {
                         WorkingMemoryView(viewModel = viewModel)
                     }
-                    MemoryType.EPISODIC -> {
+                    MemoryScreenTab.EPISODIC -> {
                         EpisodicMemoryView(viewModel = viewModel, searchQuery = searchQuery)
                     }
-                    MemoryType.SEMANTIC -> {
+                    MemoryScreenTab.SEMANTIC -> {
                         SemanticMemoryView(
                             viewModel = viewModel,
                             searchQuery = searchQuery,
@@ -170,7 +197,7 @@ fun MemoryScreen(
                             onNewValueChange = { newValue = it }
                         )
                     }
-                    MemoryType.PROCEDURAL -> {
+                    MemoryScreenTab.PROCEDURAL -> {
                         ProceduralMemoryView(viewModel = viewModel, searchQuery = searchQuery)
                     }
                 }
@@ -817,6 +844,423 @@ fun ProceduralMemoryView(viewModel: MemoryViewModel, searchQuery: String) {
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace
             )
+        }
+    }
+}
+
+@Composable
+fun KnowledgeGraphView(
+    viewModel: MemoryViewModel,
+    searchQuery: String
+) {
+    val graph by viewModel.knowledgeGraph.collectAsState()
+    var selectedTierFilter by remember { mutableStateOf<MemoryTier?>(null) }
+    var selectedCategoryFilter by remember { mutableStateOf<KnowledgeCategory?>(null) }
+    var isAddingKnowledge by remember { mutableStateOf(false) }
+    var addIsSensitive by remember { mutableStateOf(false) }
+    var newLabel by remember { mutableStateOf("") }
+    var newSummary by remember { mutableStateOf("") }
+    var newCategory by remember { mutableStateOf(KnowledgeCategory.USER_PREFERENCE) }
+
+    val allNodes = graph.nodes.values.toList()
+    val filteredNodes = allNodes.filter { node ->
+        (selectedTierFilter == null || node.tier == selectedTierFilter) &&
+        (selectedCategoryFilter == null || node.category == selectedCategoryFilter) &&
+        (searchQuery.isBlank() ||
+            node.label.contains(searchQuery, ignoreCase = true) ||
+            node.summary.contains(searchQuery, ignoreCase = true) ||
+            node.properties.values.any { it.contains(searchQuery, ignoreCase = true) }
+        )
+    }.sortedWith(
+        compareBy<KnowledgeNode> {
+            when (it.tier) {
+                MemoryTier.LONG_TERM -> 0
+                MemoryTier.LEARNED_PATTERN -> 1
+                MemoryTier.SENSITIVE -> 2
+                MemoryTier.TEMPORARY -> 3
+            }
+        }.thenByDescending { it.confidence }
+         .thenByDescending { it.lastUpdated }
+    )
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Tier Chips
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            item {
+                FilterChip(
+                    selected = selectedTierFilter == null,
+                    onClick = { selectedTierFilter = null },
+                    label = { Text("All Levels (${allNodes.size})", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AccentNeonGreen,
+                        selectedLabelColor = DarkBackground,
+                        containerColor = CardBackground,
+                        labelColor = TextSecondary
+                    )
+                )
+            }
+            items(MemoryTier.values()) { tier ->
+                val count = allNodes.count { it.tier == tier }
+                val (label, icon) = when (tier) {
+                    MemoryTier.TEMPORARY -> "Level 1: Temp" to "⚡"
+                    MemoryTier.LONG_TERM -> "Level 2: Long-Term" to "🧠"
+                    MemoryTier.LEARNED_PATTERN -> "Level 3: Patterns" to "📈"
+                    MemoryTier.SENSITIVE -> "Level 4: Sensitive" to "🔒"
+                }
+                FilterChip(
+                    selected = selectedTierFilter == tier,
+                    onClick = { selectedTierFilter = if (selectedTierFilter == tier) null else tier },
+                    label = { Text("$icon $label ($count)", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = when (tier) {
+                            MemoryTier.SENSITIVE -> AccentOrange
+                            MemoryTier.LEARNED_PATTERN -> AccentCyan
+                            else -> AccentNeonGreen
+                        },
+                        selectedLabelColor = DarkBackground,
+                        containerColor = CardBackground,
+                        labelColor = TextSecondary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Category Chips
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            item {
+                FilterChip(
+                    selected = selectedCategoryFilter == null,
+                    onClick = { selectedCategoryFilter = null },
+                    label = { Text("All Categories", fontSize = 10.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TextPrimary.copy(alpha = 0.2f),
+                        selectedLabelColor = TextPrimary,
+                        containerColor = CardBackground.copy(alpha = 0.6f),
+                        labelColor = TextSecondary
+                    )
+                )
+            }
+            items(KnowledgeCategory.values()) { cat ->
+                val icon = when (cat) {
+                    KnowledgeCategory.CONTACT -> "👥"
+                    KnowledgeCategory.TASK_ROUTINE -> "⚙️"
+                    KnowledgeCategory.APP_PREFERENCE -> "📱"
+                    KnowledgeCategory.SCHEDULE -> "📅"
+                    KnowledgeCategory.PROJECT -> "📁"
+                    KnowledgeCategory.RESOURCE -> "🌐"
+                    KnowledgeCategory.NOTE_FACT -> "📝"
+                    KnowledgeCategory.USER_PREFERENCE -> "⭐"
+                }
+                FilterChip(
+                    selected = selectedCategoryFilter == cat,
+                    onClick = { selectedCategoryFilter = if (selectedCategoryFilter == cat) null else cat },
+                    label = { Text("$icon ${cat.name.replace('_', ' ')}", fontSize = 10.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AccentCyan.copy(alpha = 0.3f),
+                        selectedLabelColor = AccentCyan,
+                        containerColor = CardBackground.copy(alpha = 0.6f),
+                        labelColor = TextSecondary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Add Knowledge Header Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "KNOWLEDGE ENTITIES (${filteredNodes.size})",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = AccentCyan,
+                letterSpacing = 1.sp
+            )
+            TextButton(onClick = { isAddingKnowledge = !isAddingKnowledge }) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = AccentNeonGreen, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(if (isAddingKnowledge) "Close" else "Add Entity / Secret", color = AccentNeonGreen, fontSize = 11.sp)
+            }
+        }
+
+        // Add Knowledge / Secret Card
+        AnimatedVisibility(visible = isAddingKnowledge) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = CardBackground)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = if (addIsSensitive) "ADD LEVEL 4 ENCRYPTED SECRET" else "ADD LEVEL 2 LONG-TERM KNOWLEDGE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (addIsSensitive) AccentOrange else AccentNeonGreen
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(
+                            selected = !addIsSensitive,
+                            onClick = { addIsSensitive = false },
+                            label = { Text("🧠 Long-Term Memory", fontSize = 11.sp) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        FilterChip(
+                            selected = addIsSensitive,
+                            onClick = { addIsSensitive = true },
+                            label = { Text("🔒 Keystore Encrypted", fontSize = 11.sp) }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newLabel,
+                        onValueChange = { newLabel = it },
+                        label = { Text(if (addIsSensitive) "Secret Key / Label (e.g. locker_code)" else "Label / Title (e.g. Favorite Coffee)", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newSummary,
+                        onValueChange = { newSummary = it },
+                        label = { Text(if (addIsSensitive) "Secret Value (Hardware Encrypted)" else "Details / Description", fontSize = 12.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                            unfocusedBorderColor = BorderColor,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { isAddingKnowledge = false }) {
+                            Text("Cancel", color = AccentRed)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (newLabel.isNotBlank() && newSummary.isNotBlank()) {
+                                    if (addIsSensitive) {
+                                        viewModel.recordSensitiveData(newLabel, newSummary, newLabel)
+                                    } else {
+                                        viewModel.recordExplicitKnowledge(newLabel, newSummary, newCategory)
+                                    }
+                                    newLabel = ""
+                                    newSummary = ""
+                                    isAddingKnowledge = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                                contentColor = DarkBackground
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Save Entry", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (filteredNodes.isNotEmpty()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(filteredNodes, key = { it.id }) { node ->
+                    KnowledgeNodeCard(
+                        node = node,
+                        onPromote = { viewModel.promotePattern(node.id) },
+                        onDelete = { viewModel.deleteKnowledgeNode(node.id) }
+                    )
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No Knowledge Graph entities matching filter.",
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun KnowledgeNodeCard(
+    node: KnowledgeNode,
+    onPromote: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val tierColor = when (node.tier) {
+        MemoryTier.SENSITIVE -> AccentOrange
+        MemoryTier.LEARNED_PATTERN -> AccentCyan
+        MemoryTier.TEMPORARY -> TextSecondary
+        MemoryTier.LONG_TERM -> AccentNeonGreen
+    }
+    val tierIcon = when (node.tier) {
+        MemoryTier.SENSITIVE -> "🔒"
+        MemoryTier.LEARNED_PATTERN -> "📈"
+        MemoryTier.TEMPORARY -> "⚡"
+        MemoryTier.LONG_TERM -> "🧠"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = CardBackground)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = tierColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(1.dp, tierColor.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = "$tierIcon ${node.tier.name}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = tierColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Surface(
+                        color = TextPrimary.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = node.category.name.replace('_', ' '),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (node.tier == MemoryTier.LEARNED_PATTERN) {
+                        Text(
+                            text = "${(node.confidence * 100).toInt()}% conf",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = AccentCyan
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Node",
+                            tint = TextSecondary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = node.label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = AccentNeonGreen,
+                fontFamily = FontFamily.Monospace
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = node.summary,
+                fontSize = 13.sp,
+                color = TextPrimary
+            )
+
+            if (node.properties.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    node.properties.entries.take(3).forEach { (k, v) ->
+                        Text(
+                            text = "$k: $v",
+                            fontSize = 9.sp,
+                            color = TextSecondary,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
+            if (node.tier == MemoryTier.LEARNED_PATTERN) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onPromote,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, AccentNeonGreen.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = AccentNeonGreen, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Promote to Long-Term", fontSize = 10.sp, color = AccentNeonGreen)
+                    }
+                }
+            }
         }
     }
 }

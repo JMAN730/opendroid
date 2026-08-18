@@ -11,6 +11,10 @@ import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.repository.ConversationRepository
 import com.opendroid.ai.data.repository.MemoryRepository
+import com.opendroid.ai.core.memory.graph.KnowledgeCategory
+import com.opendroid.ai.core.memory.graph.KnowledgeNode
+import com.opendroid.ai.core.memory.graph.MemoryTier
+import com.opendroid.ai.core.memory.graph.PersonalKnowledgeGraph
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +31,14 @@ class MemoryViewModel @Inject constructor(
 ) : ViewModel() {
 
     val workingMemory = memoryManager.workingMemory
+    val personalGrowthEngine = memoryManager.personalGrowthEngine
+
+    val knowledgeGraph: StateFlow<PersonalKnowledgeGraph> = personalGrowthEngine.graphFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PersonalKnowledgeGraph()
+        )
 
     val memoriesList: StateFlow<List<Memory>> = memoryRepository.allMemories
         .stateIn(
@@ -61,6 +73,48 @@ class MemoryViewModel @Inject constructor(
                     timestamp = System.currentTimeMillis()
                 )
             )
+        }
+    }
+
+    fun recordExplicitKnowledge(
+        label: String,
+        summary: String,
+        category: KnowledgeCategory = KnowledgeCategory.NOTE_FACT
+    ) {
+        viewModelScope.launch {
+            personalGrowthEngine.recordExplicitMemory(
+                label = label,
+                summary = summary,
+                category = category
+            )
+        }
+    }
+
+    fun recordSensitiveData(key: String, secret: String, label: String) {
+        viewModelScope.launch {
+            personalGrowthEngine.recordSensitiveSecret(
+                key = key,
+                secretValue = secret,
+                label = label
+            )
+        }
+    }
+
+    fun promotePattern(nodeId: String) {
+        viewModelScope.launch {
+            personalGrowthEngine.promotePatternToExplicit(nodeId)
+        }
+    }
+
+    fun deleteKnowledgeNode(nodeId: String) {
+        viewModelScope.launch {
+            personalGrowthEngine.deleteNode(nodeId)
+        }
+    }
+
+    fun clearMemoryTier(tier: MemoryTier) {
+        viewModelScope.launch {
+            personalGrowthEngine.clearTier(tier)
         }
     }
 

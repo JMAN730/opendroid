@@ -311,6 +311,16 @@ class ActionAutoMapper @Inject constructor() {
         "QUERY_MEMORY"            to "RECALL_MEMORY",
         "RECALL"                  to "RECALL_MEMORY",
         "RECALL_FACTS"            to "RECALL_MEMORY",
+        "KNOWLEDGE_GRAPH"         to "QUERY_KNOWLEDGE_GRAPH",
+        "GET_KNOWLEDGE_GRAPH"     to "QUERY_KNOWLEDGE_GRAPH",
+        "SEARCH_KNOWLEDGE_GRAPH"  to "QUERY_KNOWLEDGE_GRAPH",
+        "GET_PREFERENCES"         to "QUERY_KNOWLEDGE_GRAPH",
+        "SAVE_PREFERENCE"         to "UPDATE_PREFERENCE",
+        "SET_PREFERENCE"          to "UPDATE_PREFERENCE",
+        "REMEMBER_PREFERENCE"     to "UPDATE_PREFERENCE",
+        "SAVE_SECRET"             to "SAVE_SENSITIVE_INFO",
+        "STORE_SENSITIVE"         to "SAVE_SENSITIVE_INFO",
+        "SAVE_ENCRYPTED_NOTE"     to "SAVE_SENSITIVE_INFO",
 
         // ── Security/privacy hallucinations → SKIP ──────────────────
         "CONFIRM_CONTACT"         to SKIP,

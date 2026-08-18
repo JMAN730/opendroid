@@ -29,7 +29,7 @@ class PlanValidator @Inject constructor(
             "READ_MESSAGES", "READ_EMAILS", "READ_NOTES", "READ_FILE",
             "LIST_FILES", "GET_SCREEN_TEXT", "LIST_INSTALLED_APPS",
             "ASK_USER", "SPLIT_BILL", "ANALYZE_SCREENSHOT",
-            "READ_AND_REMEMBER_SCREEN", "RECALL_MEMORY"
+            "READ_AND_REMEMBER_SCREEN", "RECALL_MEMORY", "QUERY_KNOWLEDGE_GRAPH"
         )
     }
 
