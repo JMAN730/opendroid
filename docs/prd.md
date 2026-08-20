@@ -1,9 +1,9 @@
 # Product Requirement Document (PRD) - OpenDroid
 
 ## Document Control
-* **Document Version:** v1.1.0
-* **Last Updated:** August 18, 2026
-* **Status:** Draft / Approved
+* **Document Version:** v1.2.0
+* **Last Updated:** August 20, 2026
+* **Status:** Approved
 * **Author:** yashab-cyber
 
 ---
@@ -23,8 +23,9 @@ To build a private, open-source, and fully autonomous agentic layer that gives u
 
 1. **Fragmented App Ecosystems:** Apps do not talk to each other. Automating a workflow like *"Checking if a flight is delayed, emailing my boss about it, and ordering an Uber to the new time"* requires manually hopping between three separate apps.
 2. **Brittle Assistant APIs:** Traditional voice assistants fail when they encounter apps without official developer APIs. They cannot click buttons, scroll feeds, or type into text boxes on third-party layouts.
-3. **Privacy Concerns:** Commercial AI assistants process all voice and personal data on remote servers. Users require an assistant that can run completely offline using local models (e.g., Ollama).
+3. **Privacy Concerns:** Commercial AI assistants process all voice and personal data on remote servers. Users require an assistant that can run completely offline using local models (e.g., LiteRT-LM, Ollama).
 4. **Lack of Agentic Loops:** Existing tools cannot handle failure. If a network call fails, or a button isn't visible, they stop. They lack a feedback loop to try an alternative approach or ask for human-in-the-loop confirmation.
+5. **No Habit Learning or Proactivity:** Traditional assistants only act when explicitly asked every single time; they do not learn recurring daily habits (e.g. checking Gmail, Calendar, Slack every morning at 9:00 AM) or offer to automate them.
 
 ---
 
@@ -32,14 +33,14 @@ To build a private, open-source, and fully autonomous agentic layer that gives u
 
 ```mermaid
 graph TD
-    A[User Voice/Text Input] --> B[Intent Classifier & Alias Resolver]
+    A[User Voice/Text Input / Habit Trigger] --> B[Intent Classifier & Alias Resolver]
     B --> C[Plan Manager & Generator]
-    C --> D[Execution Engine]
+    C --> D[Execution Engine & HabitRoutineEngine]
     D --> E[Native Android System Actions]
-    D --> F[Accessibility Automation]
-    D --> G[Vision Engine Analysis]
+    D --> F[Accessibility & App Automators WhatsApp/Telegram]
+    D --> G[Vision Engine & Multimodal Extraction]
     E & F & G --> H[Outcome Verification & Re-Planner]
-    H -- Success --> I[Final Speech/UI Feedback]
+    H -- Success --> I[Personal Knowledge Graph & Speech/UI Feedback]
     H -- Failure/Change --> C
 ```
 
@@ -51,28 +52,46 @@ graph TD
 ### 3.2. Device & System Control Actions
 * **Native System Controls:** Adjust screen brightness, volume, Wi-Fi, Bluetooth, flashlight, and device lock state.
 * **Productivity:** Set alarms, schedule timers, search/create calendar events, translate text, and fetch real-time device battery/network status.
-* **Smart Communications:** Search contacts using phonetic and nickname-matching fallback logic. Draft and send SMS or call contacts directly, falling back to system intents if direct permissions are not granted.
+* **Omni-Channel Communications:**
+  * **Phone Calls & SMS:** Search contacts using phonetic and nickname-matching fallback logic. Draft and send SMS or call contacts directly, falling back to system intents if direct permissions are not granted.
+  * **WhatsApp Automation:** Direct contact messaging, group messaging, and auto-replying via `WhatsAppAutomator`.
+  * **Telegram Automation:** Direct messaging to `@username` handles, contact address book matches, and international phone numbers via `TelegramAutomator` across official Telegram, Telegram Web/FOSS, Plus Messenger, and NekoX.
 
 ### 3.3. Accessibility & Vision Automation
-* **UI Interaction Service (`OpenDroidAccessibilityService`):** Click buttons, inject text, scroll list containers, and navigate layouts in third-party apps (e.g., WhatsApp, Maps).
+* **UI Interaction Service (`OpenDroidAccessibilityService`):** Click buttons, inject text, scroll list containers, and navigate layouts in third-party apps.
 * **Multimodal Vision Engine:** Capture real-time screenshots using the Accessibility media projections (Android 11+) and feed them to vision-capable models (e.g., Gemini Flash) for layout and step verification.
 * **Text-Scraping Fallback:** On older devices or where screenshot permissions are missing, scrape the active window's node hierarchy tree to reconstruct layout state.
 
-### 3.4. Multi-Tier Persistent Memory System
-The agent utilizes a four-layered memory structure backed by SQLite (Room Database) and DataStore Preferences:
+### 3.4. Screen Understanding → “Read & Remember”
+* **Multimodal Screen Extraction:** `extractAndStructureScreenInfo` extracts structured event details (*Title, Date, Time, Location, Participants, Action Items*), summaries, and notes from any screen.
+* **`READ_AND_REMEMBER_SCREEN` Action:** Saves screen information into persistent memory.
+* **`RECALL_MEMORY` Action:** Recalls saved screen notes, facts, and past meeting details via natural language queries.
 
-| Memory Tier | Purpose | Backend Store |
-|:---|:---|:---|
-| **Working Memory** | Manages transient variables and state of the current plan | Kotlin StateFlow / Volatile State |
-| **Episodic Memory** | Stores a structured log of past execution steps and outcomes | Room DB (`NotificationEntity`, `Logs`) |
-| **Semantic Memory** | Extracted personal facts (e.g., "wife's name is Sarah") mined via LLM | Room DB (`SemanticFactEntity`) |
-| **Procedural Memory** | User-defined macro sequences (e.g., "morning routine") | Room DB (`MacroEntity`) |
+### 3.5. 4-Tier Personal Knowledge Graph (PersonalGrowthEngine)
+Structured intelligence memory model organized into entity nodes (`KnowledgeNode`), categories, and relations (`KnowledgeRelation`):
+1. **⚡ Level 1: Temporary Memory (`TEMPORARY`):** Transient plan variables, current conversation context, and working state.
+2. **🧠 Level 2: Long-Term Memory (`LONG_TERM`):** Explicit user facts, active projects, and custom preferences with confidence `1.0`.
+3. **📈 Level 3: Learned Patterns (`LEARNED_PATTERN`):** Behaviors inferred from activity (frequently contacted people, preferred media apps, ride hailing choices, recurring alarm routines, frequent websites) with dynamic confidence scoring (50% → 85% → 95%).
+4. **🔒 Level 4: Sensitive Data (`SENSITIVE`):** Confidential user secrets (passwords, PINs, tokens) encrypted at rest using Android Keystore AES-256-GCM via `SensitiveMemoryStore`.
 
-### 3.5. On-Device Model Downloader & Manager (LiteRT-LM)
-* **Background Downloading**: Support downloading fully offline LiteRT models (`.task`/`.litertlm` formats) in the background via Jetpack WorkManager. The downloader must support pausing, resuming (with HTTP Range headers), and canceling.
-* **Hugging Face Authentication**: Enable secure downloading of both public and gated models. Implement a Hugging Face Access Token manager stored in a direct Android Keystore-backed encrypted record. Provide verification via the `whoami-v2` endpoint.
-* **Integrity & Compatibility Verification**: Before marking a model as ready for inference, verify that the downloaded file size matches expectations, check the SHA-256 hash (if defined), and ensure the file can be opened and initialized by the LiteRT runtime engine. If verification fails, delete the corrupted file and report the error.
-* **Local Model Import**: Allow users to bypass downloading by importing custom local `.task` or `.litertlm` files, copying them to sandboxed storage, and running the same JNI compatibility validation checks.
+### 3.6. Habit & Routine Detection Engine (HabitRoutineEngine)
+* **Continuous Background Habit Mining:** Intercepts foreground app switches via Accessibility events (with debouncing) and clusters user activities into 30-minute time windows across days of the week.
+* **Sequence Mining & Routine Synthesis:** Detects repeated patterns (e.g., user opens *Gmail $\to$ Calendar $\to$ Slack $\to$ Chrome* at 9:00 AM on weekdays).
+* **Proactive Suggestion Prompts:** Prompts user: *"I noticed you usually do these tasks every weekday morning. Would you like me to automate them?"*
+* **Multi-Step Morning Routine Automation:**
+  1. Read calendar (`LIST_CALENDAR_TODAY`)
+  2. Summarize upcoming meetings (`GET_MORNING_BRIEFING`, `section = "schedule"`)
+  3. Check important notifications (`READ_NOTIFICATIONS`)
+  4. Prepare task list (`READ_NOTES`)
+  5. Read selected messages (`READ_NOTIFICATIONS`)
+  6. Deliver morning briefing (`GET_MORNING_BRIEFING`, `section = "full"`)
+* **One-Click Approval to Scheduled Macros:** Approval registers automated recurring cron jobs in `MacroDao` and logs habit facts in `PersonalGrowthEngine`.
+
+### 3.7. On-Device Model Downloader & Manager (LiteRT-LM)
+* **Background Downloading:** Download offline LiteRT models (`.task`/`.litertlm`) in the background via Jetpack WorkManager with pause, resume (HTTP Range), and cellular network support with carrier charge warnings.
+* **Hugging Face Authentication:** Android Keystore-backed token management verified via `whoami-v2`.
+* **Integrity & Compatibility Verification:** Validates SHA-256 hashes, file size, and JNI engine loading compatibility (fixing false `FORMAT_INVALID` errors on models like Gemma 4 e2b-it and Qwen).
+* **Local Model Import:** Sandboxed local file importing with JNI verification.
 
 ---
 
@@ -85,69 +104,33 @@ The user interface follows a **Premium Glassmorphic Cyberpunk** aesthetic.
   * Accent / Highlights: Neon Green (`#00FF88`), Cyber Cyan (`#00E5FF`), Electric Violet (`#8B5CF6`)
   * Surfaces: Dark Gray Cardboard (`#121820`) with semi-transparent borders.
 * **Key Screen Mockups & Flows:**
-  1. **Chat Screen:** Futuristic messaging interface containing a pulsing visual indicator (audio orb) when active in voice-listening mode. Displays real-time API latency benchmarks.
-  2. **Plan Screen:** Displays the step-by-step decomposed plan, showing icons representing action types, progress spinners for running steps, green ticks for completed tasks, and red exclamation marks for failed steps.
-  3. **Settings Screen:** Simple, unified panel to toggle providers (OpenAI, Gemini, Ollama, etc.), save encrypted API keys, customize Ollama host URLs, and test latency.
-  4. **Auto-Reply Setup:** Configurable auto-responder for WhatsApp/SMS with a prominent warning card and observer that updates live as accessibility permissions are granted.
+  1. **Chat Screen:** Futuristic messaging interface with real-time API latency benchmarks and audio visualizer.
+  2. **Plan Screen:** Step-by-step decomposed DAG plan with live execution status spinners and outcome checks.
+  3. **Routines Screen (`RoutinesScreen`):** Discovered routine suggestions with confidence tags, one-click approve/dismiss buttons, active routine management, template presets (*Morning Routine*, *Work Focus*, *Evening Wrap-up*), and habit analytics.
+  4. **Growth Graph Screen (`MemoryScreen`):** 4-tier interactive visualizer for temporary, long-term, learned patterns, and encrypted sensitive records.
+  5. **Settings Screen:** Dynamic model discovery from provider endpoints (OpenAI, Gemini, Ollama, Groq, Cohere, OpenRouter), API key management, and on-device model manager.
 
 ---
 
 ## 5. Security & Permission Management
 
-Because OpenDroid operates with high-privilege permissions, security is treated as a first-class requirement.
-
-> [!IMPORTANT]
-> **Data Security Requirement:** API Keys must not be stored in standard `SharedPreferences` in plaintext. They must be saved in direct Android Keystore-backed encrypted records.
-
-> [!CAUTION]
-> **Accessibility Service Warning:** The accessibility service handles highly sensitive user data. Under no circumstances should layout hierarchies, scraped texts, or screenshots be sent to third-party endpoints unless explicitly authorized by the active LLM provider configuration. All transmission must be encrypted via HTTPS.
-
-### Permissive Onboarding flow
-The onboarding screen must implement a vertical scroll container that handles rotation gracefully. The stages of onboarding include:
-1. **Introduction Panel:** Personal name and birthday setup.
-2. **Permissions Setup Panel:** Guides the user sequentially to grant:
-   * Record Audio (Speech-to-Text)
-   * Fine Location (Productivity actions)
-   * SMS & Phone Call (Communications actions)
-   * Contacts & Calendar (Productivity actions)
-   * External Storage / File Manager (File read/write)
-   * Write Settings (System control)
-   * Accessibility Service (Automation)
+* **Data Security Requirement:** API Keys and user secrets must not be stored in plaintext. They are encrypted at rest using direct Android Keystore AES-256-GCM envelopes.
+* **Accessibility Privacy:** Scraped layout hierarchies, texts, and screenshots are processed locally or sent only to the user-authorized LLM endpoint over HTTPS.
+* **Plan Approval Safety Modes:**
+  * `OFF`: Requires confirmation for every generated plan.
+  * `AUTO`: Automatically executes actions on the user's explicit allowlist; requires confirmation for actions marked `neverAutoApprove`.
+  * `YOLO`: Executes all plans autonomously upon user opt-in.
 
 ---
 
 ## 6. Technical Stack & Dependencies
 
-* **Core Platform:** Kotlin, Jetpack Compose, Jetpack Lifecycle
-* **Dependency Injection:** Dagger-Hilt
-* **Database:** Room DB (SQLite)
-* **Local Settings:** DataStore Preferences
-* **Serialization:** Kotlinx Serialization JSON
-* **Network Client:** OkHttp3 & Retrofit2
-* **Voice Engine:** Android native SpeechRecognizer, offline WakeWord engines, and ElevenLabs API
+* **Core Platform:** Kotlin 2.4.0, Jetpack Compose BOM 2026.06.01, Jetpack Lifecycle 2.8.7
+* **Dependency Injection:** Dagger-Hilt 2.60.1
+* **Database:** Room DB 2.8.4 (SQLite, Schema v8)
+* **Local Settings:** DataStore Preferences 1.1.1
+* **Serialization:** Kotlinx Serialization JSON 1.8.1
+* **Network Client:** OkHttp 5.4.0 BOM & Retrofit 3.0.0
+* **On-Device AI:** LiteRT-LM Android 0.14.0, ML Kit GenAI Prompt API
 * **Minimum SDK:** Android 26 (Android 8.0 Oreo)
-* **Target SDK:** Android 35 (Android 15)
-
----
-
-## 7. Success Criteria & Verification Metrics
-
-1. **Zero-Crash Navigation:** Navigating to settings, auto-reply configurations, and history screens must be free of asynchronous runtime failures.
-2. **Layout Adaptability:** The app must be fully functional and readable under both portrait and landscape screen configurations.
-3. **Execution Success Rate:** Over 90% of native system commands (Wi-Fi toggle, Brightness, Alarm set) must execute within 2.5 seconds of user input.
-4. **Fallback Resilience:** Phone calls and SMS must successfully trigger standard system Intent overlays if direct runtime permissions are missing.
-
-### 7.1 Approval modes and diagnostics
-
-The app supports three plan approval modes: OFF requires approval for every
-plan; AUTO runs only plans whose actions are in the user's explicit allowlist;
-and YOLO runs every plan without approval, including actions marked
-`neverAutoApprove` — that is the point of the mode. In OFF and AUTO, actions
-marked `neverAutoApprove` always require confirmation.
-Screen capture is not a first-run grant and must be explicitly enabled by the
-user. A declined plan remains proposed and can be approved later.
-
-The app also keeps a local crash log. Users can inspect, share, and clear
-redacted reports. Reports are retained locally with a bounded maximum count;
-sharing is user initiated and the UI must explain that redaction is best
-effort before export.
+* **Target SDK:** Android 36 (Android 16)

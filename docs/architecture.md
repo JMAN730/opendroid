@@ -46,9 +46,14 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 ### 2.1. System Core Components
 
 * **`PlanManager` & `AgentLoop`:** The central reasoning engines. `PlanManager` decomposes multi-step user prompts into structured DAG action plans, while `AgentLoop` sequences step execution and manages state transitions.
-* **`ReEvaluationEngine`:** Monitors step execution results (`ActionResult`). On failure or unexpected application behavior, it invokes the LLM with context feedback to dynamically amend or regenerate remaining plan steps.
-* **`ActionDispatcher` & Action Handlers:** Dispatches parsed plan step calls to concrete action handlers (`SystemActions`, `CommunicationActions`, `CalendarActions`, `MediaActions`, `AdvancedControlActions`, etc.).
-* **`VisionEngine` & Accessibility Scraper:** `VisionEngine` captures screen state via Android Media Projection (Android 11+) and processes visual frames via multimodal LLMs. The node scraper in `OpenDroidAccessibilityService` recursively parses accessibility window node trees (`AccessibilityNodeInfo`) as text fallback.
+* **`HabitRoutineEngine`:** Observes debounced foreground app switches from the accessibility service, clusters activities into 30-minute time buckets across days of the week, mines recurring app sequences (e.g. Gmail $\to$ Calendar $\to$ Slack), proactively suggests automations, and executes multi-step morning briefings.
+* **`PersonalGrowthEngine`:** Manages the 4-tier Personal Knowledge Graph (Temporary, Long-Term, Learned Patterns with dynamic confidence scoring, and Hardware-Encrypted Sensitive Data).
+* **`ActionDispatcher` & Action Handlers:** Dispatches parsed plan step calls to concrete action handlers (`SystemActions`, `CommunicationActions`, `RoutineActions`, `CalendarActions`, `MediaActions`, `AdvancedControlActions`, etc.).
+* **App Automators:**
+  * `WhatsAppAutomator`: Automated typing and sending on WhatsApp.
+  * `TelegramAutomator`: Automated typing and sending across official Telegram, Telegram Web/FOSS, Plus Messenger, and NekoX.
+  * `SmsAutomator`: Automated typing and sending for system SMS apps.
+* **`VisionEngine` & Accessibility Scraper:** `VisionEngine` captures screen state via Android Media Projection (Android 11+) and processes visual frames via multimodal LLMs (including `extractAndStructureScreenInfo` for Read & Remember). The node scraper in `OpenDroidAccessibilityService` recursively parses accessibility window node trees (`AccessibilityNodeInfo`) as text fallback.
 * **`OpenDroidNotificationListener` & `AutoReplyEngine`:** Intercepts incoming device notifications, matches automated trigger rules, and dispatches context-aware AI auto-responses for platforms like WhatsApp or SMS.
 * **`ProviderCredentialStore`:** Stores provider credentials with direct Android Keystore AES-256-GCM envelopes bound to logical credential IDs.
 * **`KeystoreSecretStorage`:** The single direct-Keystore cipher, envelope format, and record boundary shared by every store that keeps a secret at rest.

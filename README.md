@@ -53,6 +53,7 @@ OpenDroid will **plan** this as 3 steps, **execute** each one, **verify** the re
 | Capability | Description |
 |------------|-------------|
 | **Self-Planning** | Breaks complex commands into sequential steps with dependency tracking |
+| **Habit & Routine Detection** | Mines recurring daily app sequences (e.g. Gmail $\to$ Calendar $\to$ Slack at 9 AM) and offers one-click automated routines |
 | **Re-Evaluation** | Monitors execution results and dynamically replans when steps fail |
 | **Compound Intent Guard** | Smart detection of multi-action commands (e.g. "open WhatsApp *and* send message") |
 | **Contact Disambiguation** | 4-tier contact resolution with fuzzy matching and relationship aliases ("call dad") |
@@ -60,7 +61,7 @@ OpenDroid will **plan** this as 3 steps, **execute** each one, **verify** the re
 ### 🛠️ On-Device Model Manager (LiteRT-LM)
 | Capability | Description |
 |------------|-------------|
-| **Background Downloader** | Real network downloads (via WorkManager) with Pause/Resume, speed tracking, and ETA |
+| **Background Downloader** | Real network downloads (via WorkManager) with Pause/Resume, cellular support, speed tracking, and ETA |
 | **Secure Authentication** | Direct Android Keystore AES-GCM token storage to securely fetch gated Hugging Face models |
 | **Integrity Verification** | Computes SHA-256 hashes and verifies LiteRT engine loading compatibility before marking READY |
 | **Local Model Import** | Direct offline importing of catalog or freestanding custom `.task` / `.litertlm` files with JNI verification checks |
@@ -69,29 +70,28 @@ OpenDroid will **plan** this as 3 steps, **execute** each one, **verify** the re
 | Action | Examples |
 |--------|----------|
 | **System** | Brightness, WiFi, Bluetooth, Flashlight, DND, Volume, Screenshot |
-| **Communication** | Calls, SMS, WhatsApp messages, Email drafts |
-| **Productivity** | Alarms, Timers, Reminders, Calendar events, Notes |
+| **Communication** | WhatsApp messages, Telegram messages/channels (`@user`), Calls, SMS, Email drafts |
+| **Routines** | Morning briefings, agenda summaries, automated macro sequences |
+| **Productivity** | Screen extraction ("Read & Remember"), Alarms, Timers, Reminders, Calendar events, Notes |
 | **Navigation** | Google Maps directions, Uber/Ola booking |
 | **Media** | Play/pause music, YouTube search, camera |
 | **Finance** | UPI payments, bill splitting, currency conversion |
 | **Smart Home** | Google Home device control |
 
-### 👁️ Vision Engine
-Captures screenshots via Accessibility API and feeds them to vision-capable LLMs for real-time screen analysis. Falls back to accessibility tree text-scraping on older devices.
+### 👁️ Vision Engine & Screen Understanding
+Captures screenshots via Accessibility API and feeds them to vision-capable LLMs for real-time screen analysis and **"Read & Remember"** multimodal meeting/note extraction. Falls back to accessibility tree text-scraping on older devices.
 
-### 🗄️ Multi-Tier Memory System
+### 🗄️ 4-Tier Personal Knowledge Graph
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Memory System                   │
-├──────────────┬──────────────┬───────────────────┤
-│   Working    │   Episodic   │     Semantic      │
-│  (current    │ (past task   │ (long-term facts  │
-│   context)   │   results)   │  & preferences)   │
-├──────────────┴──────────────┴───────────────────┤
-│              Procedural Memory                   │
-│         (user-defined macro workflows)           │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                 Personal Knowledge Graph                    │
+├──────────────┬──────────────┬────────────────┬──────────────┤
+│ ⚡ Level 1   │  🧠 Level 2  │   📈 Level 3   │  🔒 Level 4  │
+│  Temporary   │  Long-Term   │    Learned     │  Sensitive   │
+│   (Active    │  (Explicit   │    Patterns    │ (Keystore    │
+│    Plan)     │    Facts)    │  (Inferences)  │  Encrypted)  │
+└──────────────┴──────────────┴────────────────┴──────────────┘
 ```
 
 ### 🎙️ Voice Interface
