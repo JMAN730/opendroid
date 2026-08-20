@@ -51,6 +51,7 @@ object OpenDroidRoutes {
     const val NOTIFICATION_HISTORY = "notification_history"
     const val PERMISSIONS = "permissions"
     const val CRASH_LOG = "crash_log"
+    const val ROUTINES = "routines"
 }
 
 /**
@@ -136,6 +137,9 @@ fun OpenDroidNavigation(
                 },
                 onNavigateToCrashLog = {
                     navController.navigate(OpenDroidRoutes.CRASH_LOG)
+                },
+                onNavigateToRoutines = {
+                    navController.navigate(OpenDroidRoutes.ROUTINES)
                 }
             )
         }
@@ -226,6 +230,16 @@ fun OpenDroidNavigation(
                 }
             )
         }
+
+        composable(OpenDroidRoutes.ROUTINES) {
+            val routineViewModel: com.opendroid.ai.ui.viewmodel.RoutineViewModel = hiltViewModel()
+            com.opendroid.ai.ui.screens.RoutinesScreen(
+                viewModel = routineViewModel,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
 
@@ -249,7 +263,8 @@ fun MainDashboard(
     onNavigateToAutoReply: () -> Unit = {},
     onNavigateToNotificationHistory: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
-    onNavigateToCrashLog: () -> Unit = {}
+    onNavigateToCrashLog: () -> Unit = {},
+    onNavigateToRoutines: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -342,7 +357,10 @@ fun MainDashboard(
                 Screen.Chat -> ChatScreen(viewModel = chatViewModel)
                 Screen.Plan -> PlanScreen(viewModel = planViewModel)
                 Screen.Memory -> MemoryScreen(viewModel = memoryViewModel)
-                Screen.Macros -> MacrosScreen(viewModel = macroViewModel)
+                Screen.Macros -> MacrosScreen(
+                    viewModel = macroViewModel,
+                    onNavigateToRoutines = onNavigateToRoutines
+                )
                 Screen.History -> LogsScreen(viewModel = historyViewModel)
                 Screen.Settings -> SettingsScreen(
                     viewModel = settingsViewModel,
@@ -355,7 +373,8 @@ fun MainDashboard(
                     onNavigateToAutoReply = onNavigateToAutoReply,
                     onNavigateToNotificationHistory = onNavigateToNotificationHistory,
                     onNavigateToPermissions = onNavigateToPermissions,
-                    onNavigateToCrashLog = onNavigateToCrashLog
+                    onNavigateToCrashLog = onNavigateToCrashLog,
+                    onNavigateToRoutines = onNavigateToRoutines
                 )
             }
         }

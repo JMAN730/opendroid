@@ -97,6 +97,7 @@ $schema
               OPEN_APP → execute immediately
               MAKE_CALL → execute, ask for number ONLY if contact is unknown
               SEND_WHATSAPP → execute, ask for contact/message ONLY if missing
+              SEND_TELEGRAM → execute, ask for contact/message ONLY if missing
               TOGGLE_WIFI → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
               TOGGLE_BLUETOOTH → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
               TOGGLE_MOBILE_DATA → execute immediately with {state: "on", "off", or "toggle"} (defaults to toggle)
@@ -118,6 +119,7 @@ $schema
 
             SELF-CONTAINED ACTIONS — these handle their own app opening internally. NEVER add an OPEN_APP step before them:
             - SEND_WHATSAPP: Opens WhatsApp, navigates to contact, and sends the message — all in one step.
+            - SEND_TELEGRAM: Opens Telegram, navigates to contact/handle, and sends the message — all in one step.
             - MAKE_CALL: Opens dialer/places call directly.
             - SEND_SMS: Sends SMS or opens SMS compose directly.
             - SEND_EMAIL: Opens a pre-filled email draft directly; the user must review and tap Send, and the app must not claim it was sent.

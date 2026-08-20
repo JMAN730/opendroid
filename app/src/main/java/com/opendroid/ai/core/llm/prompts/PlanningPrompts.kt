@@ -29,7 +29,7 @@ CRITICAL DEPENDENCY RULES:
    - The Re-Evaluation Engine runs at each step boundary. It will inspect the data outputs of the completed steps and dynamically decide whether to CONTINUE executing the remaining conditional steps or ABANDON them when the user's conditions are not met.
 
 SELF-CONTAINED ACTIONS (do NOT add OPEN_APP before these):
-- SEND_WHATSAPP, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally. SEND_EMAIL only prepares a draft and requires the user to tap Send.
+- SEND_WHATSAPP, SEND_TELEGRAM, MAKE_CALL, SEND_SMS, SEND_EMAIL — these open the app internally. SEND_EMAIL only prepares a draft and requires the user to tap Send.
 - BOOK_UBER, BOOK_OLA — these open the ride app internally.
 - PLAY_MUSIC, PLAY_YOUTUBE — these open the media app internally AND perform the
   search/play. They already handle phrasing like "open youtube and search X" or
@@ -42,6 +42,7 @@ into a field does not submit a search on its own.
   WRONG: Step 1: OPEN_APP {appName: "WhatsApp"}, Step 2: SEND_WHATSAPP {contact: "dad", message: "hi"}
   CORRECT: Step 1: SEND_WHATSAPP {contact: "dad", message: "hi"}
   "open whatsapp and send hi to dad" = just SEND_WHATSAPP (1 step, not 2)
+  "message @alice on telegram saying hi" = just SEND_TELEGRAM (1 step, not 2)
 
   WRONG: Step 1: OPEN_APP {appName: "YouTube"}, Step 2: CLICK_TEXT {text: "Search"}, Step 3: TYPE_TEXT {searchText: "Search", content: "cat videos"}
   CORRECT: Step 1: PLAY_YOUTUBE {query: "cat videos"}

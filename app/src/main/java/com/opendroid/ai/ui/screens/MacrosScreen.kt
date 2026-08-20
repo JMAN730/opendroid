@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -34,6 +35,7 @@ import java.util.UUID
 @Composable
 fun MacrosScreen(
     viewModel: MacroViewModel,
+    onNavigateToRoutines: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val macros by viewModel.macros.collectAsState()
@@ -90,6 +92,48 @@ fun MacrosScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
+            // Habit & Routine Detection Entry Banner
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToRoutines() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("⚡", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "HABIT & ROUTINE DETECTION",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentCyan
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Detect repeated daily habits (Gmail, Calendar, Slack) & automate morning routines.",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "View Routines",
+                            tint = AccentCyan
+                        )
+                    }
+                }
+            }
+
             // Expandable Macro Creation Panel
             if (isAddingMacro) {
                 item {

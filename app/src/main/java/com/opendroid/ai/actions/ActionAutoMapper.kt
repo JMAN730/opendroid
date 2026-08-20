@@ -139,6 +139,19 @@ class ActionAutoMapper @Inject constructor() {
         "TEXT_WHATSAPP"            to "SEND_WHATSAPP",
         "WHATSAPP"                to "SEND_WHATSAPP",
 
+        // ── Telegram variants ───────────────────────────────────────
+        "OPEN_TELEGRAM"           to "OPEN_TELEGRAM",
+        "OPEN_TELEGRAM_CHAT"      to "OPEN_TELEGRAM",
+        "LAUNCH_TELEGRAM"         to "OPEN_TELEGRAM",
+        "TELEGRAM_OPEN"           to "OPEN_TELEGRAM",
+        "SEND_TELEGRAM"           to "SEND_TELEGRAM",
+        "SEND_TELEGRAM_MESSAGE"   to "SEND_TELEGRAM",
+        "TELEGRAM_MESSAGE"        to "SEND_TELEGRAM",
+        "TELEGRAM_SEND"           to "SEND_TELEGRAM",
+        "MESSAGE_TELEGRAM"        to "SEND_TELEGRAM",
+        "TEXT_TELEGRAM"           to "SEND_TELEGRAM",
+        "TELEGRAM"                to "SEND_TELEGRAM",
+
         // ── SMS variants ────────────────────────────────────────────
         "OPEN_MESSAGES"           to "SEND_SMS",
         "OPEN_SMS"                to "SEND_SMS",
@@ -391,6 +404,10 @@ class ActionAutoMapper @Inject constructor() {
         // WhatsApp (before generic MESSAGE)
         SemanticRule(listOf("WHATSAPP"), emptyList(), "SEND_WHATSAPP"),
 
+        // Telegram (before generic MESSAGE)
+        SemanticRule(listOf("OPEN", "TELEGRAM"), emptyList(), "OPEN_TELEGRAM"),
+        SemanticRule(listOf("TELEGRAM"), emptyList(), "SEND_TELEGRAM"),
+
         // SMS (before generic MESSAGE)
         SemanticRule(listOf("SMS"), emptyList(), "SEND_SMS"),
 
@@ -437,6 +454,13 @@ class ActionAutoMapper @Inject constructor() {
         // Navigation
         SemanticRule(listOf("DIRECTION"), emptyList(), "GET_DIRECTIONS"),
         SemanticRule(listOf("NAVIGATE"), listOf("URL", "WEB", "BROWSER"), "GET_DIRECTIONS"),
+
+        // Routines & Briefings
+        SemanticRule(listOf("BRIEFING"), emptyList(), "GET_MORNING_BRIEFING"),
+        SemanticRule(listOf("MORNING", "SUMMARY"), emptyList(), "GET_MORNING_BRIEFING"),
+        SemanticRule(listOf("DETECT", "ROUTINE"), emptyList(), "DETECT_ROUTINES"),
+        SemanticRule(listOf("APPROVE", "ROUTINE"), emptyList(), "APPROVE_ROUTINE"),
+        SemanticRule(listOf("ROUTINE"), emptyList(), "RUN_ROUTINE"),
 
         // Flashlight
         SemanticRule(listOf("FLASHLIGHT"), emptyList(), "TOGGLE_FLASHLIGHT"),

@@ -25,6 +25,9 @@ import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.db.entities.ModelEntity
 import com.opendroid.ai.data.db.entities.CrashLogEntity
+import com.opendroid.ai.data.db.dao.HabitDao
+import com.opendroid.ai.data.db.entities.HabitEventEntity
+import com.opendroid.ai.data.db.entities.HabitRoutineEntity
 import androidx.room.TypeConverters
 
 @Database(
@@ -38,9 +41,11 @@ import androidx.room.TypeConverters
         UnknownActionEntity::class,
         NotificationEntity::class,
         ModelEntity::class,
-        CrashLogEntity::class
+        CrashLogEntity::class,
+        HabitEventEntity::class,
+        HabitRoutineEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -55,6 +60,7 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun notificationDao(): NotificationDao
     abstract fun modelDao(): ModelDao
     abstract fun crashLogDao(): CrashLogDao
+    abstract fun habitDao(): HabitDao
 
     companion object {
         // Id of the single session that pre-existing conversation rows are
@@ -180,6 +186,49 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_crash_logs_timestamp ON crash_logs(timestamp)"
                 )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS habit_events (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        eventType TEXT NOT NULL,
+                        packageName TEXT NOT NULL,
+                        actionName TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        dayOfWeek INTEGER NOT NULL,
+                        hourOfDay INTEGER NOT NULL,
+                        minuteOfHour INTEGER NOT NULL,
+                        metadataJson TEXT NOT NULL DEFAULT '{}'
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_events_timestamp ON habit_events(timestamp)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_events_dayOfWeek ON habit_events(dayOfWeek)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_events_hourOfDay ON habit_events(hourOfDay)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS habit_routines (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        triggerLabel TEXT NOT NULL,
+                        triggerCron TEXT NOT NULL,
+                        detectedActionsJson TEXT NOT NULL,
+                        suggestedStepsJson TEXT NOT NULL,
+                        repetitionCount INTEGER NOT NULL,
+                        confidence REAL NOT NULL,
+                        status TEXT NOT NULL,
+                        suggestionMessage TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        lastDetectedAt INTEGER NOT NULL,
+                        lastExecutedAt INTEGER,
+                        macroId TEXT
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_routines_status ON habit_routines(status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_routines_lastDetectedAt ON habit_routines(lastDetectedAt)")
             }
         }
     }

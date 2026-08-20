@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
+import com.opendroid.ai.accessibility.TelegramAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
@@ -67,6 +68,8 @@ class CommunicationActions @Inject constructor(
     fun getActions(): List<Action> = listOf(
         MakeCallAction(),
         SendWhatsAppAction(),
+        SendTelegramAction(),
+        OpenTelegramAction(),
         SendSmsAction(),
         SendEmailAction(),
         SendWhatsAppGroupAction(),
@@ -167,6 +170,91 @@ class CommunicationActions @Inject constructor(
         }
     }
 
+    // ── SEND_TELEGRAM with username / phone / disambiguation ───
+
+    private inner class SendTelegramAction : Action {
+        override val name: String = "SEND_TELEGRAM"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val contact = params["contact"]
+                ?: params["to"]
+                ?: params["recipient"]
+                ?: params["username"]
+                ?: return ActionResult(false, null, "contact is missing")
+            val message = params["message"]
+                ?: params["text"]
+                ?: params["body"]
+                ?: return ActionResult(false, null, "message is missing")
+
+            val trimmed = contact.trim()
+            if (trimmed.startsWith("@") || (trimmed.isNotEmpty() && !trimmed.contains(" ") && !trimmed.all { it.isDigit() })) {
+                // Direct Telegram username/handle
+                return executeTelegram(trimmed.removePrefix("@"), contact, message, context, isUsername = true)
+            }
+
+            if (trimmed.startsWith("+") || (trimmed.isNotEmpty() && trimmed.all { it.isDigit() })) {
+                // Direct phone number
+                return executeTelegram(trimmed, contact, message, context, isUsername = false)
+            }
+
+            return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
+                is ContactResolution.Found -> executeTelegram(resolved.contact.phoneNumber, contact, message, context, isUsername = false)
+                is ContactResolution.Ambiguous -> buildContactPickerResult(
+                    contact, resolved.matches, "SEND_TELEGRAM",
+                    mapOf("message" to message)
+                )
+                is ContactResolution.NotFound -> {
+                    // If not found in device contacts, treat as Telegram username
+                    executeTelegram(trimmed.removePrefix("@"), contact, message, context, isUsername = true)
+                }
+            }
+        }
+    }
+
+    private inner class OpenTelegramAction : Action {
+        override val name: String = "OPEN_TELEGRAM"
+        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+            val contact = params["contact"] ?: params["username"] ?: params["channel"]
+            return try {
+                if (!contact.isNullOrBlank()) {
+                    val domain = contact.trim().removePrefix("@")
+                    val tgUri = "tg://resolve?domain=$domain".toUri()
+                    val intent = Intent(Intent.ACTION_VIEW, tgUri).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(intent)
+                        return ActionResult(true, "Opened Telegram chat with $contact!", null)
+                    }
+                    val webIntent = Intent(Intent.ACTION_VIEW, "https://t.me/$domain".toUri()).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(webIntent)
+                    return ActionResult(true, "Opened Telegram with $contact!", null)
+                } else {
+                    val pm = context.packageManager
+                    val launchIntent = pm.getLaunchIntentForPackage("org.telegram.messenger")
+                        ?: pm.getLaunchIntentForPackage("org.telegram.messenger.web")
+                        ?: pm.getLaunchIntentForPackage("org.telegram.plus")
+                        ?: pm.getLaunchIntentForPackage("nekox.messenger")
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(launchIntent)
+                        ActionResult(true, "Telegram is open!", null)
+                    } else {
+                        val webIntent = Intent(Intent.ACTION_VIEW, "https://web.telegram.org".toUri()).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(webIntent)
+                        ActionResult(true, "Opened Telegram Web in browser.", null)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("OpenTelegram", "Failed to open Telegram: ${e.localizedMessage}")
+                ActionResult(false, null, "Couldn't open Telegram right now.")
+            }
+        }
+    }
+
     // ── SEND_SMS with disambiguation ─────────────────────────
 
     private inner class SendSmsAction : Action {
@@ -263,7 +351,6 @@ class CommunicationActions @Inject constructor(
                 val inputNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
                 for (node in inputNodes) {
                     val text = node.text?.toString() ?: ""
-                    node.recycle()
                     // If input field is empty or shows placeholder, message was sent
                     if (text.isBlank() || text == "Type a message" || text == "Message") {
                         return true
@@ -276,6 +363,69 @@ class CommunicationActions @Inject constructor(
             return null
         } catch (e: Exception) {
             return null // inconclusive
+        }
+    }
+
+    private suspend fun executeTelegram(
+        identifier: String,
+        contactLabel: String,
+        message: String,
+        context: Context,
+        isUsername: Boolean
+    ): ActionResult {
+        return try {
+            val encodedMsg = URLEncoder.encode(message, "UTF-8")
+            val tgUri = if (isUsername) {
+                "tg://resolve?domain=$identifier&text=$encodedMsg".toUri()
+            } else {
+                "tg://msg?to=$identifier&text=$encodedMsg".toUri()
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW, tgUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val pm = context.packageManager
+            val tgPackages = listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.plus", "nekox.messenger")
+            val installedTgPkg = tgPackages.firstOrNull { pkg ->
+                try {
+                    pm.getPackageInfo(pkg, 0)
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+
+            if (installedTgPkg != null) {
+                intent.setPackage(installedTgPkg)
+            }
+
+            if (intent.resolveActivity(pm) != null) {
+                context.startActivity(intent)
+            } else {
+                val fallbackUri = if (isUsername) {
+                    "https://t.me/$identifier".toUri()
+                } else {
+                    "https://t.me/share/url?url=&text=$encodedMsg".toUri()
+                }
+                val webIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(webIntent)
+            }
+
+            val service = OpenDroidAccessibilityService.getInstance()
+            if (service != null) {
+                val autoSent = TelegramAutomator.automateSend(message)
+                if (autoSent) {
+                    return ActionResult(true, "Message sent to $contactLabel on Telegram!", null)
+                }
+            }
+
+            ActionResult(true, "Opened Telegram chat with $contactLabel with your message ready!", null)
+        } catch (e: Exception) {
+            Log.e("SendTelegram", "Telegram failed: ${e.localizedMessage}")
+            ActionResult(false, null, "Telegram didn't work. ${e.localizedMessage ?: "Please try again."}", true)
         }
     }
 
@@ -438,6 +588,9 @@ class CommunicationActions @Inject constructor(
             return try {
                 val intent = when (app.lowercase()) {
                     "whatsapp" -> context.packageManager.getLaunchIntentForPackage("com.whatsapp")
+                    "telegram" -> context.packageManager.getLaunchIntentForPackage("org.telegram.messenger")
+                        ?: context.packageManager.getLaunchIntentForPackage("org.telegram.messenger.web")
+                        ?: context.packageManager.getLaunchIntentForPackage("org.telegram.plus")
                     else -> Intent(Intent.ACTION_MAIN).apply {
                         addCategory(Intent.CATEGORY_APP_MESSAGING)
                     }

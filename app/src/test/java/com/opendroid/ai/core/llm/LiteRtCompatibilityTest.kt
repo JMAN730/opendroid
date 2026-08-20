@@ -25,6 +25,31 @@ class LiteRtCompatibilityTest {
                 IOException("wrapper", IllegalStateException("OpenCL runtime unavailable"))
             )
         )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                RuntimeException("failed to create XNNPACK runtime")
+            )
+        )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                IllegalStateException("Main section has no compatible subgraph")
+            )
+        )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                RuntimeException("Feature is not yet supported on this hardware")
+            )
+        )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                OutOfMemoryError("Failed to allocate memory for KV cache")
+            )
+        )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                IllegalStateException("Failed to compile compute shader on device driver")
+            )
+        )
     }
 
     @Test
@@ -32,6 +57,11 @@ class LiteRtCompatibilityTest {
         assertFalse(
             LiteRtCompatibility.isBackendIncompatibility(
                 IllegalArgumentException("Failed to parse model file: unexpected section header")
+            )
+        )
+        assertFalse(
+            LiteRtCompatibility.isBackendIncompatibility(
+                IllegalArgumentException("Input is not valid flatbuffer model")
             )
         )
         assertFalse(LiteRtCompatibility.isBackendIncompatibility(IOException(null as String?)))

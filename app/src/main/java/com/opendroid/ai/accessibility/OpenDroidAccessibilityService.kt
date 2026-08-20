@@ -54,6 +54,9 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     @Inject
     lateinit var nodeTraversal: AccessibilityNodeTraversal
 
+    @Inject
+    lateinit var habitRoutineEngine: dagger.Lazy<com.opendroid.ai.core.routine.HabitRoutineEngine>
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var windowManager: WindowManager? = null
     private var floatingView: FloatingWidgetView? = null
@@ -123,7 +126,13 @@ class OpenDroidAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Handle events if needed, e.g. window content updates
+        if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString()
+            if (!pkg.isNullOrBlank() && pkg != packageName) {
+                habitRoutineEngine.get().recordAppOpen(pkg)
+            }
+        }
     }
 
     override fun onInterrupt() {

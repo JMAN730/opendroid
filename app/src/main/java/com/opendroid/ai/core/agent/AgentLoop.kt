@@ -52,7 +52,7 @@ import javax.inject.Singleton
 
 private const val MAX_NEEDS_INPUT_PROMPTS = 5
 private const val MAX_INCOMPLETE_MESSAGE_IDS = 100
-private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP")
+private val CONTACT_NUMBER_PROMPT_ACTIONS = setOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP", "SEND_TELEGRAM")
 
 internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionName: String): String {
     needsInput.metadata["param"]?.let { return it }

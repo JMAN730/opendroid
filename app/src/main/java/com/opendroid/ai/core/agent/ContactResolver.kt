@@ -52,9 +52,9 @@ sealed class ContactResolution {
  * "Dad" from [Dad, Dada, Daddu], future "call dad" resolves instantly.
  */
 @Singleton
-class ContactResolver @Inject constructor(
+open class ContactResolver @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val memoryManager: MemoryManager
+    private val memoryManager: MemoryManager? = null
 ) {
 
     companion object {
@@ -186,7 +186,7 @@ class ContactResolver @Inject constructor(
      * Main resolve function with disambiguation support.
      * Returns single result OR multiple for user to pick.
      */
-    suspend fun resolveWithDisambiguation(input: String): ContactResolution {
+    open suspend fun resolveWithDisambiguation(input: String): ContactResolution {
         val query = input.trim()
 
         Log.d(TAG, "── Contact Resolution for: '$query' ──")
@@ -204,7 +204,7 @@ class ContactResolver @Inject constructor(
         }
 
         // STEP 2: Check memory for saved preference
-        val memoryMatch = memoryManager.recallContactPreference(query)
+        val memoryMatch = memoryManager?.recallContactPreference(query)
         if (memoryMatch != null) {
             Log.d(TAG, "  → Memory preference: ${memoryMatch.name}")
             return ContactResolution.Found(memoryMatch)

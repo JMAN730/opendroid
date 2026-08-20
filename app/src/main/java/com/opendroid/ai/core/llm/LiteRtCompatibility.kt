@@ -44,18 +44,41 @@ object LiteRtCompatibility {
                 failures += e
             }
         }
-        // Every backend failed. Only report runtime incompatibility when the
-        // failures name a device/backend limitation; ordinary parse/load errors
-        // mean a malformed artifact and must stay classified as FORMAT_INVALID.
+        // Every backend failed. Report runtime incompatibility when any failure names
+        // a device/backend limitation (e.g. GPU delegate unsupported on this hardware,
+        // model contains GPU-only ops, XNNPACK failure, out-of-memory, etc.).
+        // Ordinary parse/corrupted artifact errors mean a malformed artifact and stay
+        // classified as FORMAT_INVALID.
         val first = failures.first()
-        if (failures.all { isBackendIncompatibility(it) }) {
+        if (failures.any { isBackendIncompatibility(it) }) {
             throw LiteRtRuntimeIncompatibilityException(first)
         }
         throw first
     }
 
-    private val BACKEND_FAILURE_MARKERS =
-        listOf("gpu", "opencl", "vulkan", "delegate", "backend", "accelerator")
+    private val BACKEND_FAILURE_MARKERS = listOf(
+        "gpu",
+        "opencl",
+        "vulkan",
+        "delegate",
+        "backend",
+        "accelerator",
+        "xnnpack",
+        "subgraph",
+        "unsupported",
+        "not supported",
+        "memory",
+        "allocation",
+        "hardware",
+        "driver",
+        "device",
+        "shader",
+        "opengl",
+        "gles",
+        "clcreate",
+        "incompatible",
+        "compatibility"
+    )
 
     /**
      * The runtime does not expose typed failures, so the only available signal

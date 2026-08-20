@@ -77,6 +77,7 @@ fun SettingsScreen(
     onNavigateToNotificationHistory: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
     onNavigateToCrashLog: () -> Unit = {},
+    onNavigateToRoutines: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.llmConfig.collectAsState()
@@ -2065,6 +2066,47 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Review and grant microphone, storage, accessibility & other permissions.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Habits & Routines link card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentNeonGreen.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .clickable { onNavigateToRoutines() },
+                    colors = CardDefaults.cardColors(containerColor = CardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("⚡", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "HABITS & ROUTINES",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = AccentNeonGreen
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Detect repeated daily patterns & automate morning routines.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
