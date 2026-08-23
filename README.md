@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <code>Contract: GwnzGtKh6L2prU9UiJmmW99zsC19XECnnfYW529upump</code>
+  <code>CA: Coming Soon</code>
 </p>
 
 <p align="center">

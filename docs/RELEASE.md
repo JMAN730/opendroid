@@ -38,6 +38,31 @@ Current release. Sideload the APK for direct install, or use the AAB for Play St
 *   **Version Bump**: Updated app version to `1.0.6` (`versionCode 7`).
 *   **Comprehensive Test Coverage**: Added `HabitRoutineEngineTest`, `RoutineActionsTest`, and `TelegramActionsTest` with 100% passing test suite.
 
+### Release Assets
+*   **`app-debug.apk`** — Debug build APK for developer testing & logging.
+*   **`app-release.apk`** — Release APK (sideload for testing).
+*   **`app-debug.aab`** — Debug Android App Bundle.
+*   **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+*   **`app-debug.apk`**: `07025caea20b4c9e32c7889549777266605e94361985ec4ce790f988920b4d63`
+*   **`app-release.apk`**: `c10b8ec614d38aab2f0bbaa254d38bc7ec7bde7b296963b74ddda86e12748a6e`
+*   **`app-debug.aab`**: `e2025affd0d0f344085b16eb486295f7fca9b513cf5159a3781b9c839eb1c149`
+*   **`app-release.aab`**: `de9bd177e4274cc97ec45913d2ce2e59389291bed45d0eddbd770bbe9e956f23`
+
+### Build Configuration
+*   **Package**: `com.opendroid.aiagent`
+*   **Version Code**: 7
+*   **Version Name**: 1.0.6
+*   **Min SDK**: 26 (Android 8.0)
+*   **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.6`.
+
 ---
 
 ## v1.0.5 (August 18, 2026)
