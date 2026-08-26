@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <code>CA: Coming Soon</code>
+  <code>CA: 4AonAtnT2WpjD25s1JJbNuxS1DNq9WBe7dTME2jWpump</code>
 </p>
 
 <p align="center">
