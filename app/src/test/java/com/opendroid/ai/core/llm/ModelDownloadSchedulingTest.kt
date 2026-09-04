@@ -204,4 +204,24 @@ class ModelDownloadSchedulingTest {
             )
         )
     }
+
+    @Test
+    fun `verification failure messages accurately distinguish format and runtime incompatibility`() {
+        assertEquals(
+            "Downloaded model is not compatible with LiteRT.",
+            ModelDownloadWorker.verificationFailureMessage(ArtifactVerificationFailure.FORMAT_INVALID)
+        )
+        assertEquals(
+            "This LiteRT model could not be initialized on this device: no supported backend could load it.",
+            ModelDownloadWorker.verificationFailureMessage(ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE)
+        )
+        assertEquals(
+            "Downloaded model failed its integrity check.",
+            ModelDownloadWorker.verificationFailureMessage(ArtifactVerificationFailure.HASH_MISMATCH)
+        )
+        assertEquals(
+            "Downloaded model size does not match the published artifact.",
+            ModelDownloadWorker.verificationFailureMessage(ArtifactVerificationFailure.SIZE_MISMATCH)
+        )
+    }
 }

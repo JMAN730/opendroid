@@ -72,6 +72,7 @@ import com.opendroid.ai.core.permissions.GrantAllState
 import com.opendroid.ai.core.permissions.PermissionAskedStore
 import com.opendroid.ai.core.permissions.PermissionCardId
 import com.opendroid.ai.core.permissions.PermissionsSnapshot
+import com.opendroid.ai.core.storage.StorageWorkspaceProvider
 import com.opendroid.ai.core.permissions.allRuntimePermissions
 import com.opendroid.ai.core.permissions.allVisibleRequirementsHeld
 import com.opendroid.ai.core.permissions.cardActionEnabled
@@ -193,6 +194,20 @@ fun PermissionsPanel(
         pendingRequest = null
     }
 
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            StorageWorkspaceProvider.setCustomFolderUri(context, uri)
+            snapshot = readPermissionsSnapshot(
+                context = context,
+                sdkInt = sdkInt,
+                grantAll = snapshot.grantAll,
+                appInfoOffered = snapshot.appInfoOffered,
+            )
+        }
+    }
+
     fun launchRuntimePlan(
         plan: List<String>,
         isGrantAll: Boolean,
@@ -280,7 +295,13 @@ fun PermissionsPanel(
                 isGrantAll = false,
             )
         },
-        onManualCard = { card -> openManualSettings(context, sdkInt, card) },
+        onManualCard = { card ->
+            if (card == PermissionCardId.STORAGE && sdkInt >= 30) {
+                folderPickerLauncher.launch(null)
+            } else {
+                openManualSettings(context, sdkInt, card)
+            }
+        },
         onAppInfo = { card -> openAppInfo(context, card) },
         onFinished = onFinished,
     )
@@ -564,7 +585,7 @@ private fun readPermissionsSnapshot(
         }
     }
     val manualHeld = buildSet {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && StorageWorkspaceProvider.hasCustomFolder(context)) {
             add(PermissionCardId.STORAGE)
         }
         if (Settings.System.canWrite(context)) {
@@ -610,16 +631,6 @@ private fun earnedAppInfoCards(
         }
     }
 
-// Settings.ACTION_MANAGE_(APP_)ALL_FILES_ACCESS_PERMISSION are API 30 constants; minSdk
-// here is 26. The STORAGE branch below guards their use behind `sdkInt < 30`, but that
-// check reads a snapshot parameter rather than Build.VERSION.SDK_INT, which lint's
-// InlinedApi detector does not recognize as a version check — so the constants are
-// inlined as string literals to avoid referencing API-30-only fields unconditionally.
-private const val ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION =
-    "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
-private const val ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION =
-    "android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION"
-
 private fun openManualSettings(
     context: Context,
     sdkInt: Int,
@@ -630,17 +641,11 @@ private fun openManualSettings(
             if (sdkInt < 30) return
             try {
                 context.startActivity(
-                    Intent(ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
+                    Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     },
                 )
             } catch (_: ActivityNotFoundException) {
-                context.startActivity(
-                    Intent(ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    },
-                )
             }
         }
 
@@ -730,7 +735,7 @@ private fun cardTitle(card: PermissionCardId): String = when (card) {
     PermissionCardId.CONTACTS_CALENDAR -> "Contacts & Calendar"
     PermissionCardId.CAMERA -> "Camera"
     PermissionCardId.NOTIFICATIONS -> "Notifications"
-    PermissionCardId.STORAGE -> "Storage / Files Access"
+    PermissionCardId.STORAGE -> "Storage / Workspace"
     PermissionCardId.WRITE_SETTINGS -> "System Settings Control"
     PermissionCardId.ACCESSIBILITY -> "Accessibility Service"
 }
@@ -746,7 +751,8 @@ private fun cardDescription(card: PermissionCardId): String = when (card) {
     PermissionCardId.NOTIFICATIONS ->
         "Needed to post system notifications and service status."
 
-    PermissionCardId.STORAGE -> "Needed for agent to list, read, write, and delete files."
+    PermissionCardId.STORAGE ->
+        "App workspace storage is ready. You can also choose a custom folder (e.g. Documents) for agent files."
     PermissionCardId.WRITE_SETTINGS ->
         "Needed to adjust brightness, volume, and other system settings."
 

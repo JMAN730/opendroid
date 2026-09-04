@@ -82,7 +82,13 @@ class HabitRoutineEngineTest {
     fun `detects repeated weekday morning pattern for Gmail, Calendar, and Slack`() = runBlocking {
         // Simulate 4 weekday mornings around 9:00 AM where user opens Gmail -> Calendar -> Slack -> Chrome
         val baseCal = Calendar.getInstance().apply {
-            set(2026, Calendar.AUGUST, 17, 9, 0, 0) // Monday Aug 17 2026
+            set(Calendar.HOUR_OF_DAY, 9)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+                add(Calendar.DAY_OF_YEAR, -1)
+            }
         }
 
         for (dayOffset in 0..3) {

@@ -50,6 +50,16 @@ class LiteRtCompatibilityTest {
                 IllegalStateException("Failed to compile compute shader on device driver")
             )
         )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                UnsatisfiedLinkError("dlopen failed: library \"liblitertlm_jni.so\" not found")
+            )
+        )
+        assertTrue(
+            LiteRtCompatibility.isBackendIncompatibility(
+                LinkageError("Native symbol resolution failed")
+            )
+        )
     }
 
     @Test

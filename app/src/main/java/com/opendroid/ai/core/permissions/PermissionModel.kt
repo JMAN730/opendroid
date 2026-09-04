@@ -223,6 +223,9 @@ fun cardButtonLabel(
     if (card in snapshot.appInfoOffered && status.isMissingRuntime()) {
         return "App info"
     }
+    if (card == PermissionCardId.STORAGE && snapshot.sdkInt >= 30) {
+        return if (status == CardStatus.MANUAL_GRANTED) "Change folder" else "Choose folder"
+    }
     return when (status) {
         CardStatus.GRANTED -> "Granted"
         CardStatus.PARTIAL -> "Grant rest"
@@ -235,15 +238,20 @@ fun cardButtonLabel(
 fun cardActionEnabled(
     card: PermissionCardId,
     snapshot: PermissionsSnapshot,
-): Boolean = when (statusFor(card, snapshot)) {
-    CardStatus.GRANTED,
-    CardStatus.MANUAL_GRANTED,
-    -> false
+): Boolean {
+    if (card == PermissionCardId.STORAGE && snapshot.sdkInt >= 30) {
+        return true
+    }
+    return when (statusFor(card, snapshot)) {
+        CardStatus.GRANTED,
+        CardStatus.MANUAL_GRANTED,
+        -> false
 
-    CardStatus.PARTIAL,
-    CardStatus.MISSING,
-    CardStatus.MANUAL_PENDING,
-    -> true
+        CardStatus.PARTIAL,
+        CardStatus.MISSING,
+        CardStatus.MANUAL_PENDING,
+        -> true
+    }
 }
 
 fun cardStatusLine(
@@ -254,6 +262,13 @@ fun cardStatusLine(
     val permissions = runtimePermissions(card, snapshot.sdkInt)
     if (card in snapshot.appInfoOffered && status.isMissingRuntime()) {
         return "Android won't ask again. Open app settings, then Permissions → ${settingsPathName(card)}."
+    }
+    if (card == PermissionCardId.STORAGE && snapshot.sdkInt >= 30) {
+        return if (status == CardStatus.MANUAL_GRANTED) {
+            "Custom folder active."
+        } else {
+            "App workspace active. Tap to select a custom folder."
+        }
     }
 
     return when (status) {

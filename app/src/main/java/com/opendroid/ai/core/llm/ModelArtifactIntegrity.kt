@@ -505,7 +505,9 @@ class ModelArtifactInstaller(
             return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.UNREADABLE_FILE)
         }
 
-        val stagedArtifact = File.createTempFile(".artifact-", ".installing", targetDirectory)
+        val extension = target.extension
+        val artifactSuffix = if (extension.isNotEmpty()) ".installing.$extension" else ".installing"
+        val stagedArtifact = File.createTempFile(".artifact-", artifactSuffix, targetDirectory)
         val stagedManifest = File.createTempFile(".manifest-", ".installing", targetDirectory)
         try {
             source.inputStream().use { input ->
@@ -526,9 +528,11 @@ class ModelArtifactInstaller(
                 return ArtifactVerificationResult.Invalid(
                     ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE
                 )
-            } catch (_: Exception) {
-                return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID)
             } catch (_: LinkageError) {
+                return ArtifactVerificationResult.Invalid(
+                    ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE
+                )
+            } catch (_: Exception) {
                 return ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.FORMAT_INVALID)
             }
 

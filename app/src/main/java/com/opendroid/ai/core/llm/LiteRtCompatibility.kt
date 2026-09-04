@@ -10,7 +10,7 @@ import java.io.File
  * initialize it on this device. This is deliberately distinct from a malformed
  * artifact so callers can give users a safe, actionable error.
  */
-class LiteRtRuntimeIncompatibilityException(cause: Exception) : Exception(cause)
+class LiteRtRuntimeIncompatibilityException(cause: Throwable) : Exception(cause)
 
 /**
  * Structural compatibility probe for LiteRT model artifacts: initializing an
@@ -28,7 +28,7 @@ object LiteRtCompatibility {
     val backendPreference: List<() -> Backend> = listOf({ Backend.GPU() }, { Backend.CPU() })
 
     fun verify(file: File, cacheDir: File) {
-        val failures = mutableListOf<Exception>()
+        val failures = mutableListOf<Throwable>()
         for (backend in backendPreference) {
             val config = EngineConfig(
                 modelPath = file.absolutePath,
@@ -40,7 +40,7 @@ object LiteRtCompatibility {
                     engine.initialize()
                 }
                 return
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 failures += e
             }
         }
@@ -88,6 +88,7 @@ object LiteRtCompatibility {
         var current: Throwable? = error
         val seen = mutableSetOf<Throwable>()
         while (current != null && seen.add(current)) {
+            if (current is LinkageError) return true
             val message = current.message?.lowercase()
             if (message != null && BACKEND_FAILURE_MARKERS.any { message.contains(it) }) return true
             current = current.cause

@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.opendroid.ai.accessibility.GenericAppAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.storage.StorageWorkspaceProvider
 import com.opendroid.ai.core.util.DeviceCapabilities
 import java.io.File
 import java.io.FileOutputStream
@@ -39,66 +40,18 @@ class AdvancedControlActions @Inject constructor() {
         private const val MAX_WAIT_MS = 10_000L
 
         private fun hasStoragePermission(context: Context): Boolean {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                Environment.isExternalStorageManager()
-            } else {
-                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            }
+            return StorageWorkspaceProvider.hasStorageAccess(context)
         }
 
         private fun checkStoragePermission(context: Context): ActionResult? {
             if (!hasStoragePermission(context)) {
-                return ActionResult(false, null, "Storage / Files access permission is not granted. Please enable it in the app onboarding or system settings.")
+                return ActionResult(false, null, "Storage / Files access is not available.")
             }
             return null
         }
 
-        private fun resolvePath(pathStr: String): File {
-            val trimmed = pathStr.trim()
-
-            // Reject content:// URIs
-            if (trimmed.startsWith("content://")) {
-                throw SecurityException("content:// URIs are not supported. Use file paths only.")
-            }
-
-            // Build candidate file
-            val candidate = if (trimmed.startsWith("/")) {
-                File(trimmed)
-            } else {
-                File(Environment.getExternalStorageDirectory(), trimmed)
-            }
-
-            // Canonicalize to resolve ../ and symlinks
-            val canonicalPath = try {
-                candidate.canonicalPath
-            } catch (e: Exception) {
-                throw SecurityException("Invalid path: cannot resolve canonical path")
-            }
-
-            // Define approved external storage roots
-            val externalStorageRoot = Environment.getExternalStorageDirectory().canonicalPath
-            val approvedRoots = listOf(
-                externalStorageRoot,
-                "/sdcard",  // typically symlinks to externalStorageRoot
-                "/storage/emulated/0"  // another common symlink
-            ).map { File(it).canonicalPath }
-
-            // Reject /data and other private roots
-            if (canonicalPath.startsWith("/data")) {
-                throw SecurityException("Access to /data is not permitted")
-            }
-
-            // Ensure the canonical path is under one of the approved roots
-            val isUnderApprovedRoot = approvedRoots.any { root ->
-                canonicalPath == root || canonicalPath.startsWith("$root/")
-            }
-
-            if (!isUnderApprovedRoot) {
-                throw SecurityException("Path must be under external storage: $canonicalPath")
-            }
-
-            return File(canonicalPath)
+        private fun resolvePath(pathStr: String, context: Context): File {
+            return StorageWorkspaceProvider.resolveFile(context, pathStr)
         }
     }
 
@@ -211,24 +164,8 @@ class AdvancedControlActions @Inject constructor() {
         override val name: String = "LIST_FILES"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             checkStoragePermission(context)?.let { return it }
-            val pathStr = params["path"] ?: Environment.getExternalStorageDirectory().absolutePath
-            return try {
-                val dir = resolvePath(pathStr)
-                if (!dir.exists()) {
-                    return ActionResult(false, null, "Directory does not exist: ${dir.absolutePath}")
-                }
-                if (!dir.isDirectory) {
-                    return ActionResult(false, null, "Path is not a directory: ${dir.absolutePath}")
-                }
-                val files = dir.listFiles() ?: emptyArray()
-                val fileList = files.joinToString("\n") { file ->
-                    val type = if (file.isDirectory) "DIR" else "FILE"
-                    "${file.name} [$type] (${file.length()} bytes)"
-                }
-                ActionResult(true, if (fileList.isEmpty()) "Directory is empty." else fileList, null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't list files: ${e.localizedMessage}")
-            }
+            val pathStr = params["path"]
+            return StorageWorkspaceProvider.listFiles(context, pathStr)
         }
     }
 
@@ -237,22 +174,7 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             checkStoragePermission(context)?.let { return it }
             val filePath = params["filePath"] ?: return ActionResult(false, null, "filePath parameter is missing")
-            return try {
-                val file = resolvePath(filePath)
-                if (!file.exists()) {
-                    return ActionResult(false, null, "File does not exist: ${file.absolutePath}")
-                }
-                if (file.isDirectory) {
-                    return ActionResult(false, null, "Path is a directory, not a file: ${file.absolutePath}")
-                }
-                if (file.length() > 100 * 1024) {
-                    return ActionResult(false, null, "File exceeds size limit of 100KB: ${file.absolutePath}")
-                }
-                val text = file.readText()
-                ActionResult(true, text, null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't read file: ${e.localizedMessage}")
-            }
+            return StorageWorkspaceProvider.readFile(context, filePath)
         }
     }
 
@@ -262,14 +184,7 @@ class AdvancedControlActions @Inject constructor() {
             checkStoragePermission(context)?.let { return it }
             val filePath = params["filePath"] ?: return ActionResult(false, null, "filePath parameter is missing")
             val content = params["content"] ?: ""
-            return try {
-                val file = resolvePath(filePath)
-                file.parentFile?.mkdirs()
-                file.writeText(content)
-                ActionResult(true, "File saved at ${file.absolutePath}", null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't write to file: ${e.localizedMessage}")
-            }
+            return StorageWorkspaceProvider.writeFile(context, filePath, content)
         }
     }
 
@@ -278,20 +193,7 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             checkStoragePermission(context)?.let { return it }
             val filePath = params["filePath"] ?: return ActionResult(false, null, "filePath parameter is missing")
-            return try {
-                val file = resolvePath(filePath)
-                if (!file.exists()) {
-                    return ActionResult(false, null, "File/directory does not exist: ${file.absolutePath}")
-                }
-                val deleted = file.deleteRecursively()
-                if (deleted) {
-                    ActionResult(true, "Deleted ${file.absolutePath}!", null)
-                } else {
-                    ActionResult(false, null, "Failed to delete path: ${file.absolutePath}")
-                }
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't delete: ${e.localizedMessage}")
-            }
+            return StorageWorkspaceProvider.deleteFile(context, filePath)
         }
     }
 
@@ -568,25 +470,7 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             checkStoragePermission(context)?.let { return it }
             val pathStr = params["path"] ?: return ActionResult(false, null, "path parameter is missing")
-            return try {
-                val dir = resolvePath(pathStr)
-                if (dir.exists()) {
-                    if (dir.isDirectory) {
-                        ActionResult(true, "That folder already exists at ${dir.absolutePath}.", null)
-                    } else {
-                        ActionResult(false, null, "Path exists but is a file, not a directory: ${dir.absolutePath}")
-                    }
-                } else {
-                    val created = dir.mkdirs()
-                    if (created) {
-                        ActionResult(true, "Folder created at ${dir.absolutePath}!", null)
-                    } else {
-                        ActionResult(false, null, "Failed to create directory: ${dir.absolutePath}")
-                    }
-                }
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't create folder: ${e.localizedMessage}")
-            }
+            return StorageWorkspaceProvider.createDirectory(context, pathStr)
         }
     }
 
@@ -596,35 +480,7 @@ class AdvancedControlActions @Inject constructor() {
             checkStoragePermission(context)?.let { return it }
             val srcPath = params["sourcePath"] ?: return ActionResult(false, null, "sourcePath parameter is missing")
             val destPath = params["destPath"] ?: return ActionResult(false, null, "destPath parameter is missing")
-            return try {
-                val src = resolvePath(srcPath)
-                val dest = resolvePath(destPath)
-                if (!src.exists()) {
-                    return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
-                }
-                copyRecursively(src, dest)
-                ActionResult(true, "Copied from ${src.absolutePath} to ${dest.absolutePath}!", null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't copy file: ${e.localizedMessage}")
-            }
-        }
-
-        private fun copyRecursively(src: File, dest: File) {
-            if (src.isDirectory) {
-                if (!dest.exists()) {
-                    dest.mkdirs()
-                }
-                src.listFiles()?.forEach { file ->
-                    copyRecursively(file, File(dest, file.name))
-                }
-            } else {
-                dest.parentFile?.mkdirs()
-                src.inputStream().use { input ->
-                    dest.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
+            return StorageWorkspaceProvider.copyFile(context, srcPath, destPath)
         }
     }
 
@@ -634,49 +490,7 @@ class AdvancedControlActions @Inject constructor() {
             checkStoragePermission(context)?.let { return it }
             val srcPath = params["sourcePath"] ?: return ActionResult(false, null, "sourcePath parameter is missing")
             val destPath = params["destPath"] ?: return ActionResult(false, null, "destPath parameter is missing")
-            return try {
-                val src = resolvePath(srcPath)
-                val dest = resolvePath(destPath)
-                if (!src.exists()) {
-                    return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
-                }
-                dest.parentFile?.mkdirs()
-                val renamed = src.renameTo(dest)
-                if (renamed) {
-                    ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
-                } else {
-                    copyRecursively(src, dest)
-                    deleteRecursively(src)
-                    ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
-                }
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't move file: ${e.localizedMessage}")
-            }
-        }
-
-        private fun copyRecursively(src: File, dest: File) {
-            if (src.isDirectory) {
-                if (!dest.exists()) {
-                    dest.mkdirs()
-                }
-                src.listFiles()?.forEach { file ->
-                    copyRecursively(file, File(dest, file.name))
-                }
-            } else {
-                dest.parentFile?.mkdirs()
-                src.inputStream().use { input ->
-                    dest.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        }
-
-        private fun deleteRecursively(file: File) {
-            if (file.isDirectory) {
-                file.listFiles()?.forEach { deleteRecursively(it) }
-            }
-            file.delete()
+            return StorageWorkspaceProvider.moveFile(context, srcPath, destPath)
         }
     }
 
@@ -686,38 +500,7 @@ class AdvancedControlActions @Inject constructor() {
             checkStoragePermission(context)?.let { return it }
             val srcPath = params["sourcePath"] ?: return ActionResult(false, null, "sourcePath parameter is missing")
             val zipFilePath = params["zipFilePath"] ?: return ActionResult(false, null, "zipFilePath parameter is missing")
-            return try {
-                val src = resolvePath(srcPath)
-                val zipFile = resolvePath(zipFilePath)
-                if (!src.exists()) {
-                    return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
-                }
-                zipFile.parentFile?.mkdirs()
-                java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(zipFile.outputStream())).use { zos ->
-                    zipRecursively(src, src, zos)
-                }
-                ActionResult(true, "Zipped ${src.absolutePath} into ${zipFile.absolutePath}!", null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't zip files: ${e.localizedMessage}")
-            }
-        }
-
-        private fun zipRecursively(root: File, file: File, zos: java.util.zip.ZipOutputStream) {
-            val relativePath = file.absolutePath.substring(root.parentFile?.absolutePath?.length?.plus(1) ?: 0)
-            if (file.isDirectory) {
-                val entryName = if (relativePath.endsWith("/")) relativePath else "$relativePath/"
-                zos.putNextEntry(java.util.zip.ZipEntry(entryName))
-                zos.closeEntry()
-                file.listFiles()?.forEach { child ->
-                    zipRecursively(root, child, zos)
-                }
-            } else {
-                zos.putNextEntry(java.util.zip.ZipEntry(relativePath))
-                file.inputStream().use { input ->
-                    input.copyTo(zos)
-                }
-                zos.closeEntry()
-            }
+            return StorageWorkspaceProvider.zipFiles(context, srcPath, zipFilePath)
         }
     }
 
@@ -727,38 +510,7 @@ class AdvancedControlActions @Inject constructor() {
             checkStoragePermission(context)?.let { return it }
             val zipFilePath = params["zipFilePath"] ?: return ActionResult(false, null, "zipFilePath parameter is missing")
             val destDirPath = params["destDirPath"] ?: return ActionResult(false, null, "destDirPath parameter is missing")
-            return try {
-                val zipFile = resolvePath(zipFilePath)
-                val destDir = resolvePath(destDirPath)
-                if (!zipFile.exists()) {
-                    return ActionResult(false, null, "Zip file does not exist: ${zipFile.absolutePath}")
-                }
-                destDir.mkdirs()
-                java.util.zip.ZipInputStream(java.io.BufferedInputStream(zipFile.inputStream())).use { zis ->
-                    var entry = zis.nextEntry
-                    while (entry != null) {
-                        val file = File(destDir, entry.name)
-                        val canonicalDest = destDir.canonicalPath
-                        val canonicalFile = file.canonicalPath
-                        if (!canonicalFile.startsWith(canonicalDest + File.separator) && canonicalFile != canonicalDest) {
-                            throw SecurityException("ZipSlip: entry '${entry.name}' is outside of target dir")
-                        }
-                        if (entry.isDirectory) {
-                            file.mkdirs()
-                        } else {
-                            file.parentFile?.mkdirs()
-                            file.outputStream().use { output ->
-                                zis.copyTo(output)
-                            }
-                        }
-                        zis.closeEntry()
-                        entry = zis.nextEntry
-                    }
-                }
-                ActionResult(true, "Unzipped ${zipFile.absolutePath} to ${destDir.absolutePath}!", null)
-            } catch (e: Exception) {
-                ActionResult(false, null, "Couldn't unzip file: ${e.localizedMessage}")
-            }
+            return StorageWorkspaceProvider.unzipFile(context, zipFilePath, destDirPath)
         }
     }
 }

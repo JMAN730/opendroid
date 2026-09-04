@@ -744,6 +744,25 @@ class PermissionModelTest {
     }
 
     @Test
+    fun `storage card presentation on sdk 30+ allows folder selection and reflects workspace status`() {
+        val pending = snapshot(sdkInt = 35, manualHeld = emptySet())
+        assertEquals("Choose folder", cardButtonLabel(PermissionCardId.STORAGE, pending))
+        assertEquals(
+            "App workspace active. Tap to select a custom folder.",
+            cardStatusLine(PermissionCardId.STORAGE, pending),
+        )
+        assertTrue(cardActionEnabled(PermissionCardId.STORAGE, pending))
+
+        val held = snapshot(sdkInt = 35, manualHeld = setOf(PermissionCardId.STORAGE))
+        assertEquals("Change folder", cardButtonLabel(PermissionCardId.STORAGE, held))
+        assertEquals(
+            "Custom folder active.",
+            cardStatusLine(PermissionCardId.STORAGE, held),
+        )
+        assertTrue(cardActionEnabled(PermissionCardId.STORAGE, held))
+    }
+
+    @Test
     fun `all-visible-requirements derivation includes manual cards`() {
         val runtimeGranted = allRuntimePermissions(35).toSet()
 

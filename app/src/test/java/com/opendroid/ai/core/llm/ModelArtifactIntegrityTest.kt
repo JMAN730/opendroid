@@ -234,7 +234,7 @@ class ModelArtifactIntegrityTest {
         assertTrue(result is ArtifactVerificationResult.Invalid)
         assertEquals("older", target.readText())
         assertFalse(manifestFile.exists())
-        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".installing") })
     }
 
     @Test
@@ -260,7 +260,7 @@ class ModelArtifactIntegrityTest {
         )
         assertEquals("older", target.readText())
         assertFalse(manifestFile.exists())
-        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".installing") })
     }
 
     @Test
@@ -343,7 +343,7 @@ class ModelArtifactIntegrityTest {
             ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.MANIFEST_INVALID),
             verifier.verifyBeforeNativeLoad(target, manifestFile, spec)
         )
-        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.endsWith(".installing") })
+        assertFalse(tempFolder.root.listFiles().orEmpty().any { it.name.contains(".installing") })
     }
 
     @Test
@@ -394,5 +394,52 @@ class ModelArtifactIntegrityTest {
         assertEquals(helloSha256, cache.sha256(file))
 
         assertEquals(1, calls)
+    }
+
+    @Test
+    fun `managed install preserves the model extension on staged artifact for LiteRT format verification`() {
+        val spec = managedSpec()
+        val source = File(tempFolder.root, "download.tmp")
+        source.writeText("hello")
+        val target = File(tempFolder.root, spec.modelFilename)
+        val manifestFile = File(tempFolder.root, "manifest.json")
+
+        var inspectedExtension: String? = null
+        val result = ModelArtifactInstaller().installManagedDownload(
+            source = source,
+            target = target,
+            manifestFile = manifestFile,
+            spec = spec,
+            verifyFormat = { stagedFile ->
+                inspectedExtension = stagedFile.extension
+            }
+        )
+
+        assertEquals(ArtifactVerificationResult.Valid, result)
+        assertEquals("task", inspectedExtension)
+    }
+
+    @Test
+    fun `managed install reports LITERT_RUNTIME_INCOMPATIBLE when LinkageError occurs`() {
+        val spec = managedSpec()
+        val source = File(tempFolder.root, "download.tmp")
+        source.writeText("hello")
+        val target = File(tempFolder.root, spec.modelFilename)
+        val manifestFile = File(tempFolder.root, "manifest.json")
+
+        val result = ModelArtifactInstaller().installManagedDownload(
+            source = source,
+            target = target,
+            manifestFile = manifestFile,
+            spec = spec,
+            verifyFormat = {
+                throw UnsatisfiedLinkError("liblitertlm_jni.so not found")
+            }
+        )
+
+        assertEquals(
+            ArtifactVerificationResult.Invalid(ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE),
+            result
+        )
     }
 }

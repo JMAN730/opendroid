@@ -343,14 +343,18 @@ class ModelDownloadWorker(
         else -> "Download request failed (HTTP $code)."
     }
 
-    private fun verificationFailureMessage(failure: ArtifactVerificationFailure?): String = when (failure) {
-        ArtifactVerificationFailure.METADATA_UNAVAILABLE ->
-            "In-app download is unavailable until publisher integrity metadata is recorded."
-        ArtifactVerificationFailure.SIZE_MISMATCH ->
-            "Downloaded model size does not match the published artifact."
-        ArtifactVerificationFailure.HASH_MISMATCH -> "Downloaded model failed its integrity check."
-        ArtifactVerificationFailure.FORMAT_INVALID -> "Downloaded model is not compatible with LiteRT."
-        else -> "Could not securely install the downloaded model."
+    companion object {
+        internal fun verificationFailureMessage(failure: ArtifactVerificationFailure?): String = when (failure) {
+            ArtifactVerificationFailure.METADATA_UNAVAILABLE ->
+                "In-app download is unavailable until publisher integrity metadata is recorded."
+            ArtifactVerificationFailure.SIZE_MISMATCH ->
+                "Downloaded model size does not match the published artifact."
+            ArtifactVerificationFailure.HASH_MISMATCH -> "Downloaded model failed its integrity check."
+            ArtifactVerificationFailure.FORMAT_INVALID -> "Downloaded model is not compatible with LiteRT."
+            ArtifactVerificationFailure.LITERT_RUNTIME_INCOMPATIBLE ->
+                "This LiteRT model could not be initialized on this device: no supported backend could load it."
+            else -> "Could not securely install the downloaded model."
+        }
     }
 
     private fun formatSpeed(bytesPerSecond: Long): String = when {
