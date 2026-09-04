@@ -149,6 +149,52 @@ class OpenDroidDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 8 to 9 preserves existing data and creates all 8 social tables`() {
+        val db = helper.createDatabase(databasePath, 8)
+        db.execSQL(
+            """
+            INSERT INTO memories (`key`, `value`, `type`, `timestamp`, `ttlHours`, `category`)
+            VALUES ('social-test-key', 'social-test-val', 'SEMANTIC', 9999, -1, 'FACT')
+            """.trimIndent()
+        )
+
+        OpenDroidDatabase.MIGRATION_8_9.migrate(db)
+
+        // Verify pre-existing data survives
+        db.query("SELECT `value` FROM memories WHERE `key` = 'social-test-key'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("social-test-val", cursor.getString(0))
+        }
+
+        // Verify all 8 social tables are queryable and functional
+        db.execSQL(
+            """
+            INSERT INTO social_accounts (`id`, `platform`, `username`, `displayName`, `status`, `permissionsJson`, `connectedAt`)
+            VALUES ('acc-1', 'x', 'testuser', 'Test User', 'CONNECTED', '["READ_POSTS"]', 1000)
+            """.trimIndent()
+        )
+
+        db.query("SELECT `username`, `platform` FROM social_accounts WHERE `id` = 'acc-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("testuser", cursor.getString(0))
+            assertEquals("x", cursor.getString(1))
+        }
+
+        db.execSQL(
+            """
+            INSERT INTO social_posts (`id`, `accountId`, `platform`, `content`, `mediaUrlsJson`, `status`, `contentType`, `requiresApproval`, `likesCount`, `commentsCount`, `sharesCount`, `savesCount`, `viewsCount`, `reach`, `impressions`, `engagementRate`, `createdAt`, `updatedAt`)
+            VALUES ('post-1', 'acc-1', 'x', 'Hello world', '[]', 'DRAFT', 'ANNOUNCEMENT', 1, 0, 0, 0, 0, 0, 0, 0, 0.0, 1000, 1000)
+            """.trimIndent()
+        )
+
+        db.query("SELECT `content`, `requiresApproval` FROM social_posts WHERE `id` = 'post-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Hello world", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+        }
+    }
+
     private class V1SchemaCallback : SupportSQLiteOpenHelper.Callback(1) {
         override fun onCreate(db: SupportSQLiteDatabase) {
             V1_CREATE_STATEMENTS.forEach(db::execSQL)

@@ -31,7 +31,7 @@ fun PrivacyPolicyScreen(
                         text = "PRIVACY POLICY",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -41,7 +41,7 @@ fun PrivacyPolicyScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            tint = AccentNeonGreen
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -63,7 +63,7 @@ fun PrivacyPolicyScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, AccentNeonGreen.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
                     colors = CardDefaults.cardColors(containerColor = CardBackground)
                 ) {
                     Row(
@@ -75,7 +75,7 @@ fun PrivacyPolicyScreen(
                         Icon(
                             imageVector = Icons.Default.Lock,
                             contentDescription = "Privacy",
-                            tint = AccentNeonGreen,
+                            tint = AccentCyan,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))

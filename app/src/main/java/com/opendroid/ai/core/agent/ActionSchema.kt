@@ -29,7 +29,8 @@ enum class ActionCategory {
     SYSTEM, COMMUNICATION, PRODUCTIVITY,
     INFORMATION, TRANSPORT, MEDIA,
     SHOPPING, FINANCE, SMART_HOME,
-    MACRO, ADVANCED, AGENT, NOTIFICATION
+    MACRO, ADVANCED, AGENT, NOTIFICATION,
+    SOCIAL
 }
 
 object ActionSchema {
@@ -1280,6 +1281,94 @@ object ActionSchema {
             examples = listOf("dismiss the WhatsApp notification", "clear all notifications", "dismiss notification 42"),
             category = ActionCategory.NOTIFICATION,
             neverAutoApprove = true
+        ),
+
+        // ── SOCIAL MEDIA MANAGEMENT ─────────────────────────
+
+        ActionDefinition(
+            name = "SOCIAL_SHOW_PERFORMANCE",
+            description = "Shows overall social media performance, reach, and follower metrics across connected accounts",
+            params = listOf(
+                ParamDefinition("days", ParamType.INT, false, "Time range in days (default: 7)", defaultValue = 7)
+            ),
+            examples = listOf(
+                "show my social media performance", "how are my social accounts doing",
+                "how many new followers did i gain this week", "which platform is performing best"
+            ),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_CREATE_POST",
+            description = "Creates and drafts a platform-adapted social media post",
+            params = listOf(
+                ParamDefinition("topic", ParamType.STRING, true, "Topic or announcement to write about"),
+                ParamDefinition("platform", ParamType.STRING, false, "Target platform (X, Instagram, LinkedIn, Telegram, Discord, Facebook, YouTube)", defaultValue = "X"),
+                ParamDefinition("tone", ParamType.ENUM, false, "Tone of the post", listOf("professional", "casual", "excited", "technical", "minimal"), defaultValue = "professional")
+            ),
+            examples = listOf(
+                "create a post announcing OpenDroid v1.1", "write an announcement for OpenDroid",
+                "draft an instagram post about the new release", "post on x about our update"
+            ),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_SCHEDULE_POST",
+            description = "Schedules a drafted post for future publication",
+            params = listOf(
+                ParamDefinition("postId", ParamType.STRING, true, "ID of the post to schedule"),
+                ParamDefinition("hours", ParamType.INT, false, "Hours from now to schedule (default: 24)", defaultValue = 24)
+            ),
+            examples = listOf("schedule this for tomorrow", "schedule post 12 for 5 hours from now"),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_CHECK_INBOX",
+            description = "Checks unified social inbox for unread interactions, mentions, and urgent messages",
+            params = emptyList(),
+            examples = listOf(
+                "check my social inbox", "what happened on my social accounts today",
+                "show my social mentions", "any new interactions"
+            ),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_DRAFT_REPLIES",
+            description = "Drafts context-aware grounded AI replies for unanswered social comments",
+            params = emptyList(),
+            examples = listOf(
+                "draft replies to all unanswered questions", "reply to recent comments",
+                "find comments asking about the release and draft replies"
+            ),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_SHOW_TOP_CONTENT",
+            description = "Identifies and displays top-performing social posts based on engagement and reach",
+            params = emptyList(),
+            examples = listOf("show me my best-performing post this month", "what was my top content", "top posts"),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_CREATE_REPORT",
+            description = "Generates an executive weekly social media report with AI insights and recommendations",
+            params = emptyList(),
+            examples = listOf("create a weekly social report", "generate social report", "export social performance"),
+            category = ActionCategory.SOCIAL
+        ),
+        ActionDefinition(
+            name = "SOCIAL_CREATE_CAMPAIGN",
+            description = "Generates an end-to-end multi-platform marketing campaign strategy with scheduled post drafts",
+            params = listOf(
+                ParamDefinition("name", ParamType.STRING, false, "Campaign name", defaultValue = "OpenDroid Launch"),
+                ParamDefinition("objective", ParamType.STRING, false, "Core campaign objective", defaultValue = "Drive adoption and awareness"),
+                ParamDefinition("days", ParamType.INT, false, "Duration in days", defaultValue = 7)
+            ),
+            examples = listOf(
+                "create a campaign for the next OpenDroid release",
+                "create a one-week campaign for OpenDroid v1.1",
+                "plan a social media campaign"
+            ),
+            category = ActionCategory.SOCIAL
         )
     )
 

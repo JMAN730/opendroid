@@ -55,7 +55,7 @@ fun PlanScreen(
                         text = "PLAN ENGINE",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -154,7 +154,7 @@ fun PlanHeaderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, if (isCurrentActive) AccentNeonGreen.copy(alpha = 0.4f) else BorderColor, RoundedCornerShape(12.dp)),
+            .border(1.dp, if (isCurrentActive) AccentCyan.copy(alpha = 0.5f) else BorderColor, RoundedCornerShape(12.dp)),
         colors = CardDefaults.cardColors(containerColor = DarkSurface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -165,7 +165,7 @@ fun PlanHeaderCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val statusColor = when (plan.status) {
-                        PlanStatus.COMPLETED -> AccentNeonGreen
+                        PlanStatus.COMPLETED -> AccentCyan
                         PlanStatus.RUNNING -> AccentCyan
                         PlanStatus.FAILED -> AccentRed
                         PlanStatus.CANCELLED -> Color(0xFFFFB300) // Amber, matches PlanStepCard's in-between/warning states
@@ -203,12 +203,12 @@ fun PlanHeaderCard(
                     Text(
                         text = "ACTIVE RUN",
                         fontSize = 10.sp,
-                        color = AccentNeonGreen,
+                        color = AccentCyan,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(AccentNeonGreen.copy(alpha = 0.2f))
+                            .background(AccentCyan.copy(alpha = 0.15f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
@@ -358,7 +358,7 @@ fun PastPlanRow(
                 },
                 contentDescription = plan.status.name,
                 tint = when (plan.status) {
-                    PlanStatus.COMPLETED -> AccentNeonGreen
+                    PlanStatus.COMPLETED -> AccentCyan
                     PlanStatus.FAILED -> AccentRed
                     PlanStatus.CANCELLED -> Color(0xFFFFB300) // Amber, matches PlanHeaderCard's CANCELLED color
                     else -> TextSecondary

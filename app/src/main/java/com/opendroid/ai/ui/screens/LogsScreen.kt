@@ -63,7 +63,7 @@ fun LogsScreen(
                         text = "SYSTEM LOGS",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -102,11 +102,11 @@ fun LogsScreen(
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = DarkBackground,
-                contentColor = AccentNeonGreen,
+                contentColor = TextPrimary,
                 indicator = { tabPositions ->
                     TabRowDefaults.Indicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = AccentNeonGreen
+                        color = TextPrimary
                     )
                 },
                 divider = {
@@ -122,7 +122,7 @@ fun LogsScreen(
                                 text = title,
                                 fontSize = 13.sp,
                                 fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedTab == index) AccentNeonGreen else TextSecondary,
+                                color = if (selectedTab == index) TextPrimary else TextSecondary,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -180,7 +180,7 @@ fun LogsScreen(
                             title = "All systems fully aligned",
                             subtitle = "OpenDroid's Repair Engine has not encountered any unrecognized commands.",
                             icon = Icons.Default.CheckCircle,
-                            iconColor = AccentNeonGreen
+                            iconColor = AccentCyan
                         )
                     }
                 }
@@ -289,10 +289,10 @@ fun UnknownActionCard(error: UnknownActionEntity) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
 
     val statusColor = when (error.fixStatus) {
-        "AUTO_FIXED" -> AccentNeonGreen
+        "AUTO_FIXED" -> AccentCyan
         "REPLANNED" -> AccentCyan
         "FAILED" -> AccentRed
-        else -> AccentNeonGreen
+        else -> AccentCyan
     }
 
     val statusText = when (error.fixStatus) {
@@ -425,7 +425,7 @@ fun HistoryLogCard(
             .fillMaxWidth()
             .border(
                 1.dp,
-                if (log.success) AccentNeonGreen.copy(alpha = 0.25f) else AccentRed.copy(alpha = 0.25f),
+                if (log.success) AccentCyan.copy(alpha = 0.25f) else AccentRed.copy(alpha = 0.25f),
                 RoundedCornerShape(12.dp)
             ),
         colors = CardDefaults.cardColors(containerColor = CardBackground)
@@ -444,14 +444,14 @@ fun HistoryLogCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (log.success) AccentNeonGreen.copy(alpha = 0.15f) else AccentRed.copy(alpha = 0.15f))
+                        .background(if (log.success) AccentCyan.copy(alpha = 0.15f) else AccentRed.copy(alpha = 0.15f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = if (log.success) "SUCCESS" else "FAILED",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (log.success) AccentNeonGreen else AccentRed,
+                        color = if (log.success) AccentCyan else AccentRed,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -518,7 +518,7 @@ fun HistoryLogCard(
                         Text(
                             text = log.resultData,
                             fontSize = 11.sp,
-                            color = AccentNeonGreen,
+                            color = AccentCyan,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier
                                 .fillMaxWidth()

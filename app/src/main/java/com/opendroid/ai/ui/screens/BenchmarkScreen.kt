@@ -47,14 +47,14 @@ fun BenchmarkScreen(
                         text = "BRAIN BENCHMARK",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 18.sp,
                         letterSpacing = 2.sp
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = AccentNeonGreen)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
                 actions = {
@@ -66,7 +66,7 @@ fun BenchmarkScreen(
                         Button(
                             onClick = { showConfirm = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentNeonGreen,
+                                containerColor = TextPrimary,
                                 contentColor = DarkBackground
                             ),
                             shape = RoundedCornerShape(8.dp),
@@ -182,7 +182,7 @@ fun ProviderConnectionRow(
             ?: "Not tested"
     }
     val barColor = when (state) {
-        is ConnectionTestState.Connected -> AccentNeonGreen
+        is ConnectionTestState.Connected -> AccentCyan
         is ConnectionTestState.Failed, is ConnectionTestState.ConfigMissing -> AccentRed
         is ConnectionTestState.Testing -> AccentCyan
         else -> BorderColor

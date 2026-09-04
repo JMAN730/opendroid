@@ -39,6 +39,7 @@ class ActionDispatcher @Inject constructor(
     private val advancedControlActions: AdvancedControlActions,
     private val notificationActions: NotificationActions,
     private val routineActions: RoutineActions,
+    private val socialActions: SocialActions,
     private val autoMapper: ActionAutoMapper,
     private val unknownActionDao: UnknownActionDao,
     private val deviceStateProvider: DeviceStateProvider
@@ -81,6 +82,7 @@ class ActionDispatcher @Inject constructor(
         putAll(advancedControlActions.getActions().associateBy { it.name })
         putAll(notificationActions.getActions().associateBy { it.name })
         putAll(routineActions.getActions().associateBy { it.name })
+        putAll(socialActions.getActions().associateBy { it.name })
     }
 
     fun hasAction(actionName: String): Boolean =

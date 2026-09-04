@@ -28,36 +28,36 @@ data class OpenDroidColors(
     val isDark: Boolean
 )
 
-// ── Dark palette (the existing one) ─────────────────────────
+// ── Dark palette: Classic Pure Black (#000000) ───────────────
 val DarkPalette = OpenDroidColors(
-    background = Color(0xFF080C10),
-    surface = Color(0xFF0D1117),
-    cardBackground = Color(0xFF161B22),
-    borderColor = Color(0xFF30363D),
-    textPrimary = Color(0xFFF0F6FC),
-    textSecondary = Color(0xFF8B949E),
-    accentNeonGreen = Color(0xFF00FF88),
-    accentGreenButton = Color(0xFF00C46A),
-    accentPurple = Color(0xFF8A2BE2),
-    accentCyan = Color(0xFF00F0FF),
-    accentRed = Color(0xFFFF3B30),
+    background = Color(0xFF000000),      // Classic pure OLED black
+    surface = Color(0xFF0A0A0A),         // Deep charcoal surface
+    cardBackground = Color(0xFF141416),  // Elevated card surface
+    borderColor = Color(0xFF27272A),     // Zinc 800 hairline border
+    textPrimary = Color(0xFFFFFFFF),     // Pure white
+    textSecondary = Color(0xFFA1A1AA),   // Zinc 400 silver
+    accentNeonGreen = Color(0xFFFFFFFF), // High-contrast monochrome (replaces green)
+    accentGreenButton = Color(0xFFFFFFFF), // Crisp white button
+    accentPurple = Color(0xFFA855F7),    // Electric purple
+    accentCyan = Color(0xFF38BDF8),      // Sky sapphire
+    accentRed = Color(0xFFEF4444),       // Clean alert red
     accentOrange = Color(0xFFFF9500),
     isDark = true
 )
 
-// ── Light palette ───────────────────────────────────────────
+// ── Light palette: Classic Pure White (#FFFFFF) ─────────────
 val LightPalette = OpenDroidColors(
-    background = Color(0xFFF6F8FA),
-    surface = Color(0xFFFFFFFF),
-    cardBackground = Color(0xFFFFFFFF),
-    borderColor = Color(0xFFD0D7DE),
-    textPrimary = Color(0xFF1F2328),
-    textSecondary = Color(0xFF656D76),
-    accentNeonGreen = Color(0xFF1A7F37),
-    accentGreenButton = Color(0xFF1A7F37),
-    accentPurple = Color(0xFF8250DF),
-    accentCyan = Color(0xFF0969DA),
-    accentRed = Color(0xFFCF222E),
+    background = Color(0xFFFFFFFF),      // Classic pure white
+    surface = Color(0xFFF8F9FA),         // Crisp light surface
+    cardBackground = Color(0xFFFFFFFF),  // Pure white card
+    borderColor = Color(0xFFE4E4E7),     // Zinc 200 hairline border
+    textPrimary = Color(0xFF09090B),     // Deep obsidian black
+    textSecondary = Color(0xFF71717A),   // Zinc 500 slate
+    accentNeonGreen = Color(0xFF09090B), // High-contrast monochrome (replaces green)
+    accentGreenButton = Color(0xFF09090B), // Crisp black button
+    accentPurple = Color(0xFF7E22CE),    // Purple
+    accentCyan = Color(0xFF0284C7),      // Ocean sapphire
+    accentRed = Color(0xFFDC2626),       // Clean alert red
     accentOrange = Color(0xFFD97706),
     isDark = false
 )
@@ -72,22 +72,67 @@ object AppTheme {
         get() = LocalOpenDroidColors.current
 }
 
-// ── Legacy top-level aliases ────────────────────────────────
-// These keep every existing screen compiling without changes.
-// They delegate to the composition-local palette at read-time.
+// ── Dynamic Composable top-level aliases ────────────────────
+// These allow all existing screens and composables to automatically
+// adapt to Light / Dark theme dynamically without hardcoding DarkPalette!
 
-// NOTE: These are static vals used outside @Composable scope.
-// For full dynamic theming in screens that read these outside Compose,
-// they keep the dark defaults. Inside @Composable, use AppTheme.colors.*
-val DarkBackground = DarkPalette.background
-val DarkSurface = DarkPalette.surface
-val CardBackground = DarkPalette.cardBackground
-val BorderColor = DarkPalette.borderColor
-val TextPrimary = DarkPalette.textPrimary
-val TextSecondary = DarkPalette.textSecondary
-val AccentNeonGreen = DarkPalette.accentNeonGreen
-val AccentGreenButton = DarkPalette.accentGreenButton
-val AccentPurple = DarkPalette.accentPurple
-val AccentCyan = DarkPalette.accentCyan
-val AccentRed = DarkPalette.accentRed
-val AccentOrange = DarkPalette.accentOrange
+val DarkBackground: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.background
+
+val DarkSurface: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.surface
+
+val CardBackground: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.cardBackground
+
+val BorderColor: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.borderColor
+
+val TextPrimary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.textPrimary
+
+val TextSecondary: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.textSecondary
+
+val AccentNeonGreen: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentNeonGreen
+
+val AccentGreenButton: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentGreenButton
+
+val AccentPurple: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentPurple
+
+val AccentCyan: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentCyan
+
+val AccentRed: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentRed
+
+val AccentOrange: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = AppTheme.colors.accentOrange
+

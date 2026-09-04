@@ -69,7 +69,7 @@ fun MemoryScreen(
                         text = "PERSONAL MEMORY",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -103,7 +103,7 @@ fun MemoryScreen(
             ScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 containerColor = DarkBackground,
-                contentColor = AccentNeonGreen,
+                contentColor = TextPrimary,
                 edgePadding = 0.dp,
                 divider = { Divider(color = BorderColor) }
             ) {
@@ -150,7 +150,7 @@ fun MemoryScreen(
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = TextSecondary) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentNeonGreen,
+                            focusedBorderColor = AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -164,7 +164,7 @@ fun MemoryScreen(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(AccentNeonGreen)
+                                .background(TextPrimary)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Add Memory", tint = DarkBackground)
                         }
@@ -239,8 +239,8 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        StateItem("Battery Level", "${workingMemory.batteryLevel}%", AccentNeonGreen)
-                        StateItem("WiFi State", workingMemory.wifiState, if (workingMemory.wifiState == "Active") AccentNeonGreen else if (workingMemory.wifiState == "Inactive") AccentRed else TextSecondary)
+                        StateItem("Battery Level", "${workingMemory.batteryLevel}%", AccentCyan)
+                        StateItem("WiFi State", workingMemory.wifiState, if (workingMemory.wifiState == "Active") AccentCyan else if (workingMemory.wifiState == "Inactive") AccentRed else TextSecondary)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -248,7 +248,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         StateItem("Connectivity", workingMemory.connectivity, AccentCyan)
-                        StateItem("Internet", if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE", if (workingMemory.isInternetAvailable) AccentNeonGreen else AccentRed)
+                        StateItem("Internet", if (workingMemory.isInternetAvailable) "Available" else "NOT AVAILABLE", if (workingMemory.isInternetAvailable) AccentCyan else AccentRed)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
@@ -293,17 +293,17 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                             Surface(
                                 color = when (plan.status.name) {
                                     "RUNNING" -> AccentCyan.copy(alpha = 0.2f)
-                                    "COMPLETED" -> AccentNeonGreen.copy(alpha = 0.2f)
+                                    "COMPLETED" -> AccentCyan.copy(alpha = 0.2f)
                                     else -> AccentRed.copy(alpha = 0.2f)
                                 },
                                 shape = RoundedCornerShape(4.dp),
                                 modifier = Modifier.padding(end = 6.dp)
-                            ) {
+                             ) {
                                 Text(
                                     text = plan.status.name,
                                     color = when (plan.status.name) {
                                         "RUNNING" -> AccentCyan
-                                        "COMPLETED" -> AccentNeonGreen
+                                        "COMPLETED" -> AccentCyan
                                         else -> AccentRed
                                     },
                                     fontSize = 10.sp,
@@ -332,7 +332,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                                         else -> "○"
                                     },
                                     color = when (step.status.name) {
-                                        "COMPLETED" -> AccentNeonGreen
+                                        "COMPLETED" -> AccentCyan
                                         "RUNNING" -> AccentCyan
                                         "FAILED" -> AccentRed
                                         else -> TextSecondary
@@ -418,9 +418,9 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                                     horizontalArrangement = if (msg.sender.name == "USER") Arrangement.End else Arrangement.Start
                                 ) {
                                     Surface(
-                                        color = if (msg.sender.name == "USER") AccentCyan.copy(alpha = 0.15f) else AccentNeonGreen.copy(alpha = 0.1f),
+                                        color = if (msg.sender.name == "USER") AccentCyan.copy(alpha = 0.15f) else CardBackground,
                                         shape = RoundedCornerShape(8.dp),
-                                        border = BorderStroke(1.dp, if (msg.sender.name == "USER") AccentCyan.copy(alpha = 0.3f) else AccentNeonGreen.copy(alpha = 0.2f))
+                                        border = BorderStroke(1.dp, if (msg.sender.name == "USER") AccentCyan.copy(alpha = 0.3f) else BorderColor)
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
                                             Text(
@@ -428,7 +428,7 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = if (msg.sender.name == "USER") AccentCyan else AccentNeonGreen
+                                                color = if (msg.sender.name == "USER") AccentCyan else TextPrimary
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
@@ -506,7 +506,7 @@ fun EpisodicMemoryView(viewModel: MemoryViewModel, searchQuery: String) {
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
-                                    color = if (log.sender.name == "USER") AccentCyan else AccentNeonGreen
+                                    color = if (log.sender.name == "USER") AccentCyan else TextPrimary
                                 )
                                 log.modelBadge?.let { badge ->
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -600,7 +600,7 @@ fun SemanticMemoryView(
                         label = { Text("Fact Key/Identifier", fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentNeonGreen,
+                            focusedBorderColor = AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -613,7 +613,7 @@ fun SemanticMemoryView(
                         onValueChange = onNewValueChange,
                         label = { Text("Fact Content/Details", fontSize = 12.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentNeonGreen,
+                            focusedBorderColor = AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -635,7 +635,7 @@ fun SemanticMemoryView(
                                     onIsAddingFactChange(false)
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save Fact", fontWeight = FontWeight.Bold)
@@ -703,7 +703,7 @@ fun MemoryItemCard(
                     text = memory.key,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = AccentNeonGreen,
+                    color = AccentCyan,
                     fontFamily = FontFamily.Monospace
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -766,7 +766,7 @@ fun ProceduralMemoryView(viewModel: MemoryViewModel, searchQuery: String) {
                                     text = macro.name.uppercase(),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = AccentNeonGreen,
+                                    color = AccentCyan,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -896,7 +896,7 @@ fun KnowledgeGraphView(
                     onClick = { selectedTierFilter = null },
                     label = { Text("All Levels (${allNodes.size})", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AccentNeonGreen,
+                        selectedContainerColor = TextPrimary,
                         selectedLabelColor = DarkBackground,
                         containerColor = CardBackground,
                         labelColor = TextSecondary
@@ -919,7 +919,7 @@ fun KnowledgeGraphView(
                         selectedContainerColor = when (tier) {
                             MemoryTier.SENSITIVE -> AccentOrange
                             MemoryTier.LEARNED_PATTERN -> AccentCyan
-                            else -> AccentNeonGreen
+                            else -> TextPrimary
                         },
                         selectedLabelColor = DarkBackground,
                         containerColor = CardBackground,
@@ -992,9 +992,9 @@ fun KnowledgeGraphView(
                 letterSpacing = 1.sp
             )
             TextButton(onClick = { isAddingKnowledge = !isAddingKnowledge }) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = AccentNeonGreen, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Add, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(if (isAddingKnowledge) "Close" else "Add Entity / Secret", color = AccentNeonGreen, fontSize = 11.sp)
+                Text(if (isAddingKnowledge) "Close" else "Add Entity / Secret", color = TextPrimary, fontSize = 11.sp)
             }
         }
 
@@ -1013,7 +1013,7 @@ fun KnowledgeGraphView(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        color = if (addIsSensitive) AccentOrange else AccentNeonGreen
+                        color = if (addIsSensitive) AccentOrange else AccentCyan
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1036,7 +1036,7 @@ fun KnowledgeGraphView(
                         label = { Text(if (addIsSensitive) "Secret Key / Label (e.g. locker_code)" else "Label / Title (e.g. Favorite Coffee)", fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -1049,7 +1049,7 @@ fun KnowledgeGraphView(
                         onValueChange = { newSummary = it },
                         label = { Text(if (addIsSensitive) "Secret Value (Hardware Encrypted)" else "Details / Description", fontSize = 12.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                            focusedBorderColor = if (addIsSensitive) AccentOrange else AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -1076,7 +1076,7 @@ fun KnowledgeGraphView(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (addIsSensitive) AccentOrange else AccentNeonGreen,
+                                containerColor = if (addIsSensitive) AccentOrange else TextPrimary,
                                 contentColor = DarkBackground
                             ),
                             shape = RoundedCornerShape(8.dp)
@@ -1132,7 +1132,7 @@ fun KnowledgeNodeCard(
         MemoryTier.SENSITIVE -> AccentOrange
         MemoryTier.LEARNED_PATTERN -> AccentCyan
         MemoryTier.TEMPORARY -> TextSecondary
-        MemoryTier.LONG_TERM -> AccentNeonGreen
+        MemoryTier.LONG_TERM -> AccentCyan
     }
     val tierIcon = when (node.tier) {
         MemoryTier.SENSITIVE -> "🔒"
@@ -1216,7 +1216,7 @@ fun KnowledgeNodeCard(
                 text = node.label,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = AccentNeonGreen,
+                color = AccentCyan,
                 fontFamily = FontFamily.Monospace
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -1252,12 +1252,12 @@ fun KnowledgeNodeCard(
                     OutlinedButton(
                         onClick = onPromote,
                         shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, AccentNeonGreen.copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = AccentNeonGreen, modifier = Modifier.size(12.dp))
+                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Promote to Long-Term", fontSize = 10.sp, color = AccentNeonGreen)
+                        Text("Promote to Long-Term", fontSize = 10.sp, color = AccentCyan)
                     }
                 }
             }

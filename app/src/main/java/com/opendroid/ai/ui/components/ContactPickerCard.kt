@@ -35,9 +35,9 @@ fun ContactPickerCard(
             .fillMaxWidth()
             .padding(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1A1A2E)
+            containerColor = CardBackground
         ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AccentNeonGreen),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
@@ -48,13 +48,13 @@ fun ContactPickerCard(
                 Icon(
                     imageVector = Icons.Default.Person,
                     contentDescription = null,
-                    tint = AccentNeonGreen,
+                    tint = AccentCyan,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Which '$query' do you mean?",
-                    color = AccentNeonGreen,
+                    color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -72,8 +72,8 @@ fun ContactPickerCard(
                     onClick = { onContactSelected(contact) }
                 )
                 if (index < matches.size - 1) {
-                    Divider(
-                        color = Color(0xFF2A2A3E),
+                    HorizontalDivider(
+                        color = BorderColor,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
@@ -112,14 +112,14 @@ fun ContactOptionRow(
             modifier = Modifier
                 .size(28.dp)
                 .background(
-                    AccentNeonGreen.copy(alpha = 0.2f),
+                    AccentCyan.copy(alpha = 0.15f),
                     CircleShape
                 ),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "$number",
-                color = AccentNeonGreen,
+                color = AccentCyan,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -130,7 +130,7 @@ fun ContactOptionRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = name,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.sp
             )
@@ -144,7 +144,7 @@ fun ContactOptionRow(
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = AccentNeonGreen.copy(alpha = 0.5f),
+            tint = TextSecondary,
             modifier = Modifier.size(20.dp)
         )
     }

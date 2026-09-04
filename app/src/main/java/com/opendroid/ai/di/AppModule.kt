@@ -60,6 +60,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideSocialCredentialStore(@ApplicationContext context: Context): com.opendroid.ai.core.security.SocialCredentialStore {
+        return com.opendroid.ai.core.security.AndroidSocialCredentialStore(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideCallFlowVerifier(): CallFlowVerifier = AndroidCallFlowVerifier()
 
     @Provides

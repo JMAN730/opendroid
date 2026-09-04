@@ -2,7 +2,70 @@
 
 See the full release documentation and changelogs in [docs/RELEASE.md](docs/RELEASE.md).
 
-## v1.0.6 — Latest Release (August 20, 2026)
+## v1.0.7 — Latest Release (September 4, 2026)
+
+Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
+
+### Highlights since v1.0.6
+
+#### 🌐 Complete AI Social Media Management System
+* **Multi-Platform Management**: Autonomous AI social assistant supporting 7 major platforms: **X (Twitter)**, **Instagram**, **LinkedIn**, **Facebook**, **YouTube**, **Telegram**, and **Discord**.
+* **Unified Social Dashboard**: 10 purpose-built sub-tabs (`Overview`, `Accounts`, `Unified Inbox`, `Content Studio`, `Calendar`, `Comments`, `Campaigns`, `Analytics`, `Reports`, `Settings & Rules`).
+* **Hardware-Backed Credential Security**: Android Keystore-backed AES-256-GCM encrypted vault (`SocialCredentialStore`) with Additional Authenticated Data (AAD) cryptographic binding per platform and account (`social_cred_aad:<platform>:<accountId>`), preventing cross-account substitution attacks.
+* **Room Database Migration `MIGRATION_8_9`**: Upgraded Room schema to version 9 with 8 new relational entities and reactive DAOs (`social_accounts`, `social_posts`, `social_comments`, `social_interactions`, `social_analytics_snapshots`, `social_campaigns`, `social_automation_rules`, `social_audit_logs`).
+* **Tri-Tier Automation & Human-in-the-Loop Safety**: Configurable automation levels (`SAFE`, `APPROVAL`, `AUTONOMOUS`) enforced by `SocialRuleEngine`. Any sensitive, financial, legal, refund, security vulnerability, breach, or negative sentiment interaction strictly triggers mandatory human review.
+* **Grounded AI Intelligence Layer**:
+  * `SocialContentComposer`: Crafts platform-tailored drafts respecting character budgets and hashtag norms.
+  * `SocialInboxClassifier`: AI triage classifying interactions into categories (`LEAD`, `SUPPORT_REQUEST`, `QUESTION`, `FEEDBACK`, `SPAM`) with sentiment and priority scoring.
+  * `SocialCommentReplyEngine`: Grounded community reply generator that retrieves verified brand knowledge memories without hallucinating or inventing fake dates.
+  * `SocialScheduleWorker`: Background scheduled publishing coordinator via WorkManager.
+
+#### 📁 Storage Management & Play Store Policy Compliance
+* **Storage Access Framework (SAF) Integration**: Implemented `StorageWorkspaceProvider` to resolve Google Play Console All Files Access (`MANAGE_EXTERNAL_STORAGE`) policy requirements.
+* **Granular Folder Selection**: Users can choose specific workspace folders via Android's document tree picker or operate seamlessly within app-scoped sandboxed storage without requiring broad external storage access.
+* **Permissions UX Enhancements**: Modernized `PermissionsScreen` and `PermissionModel` with folder picking options for Android 11+ (SDK 30+).
+
+#### 🎨 Pure OLED Black & Classic White Theme Redesign
+* **Clean Contrast Styling**: Overhauled the entire UI theme to pure OLED black (`#000000`) in dark mode and classic pure white (`#FFFFFF`) in light mode.
+* **Zero Green Accents**: Modernized all buttons, chips, and cards to sleek obsidian/titanium monochrome styling with subtle sky sapphire active badges.
+* **Enhanced Visual Feedback & Animations**: Fluid sub-tab transitions, animated sync indicators, and responsive canvas charts (`SocialCharts.kt`).
+
+#### 🧪 LiteRT Model Compatibility & Stability
+* **Compatibility Fixes**: Resolved model verification failure when downloading LiteRT on-device models (e.g. Qwen 2.5, Gemma).
+* **Failure Marker Matching & Memory Safety**: Enhanced probe evaluation and fallback behavior for on-device inference.
+
+#### 🛠️ Version & Build Updates
+* **Version Bump**: Updated app version to `1.0.7` (`versionCode 8`).
+* **Comprehensive Test Suite**: Added `SocialPlatformTest`, `OpenDroidDatabaseMigrationTest` (validating schema v8 to v9 migration and data preservation), and `SocialRuleEngineTest` with 100% passing tests.
+
+### Release Assets
+* **`app-debug.apk`** — Debug build APK for developer testing & logging.
+* **`app-release.apk`** — Release APK (sideload for testing).
+* **`app-debug.aab`** — Debug Android App Bundle.
+* **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+* **`app-debug.apk`**: `3cd060523174964465ac24a5c4f37ab4d11c4fa69f43931681b103557233fb80`
+* **`app-release.apk`**: `eef3d9c61ae7783dbc6b0cb30fe6714b94f2c74ba7c182dd1e00a05da29de11b`
+* **`app-debug.aab`**: `81461c621fc30dacb25099bdcd3382229ccdfb56f835d03d24563797d3e8c57f`
+* **`app-release.aab`**: `03186f5d4410c7f758d0ec215dc49f61aa0945bb61e5ba78c47a804611eab29b`
+
+### Build Configuration
+* **Package**: `com.opendroid.aiagent`
+* **Version Code**: 8
+* **Version Name**: 1.0.7
+* **Min SDK**: 26 (Android 8.0)
+* **Target SDK**: 36 (Android 16)
+
+### Install notes for testers
+1. Download `app-release.apk` or `app-debug.apk` from the GitHub release.
+2. Enable install from unknown sources for your browser/file manager.
+3. Sideload the APK; uninstall any prior build with a different signing key if Android blocks the update.
+4. Report issues against tag `v1.0.7`.
+
+---
+
+## v1.0.6 (August 20, 2026)
 
 ### Highlights since v1.0.5
 

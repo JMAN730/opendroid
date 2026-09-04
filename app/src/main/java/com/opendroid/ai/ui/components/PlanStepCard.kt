@@ -1,6 +1,7 @@
 package com.opendroid.ai.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,7 +60,7 @@ fun PlanStepCard(
     val displayState = getDisplayState(step)
 
     val statusColor = when (displayState) {
-        StepDisplayState.COMPLETED -> AccentNeonGreen
+        StepDisplayState.COMPLETED -> AccentCyan
         StepDisplayState.RUNNING -> AccentCyan
         StepDisplayState.FAILED -> AccentRed
         StepDisplayState.AUTO_FIXING -> Color(0xFFFFB300) // Amber
@@ -171,7 +172,7 @@ fun PlanStepCard(
                         onValueChange = { editDescription = it },
                         label = { Text("Step Description", fontSize = 11.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentNeonGreen,
+                            focusedBorderColor = AccentCyan,
                             unfocusedBorderColor = BorderColor,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
@@ -197,7 +198,7 @@ fun PlanStepCard(
                                 label = { Text("Key", fontSize = 10.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -213,7 +214,7 @@ fun PlanStepCard(
                                 label = { Text("Value", fontSize = 10.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -224,39 +225,36 @@ fun PlanStepCard(
                                 onClick = { editParams = editParams.toMutableList().also { it.removeAt(index) } },
                                 modifier = Modifier.size(28.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove parameter",
-                                    tint = AccentRed,
-                                    modifier = Modifier.size(14.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Remove", tint = AccentRed, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     TextButton(
                         onClick = { editParams = editParams + ("" to "") },
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.align(Alignment.Start)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            tint = AccentCyan,
-                            modifier = Modifier.size(14.dp)
-                        )
+                        Icon(Icons.Default.Add, contentDescription = "Add", tint = AccentCyan, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Add Parameter", fontSize = 11.sp, color = AccentCyan)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = { isEditing = false }) {
-                            Text("Cancel", color = TextSecondary)
+                        OutlinedButton(
+                            onClick = { isEditing = false },
+                            border = BorderStroke(1.dp, BorderColor),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("Cancel", fontSize = 12.sp, color = TextSecondary)
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 val cleanedParams = editParams
@@ -267,7 +265,7 @@ fun PlanStepCard(
                                 onSaveEdit(cleanedDescription, cleanedParams)
                                 isEditing = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                            colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Save", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -316,7 +314,7 @@ fun PlanStepCard(
                                 .padding(8.dp)
                         ) {
                             Column {
-                                Text("Execution Result:", fontSize = 10.sp, color = AccentNeonGreen, fontWeight = FontWeight.Bold)
+                                Text("Execution Result:", fontSize = 10.sp, color = AccentCyan, fontWeight = FontWeight.Bold)
                                 Text(step.result!!, fontSize = 11.sp, color = TextPrimary)
                             }
                         }

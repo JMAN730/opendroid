@@ -444,12 +444,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
 
             // Draw glow border
             val color = when (state) {
-                is AgentState.Idle -> "#00FF66".toColorInt() // Neon green
+                is AgentState.Idle -> "#FFFFFF".toColorInt() // Platinum pure white
                 is AgentState.Listening -> "#FF3B30".toColorInt() // Pulsing red
                 is AgentState.Thinking -> "#00F0FF".toColorInt() // Cyan
                 is AgentState.Speaking -> "#007AFF".toColorInt() // Neon blue
-                is AgentState.ExecutingPlan -> "#00FFCC".toColorInt() // Cyan-green
-                else -> "#00FF66".toColorInt()
+                is AgentState.ExecutingPlan -> "#38BDF8".toColorInt() // Sky sapphire
+                else -> "#FFFFFF".toColorInt()
             }
 
             paint.color = color

@@ -23,6 +23,9 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.scale
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -52,6 +55,7 @@ object OpenDroidRoutes {
     const val PERMISSIONS = "permissions"
     const val CRASH_LOG = "crash_log"
     const val ROUTINES = "routines"
+    const val SOCIAL = "social"
 }
 
 /**
@@ -79,7 +83,33 @@ fun OpenDroidNavigation(
     NavHost(
         navController = navController,
         startDestination = OpenDroidRoutes.SPLASH,
-        modifier = Modifier.fillMaxSize().background(AppTheme.colors.background)
+        modifier = Modifier.fillMaxSize().background(AppTheme.colors.background),
+        enterTransition = {
+            fadeIn(animationSpec = tween(300)) + slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start,
+                animationSpec = tween(300, easing = FastOutSlowInEasing)
+            )
+        },
+        exitTransition = {
+            fadeOut(animationSpec = tween(250)) + slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start,
+                targetOffset = { it / 4 },
+                animationSpec = tween(250, easing = FastOutSlowInEasing)
+            )
+        },
+        popEnterTransition = {
+            fadeIn(animationSpec = tween(300)) + slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.End,
+                initialOffset = { it / 4 },
+                animationSpec = tween(300, easing = FastOutSlowInEasing)
+            )
+        },
+        popExitTransition = {
+            fadeOut(animationSpec = tween(250)) + slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.End,
+                animationSpec = tween(250, easing = FastOutSlowInEasing)
+            )
+        }
     ) {
         composable(OpenDroidRoutes.SPLASH) {
             val startupViewModel: StartupViewModel = hiltViewModel()
@@ -240,6 +270,11 @@ fun OpenDroidNavigation(
                 }
             )
         }
+
+        composable(OpenDroidRoutes.SOCIAL) {
+            val socialViewModel: SocialViewModel = hiltViewModel()
+            SocialScreen(viewModel = socialViewModel)
+        }
     }
 }
 
@@ -247,6 +282,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Chat : Screen("chat", "Chat", Icons.Default.Chat)
     object Plan : Screen("plan", "Plan", Icons.Default.List)
     object Memory : Screen("memory", "Memory", Icons.Default.Star)
+    object Social : Screen("social", "Social", Icons.Default.Share)
     object Macros : Screen("macros", "Macros", Icons.Default.Build)
     object History : Screen("history", "Logs", Icons.Default.History)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
@@ -295,6 +331,7 @@ fun MainDashboard(
     val chatViewModel: ChatViewModel = hiltViewModel()
     val planViewModel: PlanViewModel = hiltViewModel()
     val memoryViewModel: MemoryViewModel = hiltViewModel()
+    val socialViewModel: SocialViewModel = hiltViewModel()
     val macroViewModel: MacroViewModel = hiltViewModel()
     val historyViewModel: HistoryViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
@@ -303,6 +340,7 @@ fun MainDashboard(
         Screen.Chat,
         Screen.Plan,
         Screen.Memory,
+        Screen.Social,
         Screen.Macros,
         Screen.History,
         Screen.Settings
@@ -311,15 +349,23 @@ fun MainDashboard(
     Scaffold(
         bottomBar = {
             NavigationBar(
-                containerColor = DarkSurface,
+                containerColor = AppTheme.colors.surface,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .border(1.dp, BorderColor, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
-                tonalElevation = 8.dp
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .border(1.dp, AppTheme.colors.borderColor, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                tonalElevation = 6.dp
             ) {
                 tabs.forEach { tab ->
                     val isSelected = currentTab == tab
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.15f else 1.0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        label = "tabIconScale"
+                    )
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { currentTab = tab },
@@ -327,25 +373,30 @@ fun MainDashboard(
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = tab.title,
-                                tint = if (isSelected) AccentNeonGreen else TextSecondary
+                                modifier = Modifier.scale(iconScale),
+                                tint = if (isSelected) AppTheme.colors.textPrimary else AppTheme.colors.textSecondary
                             )
                         },
                         label = {
                             Text(
                                 text = tab.title,
                                 fontSize = 10.sp,
-                                color = if (isSelected) AccentNeonGreen else TextSecondary,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                color = if (isSelected) AppTheme.colors.textPrimary else AppTheme.colors.textSecondary,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = AccentNeonGreen.copy(alpha = 0.15f)
+                            indicatorColor = AppTheme.colors.textPrimary.copy(alpha = 0.08f),
+                            selectedIconColor = AppTheme.colors.textPrimary,
+                            unselectedIconColor = AppTheme.colors.textSecondary,
+                            selectedTextColor = AppTheme.colors.textPrimary,
+                            unselectedTextColor = AppTheme.colors.textSecondary
                         )
                     )
                 }
             }
         },
-        containerColor = DarkBackground
+        containerColor = AppTheme.colors.background
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -353,29 +404,39 @@ fun MainDashboard(
                 .padding(paddingValues)
                 .consumeWindowInsets(paddingValues)
         ) {
-            when (currentTab) {
-                Screen.Chat -> ChatScreen(viewModel = chatViewModel)
-                Screen.Plan -> PlanScreen(viewModel = planViewModel)
-                Screen.Memory -> MemoryScreen(viewModel = memoryViewModel)
-                Screen.Macros -> MacrosScreen(
-                    viewModel = macroViewModel,
-                    onNavigateToRoutines = onNavigateToRoutines
-                )
-                Screen.History -> LogsScreen(viewModel = historyViewModel)
-                Screen.Settings -> SettingsScreen(
-                    viewModel = settingsViewModel,
-                    onNavigateToBenchmark = onNavigateToBenchmark,
-                    onNavigateToPrivacyPolicy = onNavigateToPrivacyPolicy,
-                    onNavigateToTermsOfUse = onNavigateToTermsOfUse,
-                    onNavigateToHelpCenter = onNavigateToHelpCenter,
-                    onNavigateToLicense = onNavigateToLicense,
-                    onNavigateToAbout = onNavigateToAbout,
-                    onNavigateToAutoReply = onNavigateToAutoReply,
-                    onNavigateToNotificationHistory = onNavigateToNotificationHistory,
-                    onNavigateToPermissions = onNavigateToPermissions,
-                    onNavigateToCrashLog = onNavigateToCrashLog,
-                    onNavigateToRoutines = onNavigateToRoutines
-                )
+            AnimatedContent(
+                targetState = currentTab,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.98f, animationSpec = tween(220)))
+                        .togetherWith(fadeOut(animationSpec = tween(180)))
+                },
+                label = "DashboardTabTransition"
+            ) { tab ->
+                when (tab) {
+                    Screen.Chat -> ChatScreen(viewModel = chatViewModel)
+                    Screen.Plan -> PlanScreen(viewModel = planViewModel)
+                    Screen.Memory -> MemoryScreen(viewModel = memoryViewModel)
+                    Screen.Social -> SocialScreen(viewModel = socialViewModel)
+                    Screen.Macros -> MacrosScreen(
+                        viewModel = macroViewModel,
+                        onNavigateToRoutines = onNavigateToRoutines
+                    )
+                    Screen.History -> LogsScreen(viewModel = historyViewModel)
+                    Screen.Settings -> SettingsScreen(
+                        viewModel = settingsViewModel,
+                        onNavigateToBenchmark = onNavigateToBenchmark,
+                        onNavigateToPrivacyPolicy = onNavigateToPrivacyPolicy,
+                        onNavigateToTermsOfUse = onNavigateToTermsOfUse,
+                        onNavigateToHelpCenter = onNavigateToHelpCenter,
+                        onNavigateToLicense = onNavigateToLicense,
+                        onNavigateToAbout = onNavigateToAbout,
+                        onNavigateToAutoReply = onNavigateToAutoReply,
+                        onNavigateToNotificationHistory = onNavigateToNotificationHistory,
+                        onNavigateToPermissions = onNavigateToPermissions,
+                        onNavigateToCrashLog = onNavigateToCrashLog,
+                        onNavigateToRoutines = onNavigateToRoutines
+                    )
+                }
             }
         }
     }

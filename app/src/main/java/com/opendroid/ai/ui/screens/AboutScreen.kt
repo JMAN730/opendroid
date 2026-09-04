@@ -39,7 +39,7 @@ fun AboutScreen(
                         text = "ABOUT",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -49,7 +49,7 @@ fun AboutScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            tint = AccentNeonGreen
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -74,7 +74,7 @@ fun AboutScreen(
                         .fillMaxWidth()
                         .border(
                             1.dp,
-                            Brush.linearGradient(listOf(AccentNeonGreen, AccentCyan)),
+                            Brush.linearGradient(listOf(TextPrimary.copy(alpha = 0.3f), AccentCyan.copy(alpha = 0.4f))),
                             RoundedCornerShape(16.dp)
                         ),
                     colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -92,10 +92,10 @@ fun AboutScreen(
                                 .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(AccentNeonGreen.copy(alpha = 0.2f), AccentCyan.copy(alpha = 0.2f))
+                                        listOf(TextPrimary.copy(alpha = 0.1f), AccentCyan.copy(alpha = 0.15f))
                                     )
                                 )
-                                .border(2.dp, AccentNeonGreen, CircleShape),
+                                .border(1.5.dp, TextPrimary.copy(alpha = 0.3f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             // bot.png is a 512x341 canvas whose glyph only covers the
@@ -264,7 +264,7 @@ fun AboutScreen(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(AccentNeonGreen)
+                                        .background(AccentCyan)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
@@ -346,7 +346,7 @@ private fun FeatureItem(icon: ImageVector, title: String, subtitle: String) {
         Icon(
             imageVector = icon,
             contentDescription = title,
-            tint = AccentNeonGreen,
+            tint = AccentCyan,
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))

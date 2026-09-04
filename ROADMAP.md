@@ -1,7 +1,7 @@
 # OpenDroid Roadmap
 
-Living document. Reflects the state of `JMAN730/opendroid` as of **2026-08-20**, shipping
-version **1.0.6** (`versionCode 7`).
+Living document. Reflects the state of `JMAN730/opendroid` as of **2026-09-04**, shipping
+version **1.0.7** (`versionCode 8`).
 
 ---
 
@@ -9,17 +9,24 @@ version **1.0.6** (`versionCode 7`).
 
 | Dimension | State |
 |---|---|
-| **App** | Production-ready autonomous Android AI agent with Habit & Routine Detection, Telegram Automation, Screen Understanding, and 4-tier Knowledge Graph |
+| **App** | Production-ready autonomous Android AI agent with AI Social Media Management, Habit & Routine Detection, Telegram Automation, Screen Understanding, and 4-tier Knowledge Graph |
 | **SDK** | `minSdk 26`, `compileSdk`/`targetSdk 36` |
 | **Toolchain** | Gradle 9.7.0, AGP 9.3.1, Kotlin 2.4.0 (AGP built-in Kotlin), JDK 21 (pinned) |
-| **Database** | Room DB v8 with explicit sequential migrations (`MIGRATION_1_2` through `MIGRATION_7_8`) |
-| **Tests** | Comprehensive JVM unit-test suite (`HabitRoutineEngineTest`, `RoutineActionsTest`, `TelegramActionsTest`, `LiteRtCompatibilityTest`, etc.) and `androidTest` accessibility/keystore test harness |
+| **Database** | Room DB v9 with explicit sequential migrations (`MIGRATION_1_2` through `MIGRATION_8_9`) |
+| **Tests** | Comprehensive JVM unit-test suite (`SocialRuleEngineTest`, `SocialPlatformTest`, `OpenDroidDatabaseMigrationTest`, `HabitRoutineEngineTest`, etc.) and `androidTest` accessibility/keystore test harness |
 | **CI** | 4 jobs — unit tests + `assembleDebug`, `lintDebug`, `connectedDebugAndroidTest` on an API 26/36 emulator matrix, unsigned `assembleRelease` (R8) |
 | **Distribution** | GitHub Releases (APK / AAB), FOSS packaging |
 
 ---
 
 ## Recently Shipped
+
+### v1.0.7 (September 4, 2026)
+- **AI Social Media Management System**: Multi-platform autonomous AI assistant for 7 networks (X, Instagram, LinkedIn, Facebook, YouTube, Telegram, Discord) with a 10-tab dashboard, KeyStore AES-256-GCM token security, AI Content Composer, AI Inbox Classifier, grounded comment replies, and scheduled publishing.
+- **Storage Management & Play Store Policy Remediation**: Resolved Google Play Console All Files Access (`MANAGE_EXTERNAL_STORAGE`) policy rejection by integrating Android's Storage Access Framework (SAF) via `StorageWorkspaceProvider` with granular folder picking and sandboxed app-scoped fallbacks.
+- **Pure OLED Black & Classic White Theme Overhaul**: Complete visual redesign with pure OLED black (`#000000`) and pure white (`#FFFFFF`), removal of green accents in favor of obsidian/titanium buttons and sky sapphire indicators.
+- **LiteRT On-Device Model Compatibility**: Resolved model verification failures when downloading models like Qwen 2.5 and Gemma via LiteRT.
+- **Database Schema v9**: `MIGRATION_8_9` added 8 social media management tables.
 
 ### v1.0.6 (August 20, 2026)
 - **Habit & Routine Detection Engine**: Continuous background observation of debounced app switches via accessibility events, 30-minute session clustering, sequence mining (e.g., *Gmail → Calendar → Slack → Chrome* at 9:00 AM on weekdays), proactive suggestions (*"I noticed you usually do these tasks every weekday morning. Would you like me to automate them?"*), 6-step Morning Routine synthesis and execution, and one-click macro scheduling.

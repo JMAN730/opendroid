@@ -62,7 +62,7 @@ fun MacrosScreen(
                         text = "MACRO ENGINE",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -74,7 +74,7 @@ fun MacrosScreen(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Create Macro",
-                            tint = AccentNeonGreen
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -159,7 +159,7 @@ fun MacrosScreen(
                                 label = { Text("Macro Name", fontSize = 12.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -173,7 +173,7 @@ fun MacrosScreen(
                                 label = { Text("Voice TriggerPhrase", fontSize = 12.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -195,7 +195,7 @@ fun MacrosScreen(
                                         if (st.fallback.isNotBlank()) append(" → fallback: ${st.fallback}")
                                     },
                                     fontSize = 11.sp,
-                                    color = AccentNeonGreen,
+                                    color = TextPrimary,
                                     fontFamily = FontFamily.Monospace,
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
@@ -210,7 +210,7 @@ fun MacrosScreen(
                                 onValueChange = { stepDesc = it },
                                 label = { Text("Step Description", fontSize = 11.sp) },
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -223,7 +223,7 @@ fun MacrosScreen(
                                 onValueChange = { stepAction = it },
                                 label = { Text("Action Type (e.g. system/brightness)", fontSize = 11.sp) },
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -237,7 +237,7 @@ fun MacrosScreen(
                                     onValueChange = { stepParamKey = it },
                                     label = { Text("Param Key", fontSize = 11.sp) },
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = AccentNeonGreen,
+                                        focusedBorderColor = AccentCyan,
                                         unfocusedBorderColor = BorderColor,
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary
@@ -250,7 +250,7 @@ fun MacrosScreen(
                                     onValueChange = { stepParamVal = it },
                                     label = { Text("Param Value", fontSize = 11.sp) },
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = AccentNeonGreen,
+                                        focusedBorderColor = AccentCyan,
                                         unfocusedBorderColor = BorderColor,
                                         focusedTextColor = TextPrimary,
                                         unfocusedTextColor = TextPrimary
@@ -267,7 +267,7 @@ fun MacrosScreen(
                                     Text("Runs once if the primary action fails.", fontSize = 10.sp)
                                 },
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentNeonGreen,
+                                    focusedBorderColor = AccentCyan,
                                     unfocusedBorderColor = BorderColor,
                                     focusedTextColor = TextPrimary,
                                     unfocusedTextColor = TextPrimary
@@ -335,7 +335,7 @@ fun MacrosScreen(
                                             isAddingMacro = false
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                                    colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Save Macro", fontWeight = FontWeight.Bold)
@@ -407,7 +407,7 @@ fun MacroCard(
                     Text(
                         text = "Trigger: \"${macro.trigger}\"",
                         fontSize = 12.sp,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -415,8 +415,8 @@ fun MacroCard(
                     checked = macro.isEnabled,
                     onCheckedChange = onToggle,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = AccentNeonGreen,
-                        checkedTrackColor = AccentNeonGreen.copy(alpha = 0.5f)
+                        checkedThumbColor = TextPrimary,
+                        checkedTrackColor = TextPrimary.copy(alpha = 0.5f)
                     )
                 )
             }

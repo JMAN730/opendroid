@@ -25,7 +25,8 @@ class IntentClassifier @Inject constructor(
             "pay", "check", "split", "run", "create", "schedule", "list", "read", "write", "delete", "click",
             "type", "scroll", "get", "show", "whatsapp", "call", "sms", "email", "alarm", "timer", "reminder",
             "note", "notes", "calendar", "weather", "news", "flashlight", "flash", "wifi", "bluetooth",
-            "brightness", "volume", "screenshot", "dnd", "mute", "unmute", "remember", "save", "extract"
+            "brightness", "volume", "screenshot", "dnd", "mute", "unmute", "remember", "save", "extract",
+            "post", "tweet", "social", "campaign"
         )
         val hasActionKeyword = actionKeywords.any { query.contains(it, ignoreCase = true) }
 
@@ -44,7 +45,9 @@ class IntentClassifier @Inject constructor(
             "news", "translate", "convert", "calculate",
             "book uber", "book ola",
             "read screen", "remember this", "save this", "save to notes", "read notes", "my notes",
-            "what did i save", "what did i remember"
+            "what did i save", "what did i remember",
+            "social media", "social performance", "create post", "draft post",
+            "social report", "create campaign", "social inbox"
         )
         val isForcedAction = forcedActionPatterns.any { query.contains(it, ignoreCase = true) }
         if (isForcedAction) return true

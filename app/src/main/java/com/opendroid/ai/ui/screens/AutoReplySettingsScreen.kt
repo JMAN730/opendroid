@@ -220,8 +220,8 @@ fun AutoReplySettingsScreen(
                             checked = config.globalEnabled,
                             onCheckedChange = { saveConfig(config.copy(globalEnabled = it)) },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = themeColors.accentNeonGreen,
-                                checkedTrackColor = themeColors.accentNeonGreen.copy(alpha = 0.5f)
+                                checkedThumbColor = themeColors.textPrimary,
+                                checkedTrackColor = themeColors.textPrimary.copy(alpha = 0.5f)
                             )
                         )
                     }
@@ -439,8 +439,8 @@ private fun AppToggleRow(
             checked = isEnabled,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = themeColors.accentNeonGreen,
-                checkedTrackColor = themeColors.accentNeonGreen.copy(alpha = 0.5f)
+                checkedThumbColor = themeColors.textPrimary,
+                checkedTrackColor = themeColors.textPrimary.copy(alpha = 0.5f)
             )
         )
     }

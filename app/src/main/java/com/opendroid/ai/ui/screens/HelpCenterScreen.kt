@@ -31,7 +31,7 @@ fun HelpCenterScreen(
                         text = "HELP CENTER",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp
                     )
@@ -41,7 +41,7 @@ fun HelpCenterScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            tint = AccentNeonGreen
+                            tint = TextPrimary
                         )
                     }
                 },

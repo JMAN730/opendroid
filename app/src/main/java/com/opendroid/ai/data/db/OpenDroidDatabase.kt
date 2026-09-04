@@ -28,6 +28,22 @@ import com.opendroid.ai.data.db.entities.CrashLogEntity
 import com.opendroid.ai.data.db.dao.HabitDao
 import com.opendroid.ai.data.db.entities.HabitEventEntity
 import com.opendroid.ai.data.db.entities.HabitRoutineEntity
+import com.opendroid.ai.data.db.entities.SocialAccountEntity
+import com.opendroid.ai.data.db.entities.SocialPostEntity
+import com.opendroid.ai.data.db.entities.SocialCommentEntity
+import com.opendroid.ai.data.db.entities.SocialInteractionEntity
+import com.opendroid.ai.data.db.entities.SocialAnalyticsSnapshotEntity
+import com.opendroid.ai.data.db.entities.SocialCampaignEntity
+import com.opendroid.ai.data.db.entities.SocialAutomationRuleEntity
+import com.opendroid.ai.data.db.entities.SocialAuditLogEntity
+import com.opendroid.ai.data.db.dao.SocialAccountDao
+import com.opendroid.ai.data.db.dao.SocialPostDao
+import com.opendroid.ai.data.db.dao.SocialCommentDao
+import com.opendroid.ai.data.db.dao.SocialInteractionDao
+import com.opendroid.ai.data.db.dao.SocialAnalyticsDao
+import com.opendroid.ai.data.db.dao.SocialCampaignDao
+import com.opendroid.ai.data.db.dao.SocialAutomationRuleDao
+import com.opendroid.ai.data.db.dao.SocialAuditLogDao
 import androidx.room.TypeConverters
 
 @Database(
@@ -43,9 +59,17 @@ import androidx.room.TypeConverters
         ModelEntity::class,
         CrashLogEntity::class,
         HabitEventEntity::class,
-        HabitRoutineEntity::class
+        HabitRoutineEntity::class,
+        SocialAccountEntity::class,
+        SocialPostEntity::class,
+        SocialCommentEntity::class,
+        SocialInteractionEntity::class,
+        SocialAnalyticsSnapshotEntity::class,
+        SocialCampaignEntity::class,
+        SocialAutomationRuleEntity::class,
+        SocialAuditLogEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -61,6 +85,14 @@ abstract class OpenDroidDatabase : RoomDatabase() {
     abstract fun modelDao(): ModelDao
     abstract fun crashLogDao(): CrashLogDao
     abstract fun habitDao(): HabitDao
+    abstract fun socialAccountDao(): SocialAccountDao
+    abstract fun socialPostDao(): SocialPostDao
+    abstract fun socialCommentDao(): SocialCommentDao
+    abstract fun socialInteractionDao(): SocialInteractionDao
+    abstract fun socialAnalyticsDao(): SocialAnalyticsDao
+    abstract fun socialCampaignDao(): SocialCampaignDao
+    abstract fun socialAutomationRuleDao(): SocialAutomationRuleDao
+    abstract fun socialAuditLogDao(): SocialAuditLogDao
 
     companion object {
         // Id of the single session that pre-existing conversation rows are
@@ -229,6 +261,192 @@ abstract class OpenDroidDatabase : RoomDatabase() {
                 """)
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_routines_status ON habit_routines(status)")
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_habit_routines_lastDetectedAt ON habit_routines(lastDetectedAt)")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_accounts (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        platform TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        avatarUrl TEXT,
+                        status TEXT NOT NULL,
+                        permissionsJson TEXT NOT NULL,
+                        connectedAt INTEGER NOT NULL,
+                        tokenExpiresAt INTEGER,
+                        lastSyncAt INTEGER,
+                        errorMessage TEXT
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_accounts_platform ON social_accounts(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_accounts_status ON social_accounts(status)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_posts (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        accountId TEXT NOT NULL,
+                        platform TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        mediaUrlsJson TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        scheduledPublishTime INTEGER,
+                        publishedTime INTEGER,
+                        platformPostId TEXT,
+                        campaignId TEXT,
+                        contentType TEXT NOT NULL,
+                        requiresApproval INTEGER NOT NULL,
+                        approvedBy TEXT,
+                        approvedAt INTEGER,
+                        errorMessage TEXT,
+                        likesCount INTEGER NOT NULL,
+                        commentsCount INTEGER NOT NULL,
+                        sharesCount INTEGER NOT NULL,
+                        savesCount INTEGER NOT NULL,
+                        viewsCount INTEGER NOT NULL,
+                        reach INTEGER NOT NULL,
+                        impressions INTEGER NOT NULL,
+                        engagementRate REAL NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_posts_accountId ON social_posts(accountId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_posts_platform ON social_posts(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_posts_status ON social_posts(status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_posts_scheduledPublishTime ON social_posts(scheduledPublishTime)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_posts_campaignId ON social_posts(campaignId)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_comments (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        platformCommentId TEXT NOT NULL,
+                        postId TEXT,
+                        platform TEXT NOT NULL,
+                        authorName TEXT NOT NULL,
+                        authorAvatarUrl TEXT,
+                        content TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        isAnswered INTEGER NOT NULL,
+                        suggestedReply TEXT,
+                        actualReply TEXT,
+                        replyStatus TEXT NOT NULL,
+                        replyTimestamp INTEGER,
+                        sentiment TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        priority TEXT NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_comments_postId ON social_comments(postId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_comments_platform ON social_comments(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_comments_replyStatus ON social_comments(replyStatus)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_comments_timestamp ON social_comments(timestamp)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_interactions (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        platform TEXT NOT NULL,
+                        accountId TEXT NOT NULL,
+                        authorName TEXT NOT NULL,
+                        authorHandle TEXT,
+                        type TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        priority TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        suggestedAction TEXT
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_interactions_accountId ON social_interactions(accountId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_interactions_platform ON social_interactions(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_interactions_status ON social_interactions(status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_interactions_priority ON social_interactions(priority)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_interactions_timestamp ON social_interactions(timestamp)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_analytics_snapshots (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        accountId TEXT NOT NULL,
+                        platform TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        followersCount INTEGER NOT NULL,
+                        followingCount INTEGER NOT NULL,
+                        postsCount INTEGER NOT NULL,
+                        totalLikes INTEGER NOT NULL,
+                        totalComments INTEGER NOT NULL,
+                        totalShares INTEGER NOT NULL,
+                        totalViews INTEGER NOT NULL,
+                        reach INTEGER NOT NULL,
+                        impressions INTEGER NOT NULL,
+                        engagementRate REAL NOT NULL,
+                        subscribersCount INTEGER NOT NULL,
+                        profileVisits INTEGER NOT NULL,
+                        linkClicks INTEGER NOT NULL,
+                        periodLabel TEXT NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_accountId ON social_analytics_snapshots(accountId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_platform ON social_analytics_snapshots(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_timestamp ON social_analytics_snapshots(timestamp)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_campaigns (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        objective TEXT NOT NULL,
+                        startDate INTEGER NOT NULL,
+                        endDate INTEGER NOT NULL,
+                        platformsJson TEXT NOT NULL,
+                        targetAudience TEXT NOT NULL,
+                        strategySummary TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        budget TEXT,
+                        notes TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_campaigns_status ON social_campaigns(status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_campaigns_startDate ON social_campaigns(startDate)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_campaigns_endDate ON social_campaigns(endDate)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_automation_rules (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        isEnabled INTEGER NOT NULL,
+                        platform TEXT,
+                        triggerType TEXT NOT NULL,
+                        keywordsJson TEXT NOT NULL,
+                        actionType TEXT NOT NULL,
+                        replyTemplate TEXT,
+                        confidenceThreshold REAL NOT NULL,
+                        requireHumanApproval INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_automation_rules_isEnabled ON social_automation_rules(isEnabled)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_automation_rules_triggerType ON social_automation_rules(triggerType)")
+
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS social_audit_logs (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        actor TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        platform TEXT NOT NULL,
+                        targetId TEXT,
+                        details TEXT NOT NULL,
+                        status TEXT NOT NULL
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_audit_logs_timestamp ON social_audit_logs(timestamp)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_audit_logs_actor ON social_audit_logs(actor)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_audit_logs_platform ON social_audit_logs(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_audit_logs_action ON social_audit_logs(action)")
             }
         }
     }

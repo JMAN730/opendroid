@@ -43,7 +43,8 @@ object DatabaseModule {
             OpenDroidDatabase.MIGRATION_4_5,
             OpenDroidDatabase.MIGRATION_5_6,
             OpenDroidDatabase.MIGRATION_6_7,
-            OpenDroidDatabase.MIGRATION_7_8
+            OpenDroidDatabase.MIGRATION_7_8,
+            OpenDroidDatabase.MIGRATION_8_9
         )
         .build()
     }
@@ -96,4 +97,44 @@ object DatabaseModule {
     @Singleton
     fun provideCrashLogRepository(dao: CrashLogDao): CrashLogRepository =
         RoomCrashLogSink(dao)
+
+    @Provides
+    @Singleton
+    fun provideSocialAccountDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialAccountDao =
+        db.socialAccountDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialPostDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialPostDao =
+        db.socialPostDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialCommentDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialCommentDao =
+        db.socialCommentDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialInteractionDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialInteractionDao =
+        db.socialInteractionDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialAnalyticsDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialAnalyticsDao =
+        db.socialAnalyticsDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialCampaignDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialCampaignDao =
+        db.socialCampaignDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialAutomationRuleDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialAutomationRuleDao =
+        db.socialAutomationRuleDao()
+
+    @Provides
+    @Singleton
+    fun provideSocialAuditLogDao(db: OpenDroidDatabase): com.opendroid.ai.data.db.dao.SocialAuditLogDao =
+        db.socialAuditLogDao()
 }

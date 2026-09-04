@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.semantics
@@ -87,8 +88,6 @@ import com.opendroid.ai.core.permissions.runtimePermissions
 import com.opendroid.ai.core.permissions.summaryHasBlocked
 import com.opendroid.ai.core.permissions.summaryLine
 import com.opendroid.ai.core.permissions.visibleCards
-import com.opendroid.ai.ui.theme.AccentGreenButton
-import com.opendroid.ai.ui.theme.AccentNeonGreen
 import com.opendroid.ai.ui.theme.AccentRed
 import com.opendroid.ai.ui.theme.BorderColor
 import com.opendroid.ai.ui.theme.CardBackground
@@ -109,7 +108,7 @@ fun PermissionsScreen(
                         text = "PERMISSIONS",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = AccentNeonGreen,
+                        color = TextPrimary,
                         fontSize = 20.sp,
                         letterSpacing = 2.sp,
                     )
@@ -119,7 +118,7 @@ fun PermissionsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = AccentNeonGreen,
+                            tint = TextPrimary,
                         )
                     }
                 },
@@ -351,7 +350,7 @@ private fun PermissionsPanelContent(
                 .fillMaxWidth()
                 .heightIn(min = 50.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = AccentGreenButton,
+                containerColor = TextPrimary,
                 contentColor = DarkBackground,
                 disabledContainerColor = BorderColor,
                 disabledContentColor = TextSecondary,
@@ -428,7 +427,7 @@ private fun PermissionsPanelContent(
                     .fillMaxWidth()
                     .height(50.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (allRequirementsHeld) AccentGreenButton else CardBackground,
+                    containerColor = if (allRequirementsHeld) TextPrimary else CardBackground,
                     contentColor = if (allRequirementsHeld) DarkBackground else TextPrimary,
                 ),
                 border = if (allRequirementsHeld) null else BorderStroke(1.dp, BorderColor),
@@ -453,7 +452,7 @@ private fun ManualSettingsHeader() {
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
             letterSpacing = 1.sp,
-            color = AccentNeonGreen,
+            color = TextPrimary,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -521,8 +520,8 @@ private fun PermissionCard(
             onClick = onAction,
             enabled = buttonEnabled,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (buttonHasError) AccentRed else AccentGreenButton,
-                contentColor = if (buttonHasError) TextPrimary else DarkBackground,
+                containerColor = if (buttonHasError) AccentRed else TextPrimary,
+                contentColor = if (buttonHasError) Color.White else DarkBackground,
                 disabledContainerColor = BorderColor,
                 disabledContentColor = TextSecondary,
             ),

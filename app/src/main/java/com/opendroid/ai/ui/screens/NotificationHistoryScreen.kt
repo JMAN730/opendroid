@@ -111,8 +111,8 @@ fun NotificationHistoryScreen(
                             )
                         },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = themeColors.accentPurple,
-                            selectedLabelColor = Color.White,
+                            selectedContainerColor = themeColors.textPrimary,
+                            selectedLabelColor = themeColors.background,
                             containerColor = themeColors.cardBackground,
                             labelColor = themeColors.textSecondary
                         ),

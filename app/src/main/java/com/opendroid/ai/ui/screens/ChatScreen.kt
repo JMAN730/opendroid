@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -201,7 +201,7 @@ fun ChatScreen(
                             text = "OPENDROID",
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = AccentNeonGreen,
+                            color = TextPrimary,
                             fontSize = 20.sp,
                             letterSpacing = 2.sp
                         )
@@ -212,7 +212,7 @@ fun ChatScreen(
                     val autoMode = llmConfig.resolvedAutoMode()
                     val chipColor = when (autoMode) {
                         AutoMode.OFF -> TextSecondary
-                        AutoMode.AUTO -> AccentNeonGreen
+                        AutoMode.AUTO -> TextPrimary
                         AutoMode.YOLO -> AccentRed
                     }
                     OutlinedButton(
@@ -266,7 +266,7 @@ fun ChatScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = session.title,
-                                                color = if (session.isCurrent) AccentNeonGreen else TextPrimary,
+                                                color = if (session.isCurrent) TextPrimary else TextSecondary,
                                                 fontWeight = if (session.isCurrent) FontWeight.Bold else FontWeight.Normal,
                                                 fontSize = 13.sp,
                                                 maxLines = 1
@@ -281,7 +281,7 @@ fun ChatScreen(
                                                     modifier = Modifier
                                                         .size(6.dp)
                                                         .clip(CircleShape)
-                                                        .background(AccentNeonGreen)
+                                                        .background(AccentCyan)
                                                 )
                                             }
                                         }
@@ -291,7 +291,7 @@ fun ChatScreen(
                                             Icon(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = null,
-                                                tint = AccentNeonGreen,
+                                                tint = TextPrimary,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -583,20 +583,26 @@ fun ChatScreen(
                             }
                         }
 
-                        if (!isListening && inputQuery.isNotBlank()) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
-                                onClick = { submitInput() },
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(AccentNeonGreen)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Send,
-                                    contentDescription = "Send",
-                                    tint = DarkBackground
-                                )
+                        AnimatedVisibility(
+                            visible = !isListening && inputQuery.isNotBlank(),
+                            enter = fadeIn(animationSpec = tween(150)) + scaleIn(initialScale = 0.8f),
+                            exit = fadeOut(animationSpec = tween(150)) + scaleOut(targetScale = 0.8f)
+                        ) {
+                            Row {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = { submitInput() },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(TextPrimary)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Send,
+                                        contentDescription = "Send",
+                                        tint = DarkBackground
+                                    )
+                                }
                             }
                         }
                     }
@@ -645,7 +651,7 @@ fun ChatScreen(
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = AccentNeonGreen,
+                        focusedIndicatorColor = AccentCyan,
                         unfocusedIndicatorColor = BorderColor,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
@@ -658,7 +664,7 @@ fun ChatScreen(
                     viewModel.renameSession(session.id, renameText)
                     sessionPendingRename = null
                 }) {
-                    Text("Save", color = AccentNeonGreen, fontWeight = FontWeight.Bold)
+                    Text("Save", color = TextPrimary, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -694,11 +700,11 @@ fun AgentStatusSubtitle(state: AgentState, runningElsewhere: Boolean = false) {
         AccentPurple
     } else {
         when (state) {
-            is AgentState.Idle -> AccentNeonGreen
+            is AgentState.Idle -> TextSecondary
             is AgentState.Listening -> AccentRed
             is AgentState.Thinking -> AccentPurple
             is AgentState.PlanProposed -> AccentCyan
-            is AgentState.ExecutingPlan -> AccentNeonGreen
+            is AgentState.ExecutingPlan -> AccentCyan
             is AgentState.Speaking -> AccentCyan
             is AgentState.Error -> AccentRed
         }
@@ -721,7 +727,16 @@ fun ChatBubble(
 ) {
     val isAgent = message.sender == ChatMessage.Sender.AGENT
     val alignment = if (isAgent) Alignment.Start else Alignment.End
-    val bubbleColor = if (isAgent) CardBackground else AccentPurple.copy(alpha = 0.25f)
+    val bubbleColor = if (isAgent) {
+        CardBackground
+    } else {
+        if (AppTheme.colors.isDark) Color(0xFF1E1E22) else Color(0xFFF1F3F5)
+    }
+    val bubbleBorder = if (isAgent) {
+        BorderColor
+    } else {
+        if (AppTheme.colors.isDark) Color(0xFF2E2E34) else Color(0xFFE2E8F0)
+    }
     val textColor = TextPrimary
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
@@ -765,21 +780,21 @@ fun ChatBubble(
                     .widthIn(max = 290.dp)
                     .clip(
                         RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isAgent) 4.dp else 16.dp,
-                            bottomEnd = if (isAgent) 16.dp else 4.dp
+                            topStart = 18.dp,
+                            topEnd = 18.dp,
+                            bottomStart = if (isAgent) 4.dp else 18.dp,
+                            bottomEnd = if (isAgent) 18.dp else 4.dp
                         )
                     )
                     .background(bubbleColor)
                     .border(
                         1.dp,
-                        if (isAgent) BorderColor else AccentPurple.copy(alpha = 0.5f),
+                        bubbleBorder,
                         RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isAgent) 4.dp else 16.dp,
-                            bottomEnd = if (isAgent) 16.dp else 4.dp
+                            topStart = 18.dp,
+                            topEnd = 18.dp,
+                            bottomStart = if (isAgent) 4.dp else 18.dp,
+                            bottomEnd = if (isAgent) 18.dp else 4.dp
                         )
                     )
                     .padding(14.dp)
@@ -841,15 +856,24 @@ fun ChatBubble(
 
 @Composable
 fun ThinkingBubble() {
-    val infiniteTransition = rememberInfiniteTransition(label = "thinking")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val dot1 by transition.animateFloat(
+        initialValue = 0.25f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
+        animationSpec = infiniteRepeatable(tween(600, easing = EaseInOutSine), RepeatMode.Reverse),
+        label = "dot1"
+    )
+    val dot2 by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600, delayMillis = 200, easing = EaseInOutSine), RepeatMode.Reverse),
+        label = "dot2"
+    )
+    val dot3 by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600, delayMillis = 400, easing = EaseInOutSine), RepeatMode.Reverse),
+        label = "dot3"
     )
 
     Row(
@@ -863,13 +887,12 @@ fun ThinkingBubble() {
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp))
                 .background(CardBackground)
                 .border(1.dp, BorderColor, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp))
-                .padding(14.dp)
-                .graphicsLayer(alpha = alpha)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(AccentNeonGreen))
-                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(AccentNeonGreen))
-                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(AccentNeonGreen))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(TextPrimary.copy(alpha = dot1)))
+                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(TextPrimary.copy(alpha = dot2)))
+                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(TextPrimary.copy(alpha = dot3)))
             }
         }
     }
@@ -945,7 +968,7 @@ fun ProposedPlanPrompt(
                                 onCheckedChange = { checked ->
                                     checkedGrants = if (checked) checkedGrants + action else checkedGrants - action
                                 },
-                                colors = CheckboxDefaults.colors(checkedColor = AccentNeonGreen)
+                                colors = CheckboxDefaults.colors(checkedColor = AccentCyan)
                             )
                             Text(
                                 text = "Always allow $action",
@@ -979,7 +1002,7 @@ fun ProposedPlanPrompt(
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { onApprove(checkedGrants) },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+                    colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text("Approve & Run", fontWeight = FontWeight.Bold)
@@ -1010,9 +1033,9 @@ fun FloatingOrb(
         targetValue = when {
             isListening -> AccentRed
             agentState is AgentState.Thinking -> AccentPurple
-            agentState is AgentState.ExecutingPlan -> AccentNeonGreen
+            agentState is AgentState.ExecutingPlan -> AccentCyan
             agentState is AgentState.Speaking -> AccentCyan
-            else -> BorderColor
+            else -> TextPrimary.copy(alpha = 0.25f)
         },
         animationSpec = tween(500),
         label = "color"
@@ -1200,7 +1223,7 @@ private fun ChatErrorRecoveryCard(
                         onClick = onPrimary,
                         enabled = !(retryHeld && error.primaryAction() == ChatErrorPrimaryAction.RETRY),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentNeonGreen,
+                            containerColor = TextPrimary,
                             contentColor = DarkBackground
                         ),
                         modifier = Modifier.heightIn(min = 48.dp)

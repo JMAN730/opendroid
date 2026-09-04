@@ -26,6 +26,7 @@ object ActionRiskPolicy {
             ActionCategory.SMART_HOME,
             ActionCategory.TRANSPORT
         ) -> ActionRisk.SENSITIVE
+        definition.category == ActionCategory.SOCIAL -> ActionRisk.REVERSIBLE
         definition.category in setOf(ActionCategory.INFORMATION, ActionCategory.MEDIA) ->
             ActionRisk.READ_ONLY
         else -> ActionRisk.REVERSIBLE

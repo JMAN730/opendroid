@@ -61,7 +61,7 @@ fun OnboardingScreen(
                         OnboardingStage.PERMISSION_PROMPT -> "Permissions"
                         OnboardingStage.PERMISSIONS -> "Grant Permissions"
                     }
-                    Text(titleText, color = AccentNeonGreen, fontWeight = FontWeight.Bold)
+                    Text(titleText, color = TextPrimary, fontWeight = FontWeight.Bold)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
             )
@@ -109,7 +109,7 @@ fun OnboardingScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IntroductionPanel(
+private fun IntroductionPanel(
     name: String,
     onNameChange: (String) -> Unit,
     dob: String,
@@ -125,15 +125,14 @@ fun IntroductionPanel(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
                 .size(130.dp)
                 .clip(CircleShape)
                 .background(CardBackground)
-                .border(3.dp, Brush.horizontalGradient(listOf(AccentNeonGreen, AccentCyan)), CircleShape),
+                .border(2.5.dp, Brush.horizontalGradient(listOf(TextPrimary.copy(alpha = 0.4f), AccentCyan)), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -181,13 +180,13 @@ fun IntroductionPanel(
             label = { Text("What should I call you?", color = TextSecondary) },
             placeholder = { Text("Enter your name", color = TextSecondary.copy(alpha = 0.6f)) },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = AccentNeonGreen,
+                focusedBorderColor = AccentCyan,
                 unfocusedBorderColor = BorderColor,
-                focusedLabelColor = AccentNeonGreen,
+                focusedLabelColor = TextPrimary,
                 unfocusedLabelColor = TextSecondary,
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
-                cursorColor = AccentNeonGreen
+                cursorColor = TextPrimary
             ),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -208,18 +207,18 @@ fun IntroductionPanel(
                     Icon(
                         imageVector = Icons.Default.DateRange,
                         contentDescription = "Pick your birthday",
-                        tint = AccentNeonGreen
+                        tint = TextPrimary
                     )
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = AccentNeonGreen,
+                focusedBorderColor = AccentCyan,
                 unfocusedBorderColor = BorderColor,
-                focusedLabelColor = AccentNeonGreen,
+                focusedLabelColor = TextPrimary,
                 unfocusedLabelColor = TextSecondary,
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
-                cursorColor = AccentNeonGreen
+                cursorColor = TextPrimary
             ),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
@@ -243,7 +242,7 @@ fun IntroductionPanel(
                             showDatePicker = false
                         },
                         enabled = datePickerState.selectedDateMillis != null
-                    ) { Text("OK", color = AccentNeonGreen, fontWeight = FontWeight.Bold) }
+                    ) { Text("OK", color = TextPrimary, fontWeight = FontWeight.Bold) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDatePicker = false }) {
@@ -280,7 +279,7 @@ fun IntroductionPanel(
         Button(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+            colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
             shape = RoundedCornerShape(8.dp)
         ) {
             Text("Let's Go", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -366,7 +365,7 @@ fun PermissionPromptPanel(
         Button(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentNeonGreen, contentColor = DarkBackground),
+            colors = ButtonDefaults.buttonColors(containerColor = TextPrimary, contentColor = DarkBackground),
             shape = RoundedCornerShape(8.dp)
         ) {
             Text("Grant Permissions", fontWeight = FontWeight.Bold, fontSize = 16.sp)
