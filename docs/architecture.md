@@ -36,7 +36,7 @@ OpenDroid is engineered following strict **Clean Architecture** principles, main
 ### Core Design Principles
 1. **Privacy-First & Sandboxed Execution:** Provider credentials (API keys and Hugging Face tokens) use the direct Android Keystore [`ProviderCredentialStore.kt`](file:///workspaces/opendroid/app/src/main/java/com/opendroid/ai/core/security/ProviderCredentialStore.kt), with versioned AES-GCM envelopes outside the plaintext DataStore. System actions and scrapers operate locally on device.
 2. **Autonomous Agentic Loop:** Implements self-evaluation, error detection, and dynamic re-planning using LLM re-evaluators when an execution step fails.
-3. **Hybrid Inference Pipeline:** Seamless support for cloud LLM providers (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter) and local on-device inference engines (LiteRT-LM, Ollama, ML Kit GenAI).
+3. **Hybrid Inference Pipeline:** Seamless support for cloud LLM providers (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Opencode-Go) and local on-device inference engines (LiteRT-LM, Ollama, ML Kit GenAI).
 4. **Resilient System Interactivity:** Native Android APIs are prioritized; when direct permissions are missing, OpenDroid automatically falls back to UI Intents or Accessibility node tree manipulation.
 
 ---

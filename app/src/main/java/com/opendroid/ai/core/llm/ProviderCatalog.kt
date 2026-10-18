@@ -35,6 +35,7 @@ object ProviderCatalog {
         ProviderSpec("Cohere", "command-r-plus"),
         ProviderSpec("DeepSeek", "deepseek-chat"),
         ProviderSpec("Copilot API", "gpt-4o"),
+        ProviderSpec("Opencode-Go", "beam-free"),
         ProviderSpec("Custom OpenAI Compatible", "custom-model"),
         ProviderSpec("Ollama", "llama3"),
         ProviderSpec(ON_DEVICE, "gemma-4-on-device"),
@@ -72,6 +73,7 @@ object ProviderCatalog {
         "Together AI",
         "Cohere",
         "DeepSeek",
+        "Opencode-Go",
         "Custom OpenAI Compatible" -> true
         else -> false
     }
