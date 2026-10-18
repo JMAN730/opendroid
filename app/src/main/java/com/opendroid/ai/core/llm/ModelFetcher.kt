@@ -2,6 +2,7 @@ package com.opendroid.ai.core.llm
 
 import android.util.Log
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.llm.providers.OpencodeGoProtocol
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -112,6 +113,18 @@ class ModelFetcher @Inject constructor(
                     ModelFetchOutcome.Success(
                         openAiStyle("https://api.deepseek.com/models", apiKey, provider)
                     )
+                }
+
+                "Opencode-Go" -> {
+                    apiKey ?: return@withContext needsKey(provider)
+                    // The Go gateway requires the agent and session headers on
+                    // discovery too, and lists models under a different path
+                    // than its chat-completions endpoint.
+                    val page = getJson(
+                        url = OpencodeGoProtocol.MODELS_URL,
+                        headers = OpencodeGoProtocol.headers(apiKey)
+                    )
+                    ModelFetchOutcome.Success(ModelListParsers.openAiStyle(page, provider))
                 }
 
                 "OpenRouter" -> {

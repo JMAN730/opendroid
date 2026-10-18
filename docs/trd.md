@@ -157,6 +157,7 @@ interface LLMProvider {
 Standardized dynamic endpoints:
 * **Gemini:** `https://generativelanguage.googleapis.com/v1beta/models`
 * **OpenAI / OpenRouter / Groq / DeepSeek:** Dynamic discovery via `/v1/models`
+* **Opencode-Go:** Chat via `https://opencode.ai/inference/go/openai/v1/chat/completions`; model discovery via `https://opencode.ai/zen/go/v1/models`
 * **Anthropic Claude:** `https://api.anthropic.com/v1/messages`
 * **Ollama (Local/Offline):** `${ollamaUrl}/api/tags`
 

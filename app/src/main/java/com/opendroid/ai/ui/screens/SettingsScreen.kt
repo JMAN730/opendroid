@@ -99,6 +99,7 @@ fun SettingsScreen(
         "Cohere",
         "DeepSeek",
         "Copilot API",
+        "Opencode-Go",
         "Custom OpenAI Compatible",
         "Ollama",
         "On-Device AI"
@@ -1628,6 +1629,13 @@ fun SettingsScreen(
                                         fontSize = 10.sp,
                                         color = TextSecondary
                                     )
+                                    if (providerName == "Opencode-Go") {
+                                        Text(
+                                            text = "OpenDroid adds the required User-Agent and x-opencode-session headers automatically. Only an API key is needed.",
+                                            fontSize = 10.sp,
+                                            color = AccentCyan
+                                        )
+                                    }
                                 }
                             }
                         }

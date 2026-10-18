@@ -39,6 +39,7 @@ class LLMProviderFactory @Inject constructor(
     private val cohereProvider: Provider<CohereProvider>,
     private val deepSeekProvider: Provider<DeepSeekProvider>,
     private val copilotProvider: Provider<CopilotProvider>,
+    private val opencodeGoProvider: Provider<OpencodeGoProvider>,
     private val customOpenAIProvider: Provider<CustomOpenAIProvider>,
     private val gemmaProvider: Provider<GemmaProvider>,
     private val liteRTLMProvider: Provider<LiteRTLMProvider>,
@@ -63,6 +64,7 @@ class LLMProviderFactory @Inject constructor(
             "Cohere" -> cohereProvider.get()
             "DeepSeek" -> deepSeekProvider.get()
             "Copilot API" -> copilotProvider.get()
+            "Opencode-Go" -> opencodeGoProvider.get()
             "Custom OpenAI Compatible" -> customOpenAIProvider.get()
             // Hybrid on-device: both old and new names map here
             "On-Device AI",

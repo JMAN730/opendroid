@@ -13,10 +13,17 @@ class ProviderCatalogTest {
 
     @Test
     fun `catalog has one default for every stable provider`() {
-        assertEquals(15, ProviderCatalog.providers.size)
+        assertEquals(16, ProviderCatalog.providers.size)
         ProviderCatalog.providers.forEach { provider ->
             assertTrue(provider.displayName, ProviderCatalog.defaultModel(provider.displayName).isNotBlank())
         }
+    }
+
+    @Test
+    fun `opencode go is a keyed cloud provider seeded with beam free`() {
+        assertEquals("beam-free", ProviderCatalog.defaultModel("Opencode-Go"))
+        assertTrue(ProviderCatalog.requiresApiKey("Opencode-Go"))
+        assertTrue(!ProviderCatalog.isOnDevice("Opencode-Go"))
     }
 
     @Test
