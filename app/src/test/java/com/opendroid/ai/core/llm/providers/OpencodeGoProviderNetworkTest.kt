@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -95,6 +96,48 @@ class OpencodeGoProviderNetworkTest {
     }
 
     @Test
+    fun `a missing usage block still reports zero tokens`() = runBlocking {
+        server.enqueue(jsonResponse("""{"choices":[{"message":{"content":"pong"}}]}"""))
+
+        val response = provider.complete(newRequest())
+
+        assertEquals("pong", response.content)
+        assertEquals(0, response.tokensUsed)
+    }
+
+    @Test
+    fun `explicitly null or invalid response fields are malformed`() {
+        val bodies = listOf(
+            """{"choices":[{"message":{"content":null}}],"usage":{"total_tokens":1}}""",
+            """{"choices":[{"message":{"content":"pong"}}],"usage":null}""",
+            """{"choices":[{"message":{"content":"pong"}}],"usage":{"total_tokens":null}}""",
+            """{"choices":[{"message":{"content":"pong"}}],"usage":{"total_tokens":"many"}}""",
+            """{"choices":[],"usage":{"total_tokens":1}}"""
+        )
+
+        bodies.forEach { body ->
+            server.enqueue(jsonResponse(body))
+            val failure = assertThrows(LLMException::class.java) {
+                runBlocking { provider.complete(newRequest()) }
+            }
+            assertEquals(body, LLMError.MalformedResponse, failure.error)
+        }
+    }
+
+    @Test
+    fun `streaming reconstructs the completion content exactly`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"choices":[{"message":{"content":"hello world"}}],"usage":{"total_tokens":2}}"""
+            )
+        )
+
+        val streamed = provider.streamComplete(newRequest()).toList().joinToString("")
+
+        assertEquals("hello world", streamed)
+    }
+
+    @Test
     fun `a non-2xx response becomes a redacted LLMException`() {
         server.enqueue(
             MockResponse.Builder()
@@ -125,17 +168,14 @@ class OpencodeGoProviderNetworkTest {
         assertFalse(rendered.contains("Incorrect API key provided"))
     }
 
-    private fun successResponse() = MockResponse.Builder()
+    private fun successResponse() = jsonResponse(
+        """{"choices":[{"message":{"content":"pong"}}],"usage":{"total_tokens":42}}"""
+    )
+
+    private fun jsonResponse(body: String) = MockResponse.Builder()
         .code(200)
         .setHeader("Content-Type", "application/json")
-        .body(
-            """
-            {
-              "choices": [{"message": {"content": "pong"}}],
-              "usage": {"total_tokens": 42}
-            }
-            """.trimIndent()
-        )
+        .body(body)
         .build()
 
     private fun newRequest() = LLMRequest(

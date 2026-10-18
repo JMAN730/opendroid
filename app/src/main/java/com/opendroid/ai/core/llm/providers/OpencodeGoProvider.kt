@@ -7,6 +7,7 @@ import com.opendroid.ai.core.llm.LLMProvider
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.LLMResponse
 import com.opendroid.ai.core.llm.ResponseFormat
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
 import com.opendroid.ai.core.llm.toOpenAIMessages
@@ -91,12 +92,36 @@ class OpencodeGoProvider @Inject constructor(
                     throw IOException("Empty response body from $name")
                 }
                 val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
-                val choices = jsonResponse.getAsJsonArray("choices")
-                val messageObj = choices[0].asJsonObject.getAsJsonObject("message")
-                val content = messageObj.get("content").asString
+                    ?: throw LLMErrorMapper.malformed(name, selectedModel)
+                val content = jsonResponse
+                    .get("choices")
+                    ?.takeIf { it.isJsonArray }
+                    ?.asJsonArray
+                    ?.firstOrNull()
+                    ?.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.get("message")
+                    ?.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.get("content")
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?: throw LLMErrorMapper.malformed(name, selectedModel)
 
-                val usage = jsonResponse.getAsJsonObject("usage")
-                val tokensUsed = usage?.get("total_tokens")?.asInt ?: 0
+                val usageElement = jsonResponse.get("usage")
+                val usage = when {
+                    usageElement == null -> null
+                    !usageElement.isJsonObject -> throw LLMErrorMapper.malformed(name, selectedModel)
+                    else -> usageElement.asJsonObject
+                }
+                val totalTokensElement = usage?.get("total_tokens")
+                val tokensUsed = when {
+                    totalTokensElement == null -> 0
+                    !totalTokensElement.isJsonPrimitive ||
+                        !totalTokensElement.asJsonPrimitive.isNumber ->
+                        throw LLMErrorMapper.malformed(name, selectedModel)
+                    else -> totalTokensElement.asInt
+                }
 
                 LLMResponse(
                     content = content,
@@ -112,8 +137,8 @@ class OpencodeGoProvider @Inject constructor(
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
         val response = complete(request)
         val words = response.content.split(" ")
-        for (word in words) {
-            emit("$word ")
+        for ((index, word) in words.withIndex()) {
+            emit(if (index == words.lastIndex) word else "$word ")
             kotlinx.coroutines.delay(50)
         }
     }
