@@ -89,6 +89,71 @@ class ActionSchemaTest {
         assertTrue(result is ActionSchema.ValidationResult.InvalidAction)
     }
 
+    // ── Blank file paths ────────────────────────────────────────────────
+
+    @Test
+    fun `blank file path params are reported as missing`() {
+        // "" resolves to the workspace root, so a blank path must never validate for
+        // actions that read, write, delete or restructure files.
+        val allCases = listOf(
+            "READ_FILE" to "filePath",
+            "WRITE_FILE" to "filePath",
+            "DELETE_FILE" to "filePath",
+            "CREATE_DIRECTORY" to "path",
+            "COPY_FILE" to "sourcePath",
+            "COPY_FILE" to "destPath",
+            "MOVE_FILE" to "sourcePath",
+            "MOVE_FILE" to "destPath",
+            "ZIP_FILES" to "sourcePath",
+            "ZIP_FILES" to "zipFilePath",
+            "UNZIP_FILE" to "zipFilePath",
+            "UNZIP_FILE" to "destDirPath"
+        )
+
+        allCases.forEach { (action, param) ->
+            listOf("", "   ").forEach { blank ->
+                // Fill every other param with a real value so only the blank one can fail.
+                val params = ActionSchema.getAction(action)!!.params
+                    .associate { it.name to (if (it.name == param) blank else "something") }
+                val (result, _) = ActionSchema.validateParams(action, params)
+                assertTrue(
+                    "$action with blank '$param' should be MissingParams",
+                    result is ActionSchema.ValidationResult.MissingParams
+                )
+                assertTrue(
+                    "$action should name '$param' as missing",
+                    (result as ActionSchema.ValidationResult.MissingParams).params.contains(param)
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `blank is still accepted where the schema allows it`() {
+        // Writing an empty file is legitimate: only the path is blank-rejected, not the content.
+        val (result, enriched) = ActionSchema.validateParams(
+            "WRITE_FILE",
+            mapOf("filePath" to "notes/empty.txt", "content" to "")
+        )
+        assertTrue(result is ActionSchema.ValidationResult.Valid)
+        assertEquals("", enriched["content"])
+
+        // Non-file actions are unaffected by the blank rule.
+        val (openResult, _) = ActionSchema.validateParams("OPEN_APP", mapOf("appName" to ""))
+        assertTrue(openResult is ActionSchema.ValidationResult.Valid)
+    }
+
+    @Test
+    fun `delete file param definition rejects blank`() {
+        val filePath = ActionSchema.getAction("DELETE_FILE")!!.params.single()
+        assertEquals("filePath", filePath.name)
+        assertTrue(filePath.required)
+        assertFalse(filePath.allowBlank)
+
+        // LIST_FILES keeps the default: a blank path just lists the workspace root.
+        assertTrue(ActionSchema.getAction("LIST_FILES")!!.params.single().allowBlank)
+    }
+
     // ── applyDefaults ───────────────────────────────────────────────────
 
     @Test
