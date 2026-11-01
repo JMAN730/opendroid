@@ -300,8 +300,8 @@ object LLMErrorMapper {
 
     private fun parseRetryAfter(value: String?): Long? {
         val text = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        text.toDoubleOrNull()?.takeIf { it >= 0.0 }?.let {
-            return (it * 1_000.0).roundToLong()
+        text.toDoubleOrNull()?.let { seconds ->
+            return finiteMillisOrNull(seconds * 1_000.0)
         }
 
         val parts = GO_DURATION_PART.findAll(text).toList()
@@ -316,7 +316,7 @@ object LLMErrorMapper {
                 }
                 amount * multiplier
             }
-            return millis.roundToLong().takeIf { it >= 0L }
+            return finiteMillisOrNull(millis)
         }
 
         return runCatching {
@@ -324,4 +324,13 @@ object LLMErrorMapper {
             (retryAt.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0L)
         }.getOrNull()
     }
+
+    /**
+     * Converts a parsed millisecond value into a [Long], treating non-finite or
+     * out-of-range values (for example `Infinity` or `1e30`) as malformed (`null`)
+     * instead of letting [roundToLong] saturate at [Long.MAX_VALUE], which would
+     * later overflow when the retry policy adds jitter.
+     */
+    private fun finiteMillisOrNull(millis: Double): Long? =
+        millis.takeIf { it.isFinite() && it >= 0.0 && it < Long.MAX_VALUE.toDouble() }?.roundToLong()
 }

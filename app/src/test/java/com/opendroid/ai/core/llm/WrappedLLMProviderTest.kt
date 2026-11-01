@@ -185,6 +185,47 @@ class WrappedLLMProviderTest {
     }
 
     @Test
+    fun `huge retry-after saturates instead of overflowing and is not retried`() = runBlocking {
+        var attempts = 0
+        val delays = mutableListOf<Long>()
+        val delegate = FakeProvider("OpenAI", completion = { request ->
+            attempts++
+            throw LLMException(
+                error = LLMError.RateLimited,
+                provider = "OpenAI",
+                model = request.model.orEmpty(),
+                status = 429,
+                retryable = true,
+                retryAfterMillis = Long.MAX_VALUE
+            )
+        })
+        val wrapper = WrappedLLMProvider(
+            delegate = delegate,
+            configProvider = {
+                LLMConfig(
+                    activeProvider = "OpenAI",
+                    activeModel = "gpt-4o",
+                    apiKeys = mapOf("OpenAI" to "test-key")
+                )
+            },
+            retryRuntime = RetryRuntime(
+                nowMillis = { 0L },
+                delayMillis = { delays += it },
+                // Long.MAX_VALUE + 1 wraps to Long.MIN_VALUE, which an unsaturated
+                // add would treat as a delay that fits inside the retry window.
+                jitterMillis = { 1L }
+            )
+        )
+
+        val failure = runCatching { wrapper.complete(request()) }.exceptionOrNull()
+
+        assertTrue(failure is LLMException)
+        assertEquals(LLMError.RateLimited, (failure as LLMException).error)
+        assertEquals(1, attempts)
+        assertTrue(delays.isEmpty())
+    }
+
+    @Test
     fun `empty stream is retried as a transient malformed response`() = runBlocking {
         var attempts = 0
         val delegate = FakeProvider(
