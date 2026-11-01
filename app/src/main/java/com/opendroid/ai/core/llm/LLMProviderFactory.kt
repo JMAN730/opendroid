@@ -51,36 +51,39 @@ class LLMProviderFactory @Inject constructor(
     private val deviceStateProvider: DeviceStateProvider
 ) {
 
-    fun getProviderByName(name: String): LLMProvider {
-        val rawProvider = when (name) {
-            "Anthropic Claude" -> claudeProvider.get()
-            "OpenAI" -> openAIProvider.get()
-            "Google Gemini" -> geminiProvider.get()
-            "Mistral AI" -> mistralProvider.get()
-            "Groq" -> groqProvider.get()
-            "Ollama" -> ollamaProvider.get()
-            "OpenRouter" -> openRouterProvider.get()
-            "Together AI" -> togetherAIProvider.get()
-            "Cohere" -> cohereProvider.get()
-            "DeepSeek" -> deepSeekProvider.get()
-            "Copilot API" -> copilotProvider.get()
-            "Opencode-Go" -> opencodeGoProvider.get()
-            "Custom OpenAI Compatible" -> customOpenAIProvider.get()
-            // Hybrid on-device: both old and new names map here
-            "On-Device AI",
-            "Gemma 4 (On-device)" -> hybridOnDeviceProvider.get()
-            // Direct backend access (for advanced users / testing)
-            "LiteRT-LM (On-device)" -> liteRTLMProvider.get()
-            else -> {
-                Log.w(TAG, "Unknown LLM provider persisted; falling back to Google Gemini.")
-                geminiProvider.get()
-            }
+    fun getProviderByName(name: String): LLMProvider = resolveProvider(
+        name = name,
+        knownProvider = ::knownProvider,
+        wrap = { rawProvider ->
+            WrappedLLMProvider(
+                delegate = rawProvider,
+                configProvider = { settingsRepository.llmConfig.first() },
+                requestRewriter = ::rewriteRequestIfNeeded
+            )
         }
-        return WrappedLLMProvider(
-            delegate = rawProvider,
-            configProvider = { settingsRepository.llmConfig.first() },
-            requestRewriter = ::rewriteRequestIfNeeded
-        )
+    )
+
+    /** Returns the provider this build registers under [name], or null if none does. */
+    private fun knownProvider(name: String): LLMProvider? = when (name) {
+        "Anthropic Claude" -> claudeProvider.get()
+        "OpenAI" -> openAIProvider.get()
+        "Google Gemini" -> geminiProvider.get()
+        "Mistral AI" -> mistralProvider.get()
+        "Groq" -> groqProvider.get()
+        "Ollama" -> ollamaProvider.get()
+        "OpenRouter" -> openRouterProvider.get()
+        "Together AI" -> togetherAIProvider.get()
+        "Cohere" -> cohereProvider.get()
+        "DeepSeek" -> deepSeekProvider.get()
+        "Copilot API" -> copilotProvider.get()
+        "Opencode-Go" -> opencodeGoProvider.get()
+        "Custom OpenAI Compatible" -> customOpenAIProvider.get()
+        // Hybrid on-device: both old and new names map here
+        "On-Device AI",
+        "Gemma 4 (On-device)" -> hybridOnDeviceProvider.get()
+        // Direct backend access (for advanced users / testing)
+        "LiteRT-LM (On-device)" -> liteRTLMProvider.get()
+        else -> null
     }
 
     suspend fun getActiveProvider(): LLMProvider {
@@ -166,8 +169,29 @@ class LLMProviderFactory @Inject constructor(
         return request
     }
 
-    private companion object {
-        const val TAG = "LLMProviderFactory"
+    companion object {
+        private const val TAG = "LLMProviderFactory"
+
+        /**
+         * Picks the provider for a persisted name. A name this build knows is
+         * wrapped for request resolution and retries; an unknown name yields an
+         * [UnknownLLMProvider] that fails every call without contacting any
+         * vendor. It never substitutes another provider: a saved name that no
+         * longer exists must surface as a configuration error, not route the
+         * user's prompts to a vendor they never selected.
+         */
+        internal fun resolveProvider(
+            name: String,
+            knownProvider: (String) -> LLMProvider?,
+            wrap: (LLMProvider) -> LLMProvider
+        ): LLMProvider {
+            val rawProvider = knownProvider(name)
+            if (rawProvider == null) {
+                Log.w(TAG, "Unknown LLM provider persisted; refusing every request until a provider is selected.")
+                return UnknownLLMProvider(name)
+            }
+            return wrap(rawProvider)
+        }
     }
 }
 
