@@ -85,6 +85,51 @@ class CustomOpenAIProviderNetworkTest {
     }
 
     @Test
+    fun `a refusal with null content is surfaced as the reply`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"choices":[{"message":{"content":null,"refusal":"I can't help with that."}}],"usage":null}"""
+            )
+        )
+
+        val response = provider.complete(newRequest())
+
+        assertEquals("I can't help with that.", response.content)
+        assertEquals(0, response.tokensUsed)
+    }
+
+    @Test
+    fun `a null usage block does not fail a good completion`() = runBlocking {
+        server.enqueue(jsonResponse("""{"choices":[{"message":{"content":"pong"}}],"usage":{"total_tokens":null}}"""))
+
+        val response = provider.complete(newRequest())
+
+        assertEquals("pong", response.content)
+        assertEquals(0, response.tokensUsed)
+    }
+
+    @Test
+    fun `a 200 without reply text is malformed not unknown`() {
+        val bodies = listOf(
+            // Tool-call turn.
+            """{"choices":[{"message":{"content":null,"tool_calls":[{"id":"c1"}]}}]}""",
+            // OpenRouter-style upstream failure delivered with HTTP 200.
+            """{"error":{"code":502,"message":"upstream failed"}}""",
+            """{"choices":[{"index":0}]}""",
+            """{"choices":[]}""",
+            "not json"
+        )
+
+        bodies.forEach { body ->
+            server.enqueue(jsonResponse(body))
+            val failure = assertThrows(LLMException::class.java) {
+                runBlocking { provider.complete(newRequest()) }
+            }
+            assertEquals(body, LLMError.MalformedResponse, failure.error)
+        }
+    }
+
+    @Test
     fun `a non-2xx response becomes a redacted LLMException`() {
         server.enqueue(
             MockResponse.Builder()
@@ -136,6 +181,12 @@ class CustomOpenAIProviderNetworkTest {
         assertNull(failure.detail?.vendorCode)
         assertFalse(failure.message.orEmpty().contains(filler))
     }
+
+    private fun jsonResponse(body: String) = MockResponse.Builder()
+        .code(200)
+        .setHeader("Content-Type", "application/json")
+        .body(body)
+        .build()
 
     private fun newRequest() = LLMRequest(
         systemPrompt = "you are a test",
