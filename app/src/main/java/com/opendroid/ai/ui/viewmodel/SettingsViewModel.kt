@@ -669,10 +669,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAutoMode(mode: AutoMode) {
-        _llmConfig.value = _llmConfig.value.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
+        val previous = _llmConfig.value
+        _llmConfig.value = previous.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            val state = settingsRepository.updateConfig { current ->
                 current.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
+            }
+            if (state != ProviderCredentialPersistenceState.Ready) {
+                // The save was aborted, so the screen must not show a mode the agent is not using.
+                _llmConfig.value = _llmConfig.value.copy(
+                    autoMode = previous.autoMode,
+                    autoConfirmPlans = previous.autoConfirmPlans
+                )
             }
         }
     }
@@ -681,11 +689,16 @@ class SettingsViewModel @Inject constructor(
      *  first revoke also materializes the seeded defaults (a revoked default
      *  must never come back on the next read). */
     fun revokeGrant(action: String) {
-        val updated = _llmConfig.value.effectiveGrantedActions() - action
-        _llmConfig.value = _llmConfig.value.copy(grantedActions = updated)
+        val previous = _llmConfig.value
+        val updated = previous.effectiveGrantedActions() - action
+        _llmConfig.value = previous.copy(grantedActions = updated)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            val state = settingsRepository.updateConfig { current ->
                 current.copy(grantedActions = current.effectiveGrantedActions() - action)
+            }
+            if (state != ProviderCredentialPersistenceState.Ready) {
+                // The save was aborted, so the grant is still active and must be shown as such.
+                _llmConfig.value = _llmConfig.value.copy(grantedActions = previous.grantedActions)
             }
         }
     }
