@@ -1,8 +1,8 @@
 package com.opendroid.ai.core.llm.providers
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
 import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
@@ -111,18 +111,11 @@ class ClaudeProvider @Inject constructor(
                 )
             }
             val responseBody = response.body.string()
-            if (responseBody.isBlank()) throw IOException("Empty response body from Claude")
-            val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
-            val contentArray = jsonResponse.getAsJsonArray("content")
-            val content = contentArray[0].asJsonObject.get("text").asString
-
-            val usage = jsonResponse.getAsJsonObject("usage")
-            val inputTokens = usage?.get("input_tokens")?.asInt ?: 0
-            val outputTokens = usage?.get("output_tokens")?.asInt ?: 0
+            val parsed = CloudResponseParsers.claudeMessage(responseBody, name, selectedModel)
 
             LLMResponse(
-                content = content,
-                tokensUsed = inputTokens + outputTokens,
+                content = parsed.content,
+                tokensUsed = parsed.tokensUsed,
                 model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
@@ -152,8 +145,16 @@ class ClaudeProvider @Inject constructor(
             // Configuration failures belong in AgentLoop's Error state, not in
             // persisted assistant content that looks like a Claude response.
             throw e
+        } catch (e: IOException) {
+            // Transport failures already classify correctly in
+            // LLMErrorMapper.fromThrowable (Network, retryable only when the
+            // connection never opened); re-wrapping would erase that.
+            throw e
         } catch (e: Exception) {
-            throw IOException("Claude streaming failed.", e)
+            // Anything else is a parse or programming failure, not a network one:
+            // let the mapper type it (JsonParseException -> MalformedResponse)
+            // instead of disguising it as an I/O error.
+            throw LLMErrorMapper.fromThrowable(name, request.model.orEmpty(), e)
         }
     }
 
