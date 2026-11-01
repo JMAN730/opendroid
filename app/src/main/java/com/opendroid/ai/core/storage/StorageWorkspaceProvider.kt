@@ -429,6 +429,7 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
+            overlapError(src, dest, "copy")?.let { return ActionResult(false, null, it) }
             copyRecursively(src, dest)
             ActionResult(true, "Copied from ${src.absolutePath} to ${dest.absolutePath}!", null)
         } catch (e: Exception) {
@@ -443,14 +444,24 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
+            overlapError(src, dest, "move")?.let { return ActionResult(false, null, it) }
             dest.parentFile?.mkdirs()
             val renamed = src.renameTo(dest)
             if (renamed) {
                 ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
             } else {
+                // copyRecursively throws on any failure, so the source is only removed
+                // once every file has been copied.
                 copyRecursively(src, dest)
-                src.deleteRecursively()
-                ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
+                if (src.deleteRecursively()) {
+                    ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
+                } else {
+                    ActionResult(
+                        false,
+                        null,
+                        "Copied to ${dest.absolutePath} but couldn't remove the original at ${src.absolutePath}"
+                    )
+                }
             }
         } catch (e: Exception) {
             ActionResult(false, null, "Couldn't move file: ${e.localizedMessage}")
@@ -463,6 +474,13 @@ object StorageWorkspaceProvider {
             val zipFile = resolveFile(context, zipFilePath)
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
+            }
+            if (isSameOrInside(zipFile, src)) {
+                return ActionResult(
+                    false,
+                    null,
+                    "Can't create the zip inside the folder being zipped: ${zipFile.absolutePath} is inside ${src.absolutePath}"
+                )
             }
             zipFile.parentFile?.mkdirs()
             ZipOutputStream(zipFile.outputStream().buffered()).use { zos ->
@@ -576,12 +594,39 @@ object StorageWorkspaceProvider {
         }
     }
 
+    /**
+     * True when [candidate] is the same path as [base] or lies anywhere beneath it.
+     * Compares canonical paths so symlinks and `..` segments can't disguise an overlap.
+     */
+    private fun isSameOrInside(candidate: File, base: File): Boolean {
+        val candidatePath = try { candidate.canonicalPath } catch (_: Exception) { candidate.absolutePath }
+        val basePath = try { base.canonicalPath } catch (_: Exception) { base.absolutePath }
+        return candidatePath == basePath || candidatePath.startsWith(basePath + File.separator)
+    }
+
+    /**
+     * Returns a user-facing error when a copy/move from [src] to [dest] would overlap
+     * (destination equals the source or lies inside it), or null when the pair is safe.
+     */
+    private fun overlapError(src: File, dest: File, verb: String): String? {
+        if (!isSameOrInside(dest, src)) return null
+        val samePath = try { src.canonicalPath == dest.canonicalPath } catch (_: Exception) { src.absolutePath == dest.absolutePath }
+        return if (samePath) {
+            "Can't $verb ${src.absolutePath} onto itself"
+        } else {
+            "Can't $verb ${src.absolutePath} into its own subfolder ${dest.absolutePath}"
+        }
+    }
+
     private fun copyRecursively(src: File, dest: File) {
         if (src.isDirectory) {
+            // Snapshot the children before creating dest: if dest lives inside src,
+            // creating it first would make it part of the listing and recurse forever.
+            val children = src.listFiles()
             if (!dest.exists()) {
                 dest.mkdirs()
             }
-            src.listFiles()?.forEach { file ->
+            children?.forEach { file ->
                 copyRecursively(file, File(dest, file.name))
             }
         } else {

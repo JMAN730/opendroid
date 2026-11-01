@@ -128,6 +128,117 @@ class StorageWorkspaceProviderTest {
         assertFalse(StorageWorkspaceProvider.readFile(context, "subfolder/hello.txt").success)
     }
 
+    // ── Overlapping source/destination (issue #89) ───────────────────────
+
+    private fun seedNotesFolder() {
+        assertTrue(StorageWorkspaceProvider.writeFile(context, "notes/a.txt", "alpha").success)
+        assertTrue(StorageWorkspaceProvider.writeFile(context, "notes/sub/b.txt", "beta").success)
+    }
+
+    private fun assertNotesFolderIntact() {
+        assertEquals("alpha", StorageWorkspaceProvider.readFile(context, "notes/a.txt").data)
+        assertEquals("beta", StorageWorkspaceProvider.readFile(context, "notes/sub/b.txt").data)
+    }
+
+    @Test
+    fun `moveFile refuses to move a folder into its own subfolder and keeps the data`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.moveFile(context, "notes", "notes/backup")
+
+        assertFalse(result.success)
+        assertNotNull(result.error)
+        assertNotesFolderIntact()
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertFalse(File(ws, "notes/backup").exists())
+    }
+
+    @Test
+    fun `moveFile refuses to move a path onto itself`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.moveFile(context, "notes", "./notes")
+
+        assertFalse(result.success)
+        assertNotesFolderIntact()
+    }
+
+    @Test
+    fun `copyFile refuses to copy a folder into its own subfolder and keeps the data`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.copyFile(context, "notes", "notes/sub/copy")
+
+        assertFalse(result.success)
+        assertNotNull(result.error)
+        assertNotesFolderIntact()
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertFalse(File(ws, "notes/sub/copy").exists())
+    }
+
+    @Test
+    fun `copyFile refuses to copy a file onto itself via an aliased path and keeps its content`() {
+        assertTrue(StorageWorkspaceProvider.writeFile(context, "Download/report.txt", "report body").success)
+
+        // Both spellings resolve to workspace/Download/report.txt.
+        val result = StorageWorkspaceProvider.copyFile(
+            context,
+            "/sdcard/Download/report.txt",
+            "Download/report.txt"
+        )
+
+        assertFalse(result.success)
+        assertNotNull(result.error)
+        assertEquals("report body", StorageWorkspaceProvider.readFile(context, "Download/report.txt").data)
+    }
+
+    @Test
+    fun `copyFile refuses to copy a folder onto itself and keeps every file`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.copyFile(context, "/sdcard/notes", "notes")
+
+        assertFalse(result.success)
+        assertNotesFolderIntact()
+    }
+
+    @Test
+    fun `copyFile still copies a folder to a sibling location`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.copyFile(context, "notes", "notes_copy")
+
+        assertTrue(result.success)
+        assertNotesFolderIntact()
+        assertEquals("alpha", StorageWorkspaceProvider.readFile(context, "notes_copy/a.txt").data)
+        assertEquals("beta", StorageWorkspaceProvider.readFile(context, "notes_copy/sub/b.txt").data)
+    }
+
+    @Test(timeout = 10_000)
+    fun `zipFiles refuses to create the zip inside the workspace being zipped`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.zipFiles(context, ".", "backup.zip")
+
+        assertFalse(result.success)
+        assertNotNull(result.error)
+        assertNotesFolderIntact()
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertFalse(File(ws, "backup.zip").exists())
+    }
+
+    @Test(timeout = 10_000)
+    fun `zipFiles refuses to create the zip inside the source folder`() {
+        seedNotesFolder()
+
+        val result = StorageWorkspaceProvider.zipFiles(context, "notes", "notes/sub/notes.zip")
+
+        assertFalse(result.success)
+        assertNotesFolderIntact()
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertFalse(File(ws, "notes/sub/notes.zip").exists())
+    }
+
     @Test
     fun `advanced control actions file operations execute seamlessly`() = runBlocking {
         val actions = AdvancedControlActions()
