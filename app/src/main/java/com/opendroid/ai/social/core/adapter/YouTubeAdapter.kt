@@ -73,13 +73,10 @@ class YouTubeAdapter @Inject constructor(
                 )
             )
         }
-        return Result.success(
-            PublishPostResult(
-                success = true,
-                platformPostId = "yt_${System.currentTimeMillis()}",
-                url = "https://youtube.com"
-            )
-        )
+        // The YouTube Data API has no endpoint for community posts and video uploads
+        // are not wired up, so there is nothing we can call here. Fail honestly instead of
+        // fabricating a post ID that SocialManager would record as PUBLISHED.
+        return Result.failure(UnsupportedOperationException("Publishing to YouTube isn't supported yet"))
     }
 
     override suspend fun fetchInbox(credentials: SocialCredentials, since: Long?): Result<List<SocialInteraction>> {
@@ -138,7 +135,8 @@ class YouTubeAdapter @Inject constructor(
                 )
             )
         }
-        return Result.success(ReplyCommentResult(success = true, platformReplyId = "yt_reply_${System.currentTimeMillis()}"))
+        // No comments.insert call is implemented; do not claim the reply was sent.
+        return Result.failure(UnsupportedOperationException("Replying to YouTube comments isn't supported yet"))
     }
 
     override suspend fun fetchAnalytics(credentials: SocialCredentials): Result<SocialAnalytics> {
