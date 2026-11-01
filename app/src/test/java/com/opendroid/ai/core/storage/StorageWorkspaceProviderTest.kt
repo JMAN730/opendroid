@@ -417,6 +417,65 @@ class StorageWorkspaceProviderTest {
         assertFalse(File(ws, "notes/sub/notes.zip").exists())
     }
 
+    // A tree URI whose authority has no provider registered under Robolectric: every SAF call
+    // against it fails, which is exactly the situation in which the provider used to fall back
+    // to the app workspace.
+    private val unreachableTreeUri: Uri =
+        Uri.parse("content://com.opendroid.test.nonexistent.provider/tree/root")
+
+    @Test
+    fun `with a custom folder set, copy move zip and unzip never touch the app workspace`() {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        File(ws, "report.txt").writeText("stale workspace copy")
+        File(ws, "archive.zip").writeText("not really a zip")
+        StorageWorkspaceProvider.setCustomFolderUri(context, unreachableTreeUri)
+        assertTrue(StorageWorkspaceProvider.hasCustomFolder(context))
+
+        val copy = StorageWorkspaceProvider.copyFile(context, "report.txt", "bak/report.txt")
+        assertFalse(copy.success)
+        assertFalse(File(ws, "bak/report.txt").exists())
+
+        val move = StorageWorkspaceProvider.moveFile(context, "report.txt", "moved.txt")
+        assertFalse(move.success)
+        assertTrue(File(ws, "report.txt").exists())
+        assertFalse(File(ws, "moved.txt").exists())
+
+        val zip = StorageWorkspaceProvider.zipFiles(context, "report.txt", "backup.zip")
+        assertFalse(zip.success)
+        assertFalse(File(ws, "backup.zip").exists())
+
+        val unzip = StorageWorkspaceProvider.unzipFile(context, "archive.zip", "unzipped")
+        assertFalse(unzip.success)
+        assertFalse(File(ws, "unzipped").exists())
+    }
+
+    @Test
+    fun `with a custom folder set, a failed SAF write does not fall back to the app workspace`() {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        StorageWorkspaceProvider.setCustomFolderUri(context, unreachableTreeUri)
+
+        val write = StorageWorkspaceProvider.writeFile(context, "notes.txt", "hello")
+        assertFalse(write.success)
+        assertNotNull(write.error)
+        assertFalse(File(ws, "notes.txt").exists())
+
+        val mkdir = StorageWorkspaceProvider.createDirectory(context, "newdir")
+        assertFalse(mkdir.success)
+        assertFalse(File(ws, "newdir").exists())
+    }
+
+    @Test
+    fun `with a custom folder set, copying between the custom folder and an app-internal path is refused`() {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        StorageWorkspaceProvider.setCustomFolderUri(context, unreachableTreeUri)
+        val internal = File(context.filesDir, "internal.txt").apply { writeText("x") }
+
+        val result = StorageWorkspaceProvider.copyFile(context, internal.absolutePath, "copy.txt")
+
+        assertFalse(result.success)
+        assertFalse(File(ws, "copy.txt").exists())
+    }
+
     @Test
     fun `advanced control actions file operations execute seamlessly`() = runBlocking {
         val actions = AdvancedControlActions()
