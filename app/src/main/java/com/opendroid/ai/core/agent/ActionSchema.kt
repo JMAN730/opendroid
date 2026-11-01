@@ -20,7 +20,13 @@ data class ParamDefinition(
     val required: Boolean,
     val description: String,
     val enumValues: List<String> = emptyList(),
-    val defaultValue: Any? = null
+    val defaultValue: Any? = null,
+    /**
+     * When false, a provided-but-blank value ("" or whitespace) is treated like a missing
+     * param. Used for file paths, where "" resolves to the workspace root and would turn
+     * a delete or move into a wipe of the whole workspace.
+     */
+    val allowBlank: Boolean = true
 )
 
 enum class ParamType { STRING, INT, BOOLEAN, ENUM }
@@ -1070,7 +1076,7 @@ object ActionSchema {
         ActionDefinition(
             name = "READ_FILE",
             description = "Reads contents of a file",
-            params = listOf(ParamDefinition("filePath", ParamType.STRING, true, "File path")),
+            params = listOf(ParamDefinition("filePath", ParamType.STRING, true, "File path", allowBlank = false)),
             examples = listOf("read file", "open document"),
             category = ActionCategory.ADVANCED
         ),
@@ -1078,7 +1084,7 @@ object ActionSchema {
             name = "WRITE_FILE",
             description = "Writes content to a file",
             params = listOf(
-                ParamDefinition("filePath", ParamType.STRING, true, "File path"),
+                ParamDefinition("filePath", ParamType.STRING, true, "File path", allowBlank = false),
                 ParamDefinition("content", ParamType.STRING, true, "Content to write")
             ),
             examples = listOf("write to file", "save text"),
@@ -1087,7 +1093,7 @@ object ActionSchema {
         ActionDefinition(
             name = "DELETE_FILE",
             description = "Deletes a file",
-            params = listOf(ParamDefinition("filePath", ParamType.STRING, true, "File path to delete")),
+            params = listOf(ParamDefinition("filePath", ParamType.STRING, true, "File path to delete", allowBlank = false)),
             examples = listOf("delete file"),
             category = ActionCategory.ADVANCED,
             isSimple = false,
@@ -1096,7 +1102,7 @@ object ActionSchema {
         ActionDefinition(
             name = "CREATE_DIRECTORY",
             description = "Creates a new directory",
-            params = listOf(ParamDefinition("path", ParamType.STRING, true, "Directory path")),
+            params = listOf(ParamDefinition("path", ParamType.STRING, true, "Directory path", allowBlank = false)),
             examples = listOf("create folder"),
             category = ActionCategory.ADVANCED
         ),
@@ -1104,8 +1110,8 @@ object ActionSchema {
             name = "COPY_FILE",
             description = "Copies a file to another location",
             params = listOf(
-                ParamDefinition("sourcePath", ParamType.STRING, true, "Source file path"),
-                ParamDefinition("destPath", ParamType.STRING, true, "Destination path")
+                ParamDefinition("sourcePath", ParamType.STRING, true, "Source file path", allowBlank = false),
+                ParamDefinition("destPath", ParamType.STRING, true, "Destination path", allowBlank = false)
             ),
             examples = listOf("copy file"),
             category = ActionCategory.ADVANCED
@@ -1114,8 +1120,8 @@ object ActionSchema {
             name = "MOVE_FILE",
             description = "Moves a file to another location",
             params = listOf(
-                ParamDefinition("sourcePath", ParamType.STRING, true, "Source file path"),
-                ParamDefinition("destPath", ParamType.STRING, true, "Destination path")
+                ParamDefinition("sourcePath", ParamType.STRING, true, "Source file path", allowBlank = false),
+                ParamDefinition("destPath", ParamType.STRING, true, "Destination path", allowBlank = false)
             ),
             examples = listOf("move file"),
             category = ActionCategory.ADVANCED
@@ -1124,8 +1130,8 @@ object ActionSchema {
             name = "ZIP_FILES",
             description = "Compresses files into a ZIP archive",
             params = listOf(
-                ParamDefinition("sourcePath", ParamType.STRING, true, "Source path"),
-                ParamDefinition("zipFilePath", ParamType.STRING, true, "Output ZIP path")
+                ParamDefinition("sourcePath", ParamType.STRING, true, "Source path", allowBlank = false),
+                ParamDefinition("zipFilePath", ParamType.STRING, true, "Output ZIP path", allowBlank = false)
             ),
             examples = listOf("zip files", "compress folder"),
             category = ActionCategory.ADVANCED
@@ -1134,8 +1140,8 @@ object ActionSchema {
             name = "UNZIP_FILE",
             description = "Extracts a ZIP archive",
             params = listOf(
-                ParamDefinition("zipFilePath", ParamType.STRING, true, "ZIP file path"),
-                ParamDefinition("destDirPath", ParamType.STRING, true, "Destination directory")
+                ParamDefinition("zipFilePath", ParamType.STRING, true, "ZIP file path", allowBlank = false),
+                ParamDefinition("destDirPath", ParamType.STRING, true, "Destination directory", allowBlank = false)
             ),
             examples = listOf("unzip file", "extract archive"),
             category = ActionCategory.ADVANCED
@@ -1495,6 +1501,11 @@ object ActionSchema {
             val value = enrichedParams[paramDef.name]
 
             when {
+                // Param provided but blank where blank is not allowed — treat as missing
+                value != null && !paramDef.allowBlank && value.toString().isBlank() -> {
+                    missingRequired.add(paramDef.name)
+                }
+
                 // Param provided — validate enum if needed
                 value != null -> {
                     if (paramDef.type == ParamType.ENUM &&

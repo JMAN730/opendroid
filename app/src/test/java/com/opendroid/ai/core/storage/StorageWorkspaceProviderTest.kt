@@ -80,6 +80,184 @@ class StorageWorkspaceProviderTest {
         assertTrue(file.canonicalPath.endsWith("OpenDroid/document.pdf"))
     }
 
+    // ── Confinement: absolute paths into app-private storage ────────────
+
+    @Test
+    fun `sdcard download path still maps into the workspace for write and read`() = runBlocking {
+        val writeRes = StorageWorkspaceProvider.writeFile(context, "/sdcard/Download/x.txt", "hello")
+        assertTrue(writeRes.success)
+
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        val mapped = File(ws, "Download/x.txt")
+        assertTrue(mapped.exists())
+        assertEquals("hello", mapped.readText())
+
+        val readRes = StorageWorkspaceProvider.readFile(context, "/storage/emulated/0/Download/x.txt")
+        assertTrue(readRes.success)
+        assertEquals("hello", readRes.data)
+    }
+
+    @Test
+    fun `absolute path inside the workspace is honoured`() = runBlocking {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertTrue(StorageWorkspaceProvider.writeFile(context, "notes/a.txt", "inside").success)
+
+        val absolute = File(ws, "notes/a.txt").absolutePath
+        val resolved = StorageWorkspaceProvider.resolveFile(context, absolute)
+        assertEquals(File(ws, "notes/a.txt").canonicalPath, resolved.canonicalPath)
+
+        val readRes = StorageWorkspaceProvider.readFile(context, absolute)
+        assertTrue(readRes.success)
+        assertEquals("inside", readRes.data)
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `resolveFile rejects absolute path into app filesDir`() {
+        StorageWorkspaceProvider.resolveFile(
+            context,
+            File(context.filesDir, "datastore/settings.preferences_pb").absolutePath
+        )
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `resolveFile rejects absolute path into app dataDir`() {
+        StorageWorkspaceProvider.resolveFile(
+            context,
+            File(context.applicationInfo.dataDir, "shared_prefs/opendroid_storage_prefs.xml").absolutePath
+        )
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `resolveFile rejects sibling directory sharing the workspace prefix`() {
+        // ".../workspaceX" starts with ".../workspace" but is not inside it
+        StorageWorkspaceProvider.resolveFile(context, "../workspaceX/secret.txt")
+    }
+
+    @Test
+    fun `absolute sibling directory sharing the workspace prefix is never reachable`() {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        val sibling = File(ws.canonicalPath + "X/secret.txt")
+        // Either rejected outright, or mapped to somewhere strictly inside the workspace;
+        // it must never resolve to the sibling itself.
+        val resolved = try {
+            StorageWorkspaceProvider.resolveFile(context, sibling.absolutePath).canonicalPath
+        } catch (_: SecurityException) {
+            null
+        }
+        assertTrue(resolved == null || resolved.startsWith(ws.canonicalPath + File.separator))
+        assertTrue(resolved != sibling.canonicalPath)
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `resolveFile rejects filesystem root`() {
+        StorageWorkspaceProvider.resolveFile(context, "/")
+    }
+
+    @Test
+    fun `downloaded models under external files dir survive DELETE_FILE and WRITE_FILE by absolute path`() = runBlocking {
+        val extFiles = context.getExternalFilesDir(null) ?: context.filesDir
+        val modelFile = File(extFiles, "models/gemma/model.litertlm").apply {
+            parentFile?.mkdirs()
+            writeText("MODEL_BYTES")
+        }
+        val modelsDir = File(extFiles, "models")
+
+        val deleteDir = StorageWorkspaceProvider.deleteFile(context, modelsDir.absolutePath)
+        assertFalse(deleteDir.success)
+        assertTrue(modelsDir.isDirectory)
+        assertTrue(modelFile.exists())
+
+        val deleteFileRes = StorageWorkspaceProvider.deleteFile(context, modelFile.absolutePath)
+        assertFalse(deleteFileRes.success)
+        assertTrue(modelFile.exists())
+
+        StorageWorkspaceProvider.writeFile(context, modelFile.absolutePath, "GARBAGE")
+        assertEquals("MODEL_BYTES", modelFile.readText())
+
+        // Whatever the write did, it never left the workspace.
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context).canonicalPath
+        val resolved = try {
+            StorageWorkspaceProvider.resolveFile(context, modelFile.absolutePath).canonicalPath
+        } catch (_: SecurityException) {
+            null
+        }
+        assertTrue(resolved == null || resolved.startsWith(ws + File.separator))
+    }
+
+    @Test
+    fun `datastore file in filesDir survives DELETE_FILE and WRITE_FILE by absolute path`() = runBlocking {
+        val settings = File(context.filesDir, "datastore/settings.preferences_pb").apply {
+            parentFile?.mkdirs()
+            writeText("SETTINGS")
+        }
+
+        val writeRes = StorageWorkspaceProvider.writeFile(context, settings.absolutePath, "")
+        assertFalse(writeRes.success)
+        assertEquals("SETTINGS", settings.readText())
+
+        val deleteRes = StorageWorkspaceProvider.deleteFile(context, settings.absolutePath)
+        assertFalse(deleteRes.success)
+        assertTrue(settings.exists())
+        assertEquals("SETTINGS", settings.readText())
+
+        val unzipRes = StorageWorkspaceProvider.unzipFile(context, "nothing.zip", settings.parentFile!!.absolutePath)
+        assertFalse(unzipRes.success)
+    }
+
+    // ── Root-like paths never touch the whole workspace ─────────────────
+
+    @Test
+    fun `blank dot slash and sdcard root paths never delete the workspace`() = runBlocking {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        val keep = File(ws, "keep/important.txt").apply {
+            parentFile?.mkdirs()
+            writeText("keep me")
+        }
+
+        listOf("", "   ", ".", "./", "/", "/sdcard", "/sdcard/", "/storage/emulated/0", "/storage/emulated/0/", ws.absolutePath)
+            .forEach { path ->
+                val res = StorageWorkspaceProvider.deleteFile(context, path)
+                assertFalse("DELETE_FILE '$path' must not succeed", res.success)
+                assertTrue("workspace must survive DELETE_FILE '$path'", ws.isDirectory)
+                assertTrue("files must survive DELETE_FILE '$path'", keep.exists())
+            }
+        assertEquals("keep me", keep.readText())
+    }
+
+    @Test
+    fun `DELETE_FILE action with blank filePath does not wipe the workspace`() = runBlocking {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        val keep = File(ws, "keep.txt").apply { writeText("keep me") }
+
+        val actions = AdvancedControlActions()
+        val deleteAction = actions.getActions().first { it.name == "DELETE_FILE" }
+        val res = deleteAction.execute(mapOf("filePath" to ""), context)
+
+        assertFalse(res.success)
+        assertTrue(ws.isDirectory)
+        assertTrue(keep.exists())
+    }
+
+    @Test
+    fun `move copy zip and unzip refuse the workspace root`() = runBlocking {
+        val ws = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
+        assertTrue(StorageWorkspaceProvider.writeFile(context, "sub/file.txt", "data").success)
+        assertTrue(StorageWorkspaceProvider.zipFiles(context, "sub", "sub.zip").success)
+
+        assertFalse(StorageWorkspaceProvider.moveFile(context, "sub", "").success)
+        assertFalse(StorageWorkspaceProvider.moveFile(context, "", "elsewhere").success)
+        assertFalse(StorageWorkspaceProvider.copyFile(context, "sub", "/sdcard").success)
+        assertFalse(StorageWorkspaceProvider.copyFile(context, ".", "copy").success)
+        assertFalse(StorageWorkspaceProvider.zipFiles(context, "sub", "").success)
+        assertFalse(StorageWorkspaceProvider.unzipFile(context, "sub.zip", "").success)
+
+        assertTrue(ws.isDirectory)
+        assertTrue(File(ws, "sub/file.txt").exists())
+        assertEquals("data", File(ws, "sub/file.txt").readText())
+        assertFalse(File(ws, "elsewhere").exists())
+        assertFalse(File(ws, "copy").exists())
+    }
+
     @Test
     fun `app workspace file operations execute successfully without permissions`() = runBlocking {
         // 1. Create directory

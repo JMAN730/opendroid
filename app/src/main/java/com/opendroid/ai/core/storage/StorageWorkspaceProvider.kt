@@ -30,6 +30,8 @@ object StorageWorkspaceProvider {
     private const val PREFS_NAME = "opendroid_storage_prefs"
     private const val KEY_CUSTOM_FOLDER_URI = "custom_folder_uri"
     private const val MAX_FILE_SIZE_BYTES = 100 * 1024L // 100 KB
+    private const val ROOT_REFUSED_MESSAGE =
+        "Refusing to operate on the whole workspace folder. Name a file or subfolder instead."
 
     /**
      * Storage access is always available for the app's own workspace, and optionally
@@ -137,8 +139,16 @@ object StorageWorkspaceProvider {
     }
 
     /**
-     * Resolves a path to a File in the app's workspace or allowed roots.
-     * Prevents path traversal and maps inaccessible external storage paths to workspace.
+     * Resolves a path to a File confined to the app's workspace.
+     *
+     * Every result canonicalises to the workspace root or to a path strictly below it.
+     * Relative paths are joined onto the workspace. Absolute paths are accepted only when
+     * they already point inside the workspace, or when they live under shared external
+     * storage (`/sdcard/...`, `/storage/emulated/0/...`), in which case they are mapped onto
+     * the same relative location inside the workspace. Every other absolute path, including
+     * the app's own private directories (`filesDir`, `dataDir`, the external files dir that
+     * holds downloaded models), is rejected with a [SecurityException]: file actions run from
+     * LLM-generated plans and must never reach storage the user did not hand them.
      */
     fun resolveFile(context: Context, pathStr: String?): File {
         val trimmed = pathStr?.trim().orEmpty()
@@ -150,7 +160,7 @@ object StorageWorkspaceProvider {
         val workspaceCanonical = workspace.canonicalPath
 
         if (trimmed.isEmpty() || trimmed == "." || trimmed == "./") {
-            return workspace
+            return File(workspaceCanonical)
         }
 
         val candidate = if (trimmed.startsWith("/")) {
@@ -158,32 +168,22 @@ object StorageWorkspaceProvider {
             val canonical = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
 
             val forbidden = listOf("/data/system", "/data/local", "/data/misc", "/etc", "/proc", "/sys")
-            if (forbidden.any { canonical == it || canonical.startsWith("$it/") }) {
+            if (forbidden.any { isSameOrUnder(canonical, it) }) {
                 throw SecurityException("Access to system directory is not permitted: $canonical")
             }
 
-            val appDataDir = context.applicationInfo.dataDir
-            val appFilesDir = context.filesDir.canonicalPath
-            val extFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-
-            val isAppDir = (appDataDir != null && canonical.startsWith(appDataDir)) ||
-                canonical.startsWith(appFilesDir) ||
-                (extFilesDir != null && canonical.startsWith(extFilesDir)) ||
-                canonical.startsWith(workspaceCanonical)
-
-            if (isAppDir) {
+            if (isSameOrUnder(canonical, workspaceCanonical)) {
                 File(canonical)
             } else {
-                val extRoot = Environment.getExternalStorageDirectory().canonicalPath
-                val relative = if (canonical.startsWith(extRoot)) {
-                    canonical.removePrefix(extRoot).trimStart('/')
-                } else if (canonical.startsWith("/sdcard")) {
-                    canonical.removePrefix("/sdcard").trimStart('/')
-                } else if (canonical.startsWith("/storage/emulated/0")) {
-                    canonical.removePrefix("/storage/emulated/0").trimStart('/')
-                } else {
-                    File(canonical).name
+                val extRoot = try {
+                    Environment.getExternalStorageDirectory().canonicalPath
+                } catch (_: Exception) {
+                    null
                 }
+                val sharedRoots = listOfNotNull(extRoot, "/sdcard", "/storage/emulated/0")
+                val matchedRoot = sharedRoots.firstOrNull { isSameOrUnder(canonical, it) }
+                    ?: throw SecurityException("Access outside the app workspace is not permitted: $trimmed")
+                val relative = canonical.removePrefix(matchedRoot).trimStart('/')
                 File(workspace, relative)
             }
         } else {
@@ -194,14 +194,37 @@ object StorageWorkspaceProvider {
             throw SecurityException("Invalid path: cannot resolve canonical path")
         }
 
-        if (!trimmed.startsWith("/")) {
-            if (!canonicalResult.startsWith(workspaceCanonical)) {
-                throw SecurityException("Path traversal attempt detected: $canonicalResult")
-            }
+        if (!isSameOrUnder(canonicalResult, workspaceCanonical)) {
+            throw SecurityException("Path traversal attempt detected: $canonicalResult")
         }
 
         return File(canonicalResult)
     }
+
+    /** True when [path] equals [root] or lies strictly below it (separator-aware prefix test). */
+    private fun isSameOrUnder(path: String, root: String): Boolean {
+        val normalizedRoot = root.trimEnd(File.separatorChar)
+        if (normalizedRoot.isEmpty()) return path.startsWith(File.separator) // root is "/"
+        return path == normalizedRoot || path.startsWith(normalizedRoot + File.separator)
+    }
+
+    /**
+     * True when [file] is the workspace root itself. Destructive or structural operations
+     * (delete, move, copy/zip/unzip destination) refuse the root so a blank or root-like
+     * path can never wipe or clobber the user's whole workspace.
+     */
+    private fun isWorkspaceRoot(context: Context, file: File): Boolean {
+        val workspaceCanonical = getDefaultWorkspaceDir(context).canonicalPath
+        val canonical = try { file.canonicalPath } catch (_: Exception) { file.absolutePath }
+        return canonical == workspaceCanonical
+    }
+
+    /**
+     * True when a cleaned SAF-relative path names the tree root itself (blank, `.`, or only
+     * separators), i.e. the whole folder the user picked.
+     */
+    private fun isSafRootPath(cleanPath: String): Boolean =
+        cleanPath.split("/").none { it.isNotEmpty() && it != "." }
 
     // ── File Operations ──────────────────────────────────────────────────
 
@@ -343,6 +366,11 @@ object StorageWorkspaceProvider {
                 val root = DocumentFile.fromTreeUri(context, customUri)
                     ?: return deleteFileLocal(context, filePath)
                 val cleanPath = cleanRelativePath(filePath)
+                if (isSafRootPath(cleanPath)) {
+                    // A blank or root-like path would resolve to the tree root, i.e. the
+                    // whole folder the user picked (e.g. DCIM). Never delete that.
+                    return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+                }
                 val doc = findDocumentByPath(root, cleanPath)
                 if (doc == null || !doc.exists()) {
                     return ActionResult(false, null, "File/directory does not exist: $filePath")
@@ -364,6 +392,9 @@ object StorageWorkspaceProvider {
     private fun deleteFileLocal(context: Context, filePath: String): ActionResult {
         return try {
             val file = resolveFile(context, filePath)
+            if (isWorkspaceRoot(context, file)) {
+                return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+            }
             if (!file.exists()) {
                 return ActionResult(false, null, "File/directory does not exist: ${file.absolutePath}")
             }
@@ -426,6 +457,9 @@ object StorageWorkspaceProvider {
         return try {
             val src = resolveFile(context, srcPath)
             val dest = resolveFile(context, destPath)
+            if (isWorkspaceRoot(context, src) || isWorkspaceRoot(context, dest)) {
+                return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+            }
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
@@ -441,6 +475,9 @@ object StorageWorkspaceProvider {
         return try {
             val src = resolveFile(context, srcPath)
             val dest = resolveFile(context, destPath)
+            if (isWorkspaceRoot(context, src) || isWorkspaceRoot(context, dest)) {
+                return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+            }
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
@@ -472,6 +509,9 @@ object StorageWorkspaceProvider {
         return try {
             val src = resolveFile(context, srcPath)
             val zipFile = resolveFile(context, zipFilePath)
+            if (isWorkspaceRoot(context, zipFile)) {
+                return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+            }
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
@@ -496,6 +536,9 @@ object StorageWorkspaceProvider {
         return try {
             val zipFile = resolveFile(context, zipFilePath)
             val destDir = resolveFile(context, destDirPath)
+            if (isWorkspaceRoot(context, destDir)) {
+                return ActionResult(false, null, ROOT_REFUSED_MESSAGE)
+            }
             if (!zipFile.exists()) {
                 return ActionResult(false, null, "Zip file does not exist: ${zipFile.absolutePath}")
             }
