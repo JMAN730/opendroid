@@ -177,22 +177,7 @@ class LiteRTLMProvider @Inject constructor(
             val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
             val conversation = engine.createConversation(conversationConfig)
 
-            var lastLength = 0
-            try {
-                conversation.sendMessageAsync(prompt).collect { msg ->
-                    val fullText = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                    if (fullText.length > lastLength) {
-                        val delta = fullText.substring(lastLength)
-                        lastLength = fullText.length
-                        emit(delta)
-                    }
-                    if (PromptBudget.estimateTokens(fullText) >= maxAllowedTokens) {
-                        return@collect
-                    }
-                }
-            } finally {
-                conversation.close()
-            }
+            generateCapped(conversation, prompt, maxAllowedTokens) { delta -> emit(delta) }
         } catch (e: Throwable) {
             val spec = resolveModelSpec(modelId)
             emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
@@ -434,23 +419,11 @@ class LiteRTLMProvider @Inject constructor(
                     seed = 0
                 )
                 val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
+                val maxAllowedTokens = checkPromptFits(prompt, spec, maxTokens)
                 val conversation = engine.createConversation(conversationConfig)
 
-                try {
-                    val maxAllowedTokens = checkPromptFits(prompt, spec, maxTokens)
-                    var accumulatedText = ""
-                    kotlinx.coroutines.runBlocking {
-                        conversation.sendMessageAsync(prompt).collect { msg ->
-                            val text = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                            accumulatedText = text
-                            if (PromptBudget.estimateTokens(accumulatedText) >= maxAllowedTokens) {
-                                return@collect
-                            }
-                        }
-                    }
-                    accumulatedText
-                } finally {
-                    conversation.close()
+                kotlinx.coroutines.runBlocking {
+                    generateCapped(conversation, prompt, maxAllowedTokens) {}
                 }
             } catch (e: Exception) {
                 val cause = e.cause
@@ -463,6 +436,47 @@ class LiteRTLMProvider @Inject constructor(
         } catch (e: Throwable) {
             closeCachedEngine()
             throw e
+        }
+    }
+
+    /**
+     * Streams [prompt] through [conversation], forwarding each new text delta to
+     * [onDelta], and returns the full response. Collection stops as soon as the
+     * output reaches [maxOutputTokens] (see [OutputCap]); the native decoder is
+     * then cancelled before the conversation is closed, so a model that never
+     * emits an end token does not keep decoding until the KV cache is full.
+     */
+    private suspend fun generateCapped(
+        conversation: Conversation,
+        prompt: String,
+        maxOutputTokens: Int,
+        onDelta: suspend (String) -> Unit
+    ): String {
+        var finishedNaturally = false
+        try {
+            val snapshots = conversation.sendMessageAsync(prompt).map { msg ->
+                msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+            }
+            val output = OutputCap.collectCapped(OutputCap.snapshotDeltas(snapshots), maxOutputTokens, onDelta)
+            finishedNaturally = !output.truncated
+            return output.text
+        } finally {
+            if (!finishedNaturally) cancelDecoding(conversation)
+            conversation.close()
+        }
+    }
+
+    /**
+     * Asks the native decoder to stop before a conversation that was cut short
+     * (output cap reached, collector cancelled or failed) is closed. Closing
+     * alone does not interrupt an in-flight `sendMessageAsync`, so without this
+     * the runtime keeps decoding in the background after we stopped listening.
+     */
+    private fun cancelDecoding(conversation: Conversation) {
+        try {
+            conversation.cancelProcess()
+        } catch (e: Exception) {
+            Log.w(TAG, "Cancelling LiteRT-LM decoding failed: ${e.message}")
         }
     }
 
