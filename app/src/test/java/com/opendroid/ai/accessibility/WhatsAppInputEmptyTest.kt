@@ -8,28 +8,28 @@ class WhatsAppInputEmptyTest {
 
     @Test
     fun `localized hint shown in an empty field counts as empty`() {
-        assertTrue(WhatsAppAutomator.isInputEmpty("Mensaje", "Mensaje", showingHint = true))
-        assertTrue(WhatsAppAutomator.isInputEmpty("Nachricht", "Nachricht", showingHint = true))
+        assertTrue(WhatsAppAutomator.isInputEmpty("Mensaje", showingHint = true))
+        assertTrue(WhatsAppAutomator.isInputEmpty("Nachricht", showingHint = true))
     }
 
     @Test
-    fun `node text equal to its hint counts as empty when the hint flag is not set`() {
-        assertTrue(WhatsAppAutomator.isInputEmpty("Mensagem", "Mensagem", showingHint = false))
+    fun `typed text that matches its own hint is not empty when the hint is not showing`() {
+        assertFalse(WhatsAppAutomator.isInputEmpty("Mensaje", showingHint = false))
     }
 
     @Test
     fun `blank text counts as empty`() {
-        assertTrue(WhatsAppAutomator.isInputEmpty("", "Message", showingHint = false))
-        assertTrue(WhatsAppAutomator.isInputEmpty("  ", null, showingHint = false))
+        assertTrue(WhatsAppAutomator.isInputEmpty("", showingHint = false))
+        assertTrue(WhatsAppAutomator.isInputEmpty("  ", showingHint = false))
     }
 
     @Test
     fun `typed message is not empty`() {
-        assertFalse(WhatsAppAutomator.isInputEmpty("running late", "Mensaje", showingHint = false))
+        assertFalse(WhatsAppAutomator.isInputEmpty("running late", showingHint = false))
     }
 
     @Test
     fun `typed text that matches the English hint is not empty in another language`() {
-        assertFalse(WhatsAppAutomator.isInputEmpty("Message", "Mensaje", showingHint = false))
+        assertFalse(WhatsAppAutomator.isInputEmpty("Message", showingHint = false))
     }
 }
