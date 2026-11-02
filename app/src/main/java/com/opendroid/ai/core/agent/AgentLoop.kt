@@ -164,7 +164,7 @@ internal fun normalizePlan(plan: Plan): Plan {
     val filled = plan.steps.map { step -> step.copy(stepId = step.stepId.ifBlank { "s${step.order}" }) }
     val explicitIds = filled.map { it.stepId }.toSet()
     return plan.copy(
-        planId = UUID.randomUUID().toString(),
+        planId = Plan.newId(),
         goal = plan.goal.ifBlank { "User request" },
         estimatedSteps = if (plan.estimatedSteps > 0) plan.estimatedSteps else plan.steps.size.coerceAtLeast(1),
         steps = filled.map { step ->
@@ -1935,7 +1935,7 @@ class AgentLoop @Inject constructor(
 
     private fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
         return Plan(
-            planId = UUID.randomUUID().toString(),
+            planId = Plan.newId(),
             goal = goal,
             estimatedDuration = "instant",
             estimatedSteps = 1,

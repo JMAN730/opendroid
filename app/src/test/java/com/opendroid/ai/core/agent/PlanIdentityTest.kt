@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,9 @@ class PlanIdentityTest {
         assertNotEquals(wifi.planId, sms.planId)
         assertNotEquals("generate-a-uuid", wifi.planId)
         assertNotEquals("generate-a-uuid", sms.planId)
+        assertTrue(Plan.isAppMinted(wifi.planId))
+        assertTrue(Plan.isAppMinted(sms.planId))
+        assertFalse(Plan.isAppMinted("generate-a-uuid"))
     }
 
     @Test
