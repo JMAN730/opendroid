@@ -51,9 +51,13 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    /** Saves only a fully successful, explicitly selected task as a manual macro. */
+    /**
+     * Saves only a fully successful, explicitly selected task as a manual macro: the run
+     * of [planId] that holds the row [logId], never other runs that share its planId.
+     */
     fun saveCompletedTaskAsMacro(
         planId: String,
+        logId: Long,
         name: String,
         onResult: (String?) -> Unit
     ) {
@@ -65,7 +69,7 @@ class HistoryViewModel @Inject constructor(
                     return@launch
                 }
 
-                val history = taskHistoryDao.getTaskHistoryForPlan(planId)
+                val history = MacroRecording.runContaining(taskHistoryDao.getTaskHistoryForPlan(planId), logId)
                 val stepsJson = MacroRecording.serializeCompletedTask(history)
                 if (stepsJson == null) {
                     onResult("Only fully successful task history can be saved as a macro.")
