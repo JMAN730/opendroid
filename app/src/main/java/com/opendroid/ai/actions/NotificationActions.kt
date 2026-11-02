@@ -6,6 +6,7 @@ import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
+import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.first
 import java.util.Locale
@@ -27,7 +28,7 @@ class NotificationActions @Inject constructor(
 
     fun getActions(): List<Action> = listOf(
         ReadNotificationsAction(),
-        AutoReplyToggleAction(),
+        AutoReplyToggleAction(settingsRepository),
         DismissNotificationAction(notificationDao)
     )
 
@@ -69,59 +70,76 @@ class NotificationActions @Inject constructor(
             }
         }
     }
+}
 
-    private inner class AutoReplyToggleAction : Action {
-        override val name: String = "AUTO_REPLY_TOGGLE"
+internal class AutoReplyToggleAction(
+    private val settingsRepository: SettingsRepository
+) : Action {
+    override val name: String = "AUTO_REPLY_TOGGLE"
 
-        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            return try {
-                val state = params["state"]?.lowercase()
-                val app = params["app"]?.lowercase()
+    override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+        return try {
+            val state = params["state"]?.trim()?.lowercase(Locale.ROOT)
+            val app = params["app"]?.trim()?.lowercase(Locale.ROOT).orEmpty()
 
-                val currentConfig = settingsRepository.autoReplyConfig.first()
-
-                val newConfig = when {
-                    // Toggle specific app
-                    app != null -> when (app) {
-                        "whatsapp" -> currentConfig.copy(
-                            whatsappEnabled = state == "on" || (state != "off" && !currentConfig.whatsappEnabled)
-                        )
-                        "sms" -> currentConfig.copy(
-                            smsEnabled = state == "on" || (state != "off" && !currentConfig.smsEnabled)
-                        )
-                        "email" -> currentConfig.copy(
-                            emailEnabled = state == "on" || (state != "off" && !currentConfig.emailEnabled)
-                        )
-                        else -> currentConfig
-                    }
-                    // Toggle global
-                    else -> currentConfig.copy(
-                        globalEnabled = state == "on" || (state != "off" && !currentConfig.globalEnabled)
+            // Null means the global switch. An app we don't know must not read as success: the
+            // user asked for replies to stop, and they wouldn't.
+            val channel = if (app in GLOBAL_APP_NAMES) {
+                null
+            } else {
+                TOGGLE_CHANNELS.find { it.appName == app }
+                    ?: return ActionResult.Failure(
+                        errorMsg = "Auto-reply can't be set for \"$app\". " +
+                            "Choose ${TOGGLE_CHANNELS.joinToString(", ") { it.label }}, or all."
                     )
-                }
-
-                settingsRepository.updateAutoReplyConfig(newConfig)
-
-                val statusText = buildString {
-                    append("Auto-reply is now ${if (newConfig.globalEnabled) "ON" else "OFF"}")
-                    if (newConfig.globalEnabled) {
-                        val apps = mutableListOf<String>()
-                        if (newConfig.whatsappEnabled) apps.add("WhatsApp")
-                        if (newConfig.smsEnabled) apps.add("SMS")
-                        if (newConfig.emailEnabled) apps.add("Email")
-                        if (apps.isNotEmpty()) {
-                            append(" for ${apps.joinToString(", ")}")
-                        }
-                        append(". Reply delay: ${newConfig.replyDelayMinutes} minutes.")
-                    }
-                }
-
-                ActionResult(true, statusText, null)
-            } catch (e: Exception) {
-                Log.e("NotificationActions", "Failed to toggle auto-reply: ${e.message}")
-                ActionResult(false, null, "Couldn't update auto-reply settings.")
             }
+
+            val currentConfig = settingsRepository.autoReplyConfig.first()
+            val wasEnabled = channel?.isEnabled?.invoke(currentConfig) ?: currentConfig.globalEnabled
+            val enabled = state == "on" || (state != "off" && !wasEnabled)
+            val newConfig = channel?.withEnabled?.invoke(currentConfig, enabled)
+                ?: currentConfig.copy(globalEnabled = enabled)
+
+            settingsRepository.updateAutoReplyConfig(newConfig)
+
+            ActionResult(true, statusText(channel, enabled, newConfig), null)
+        } catch (e: Exception) {
+            Log.e("NotificationActions", "Failed to toggle auto-reply: ${e.message}")
+            ActionResult(false, null, "Couldn't update auto-reply settings.")
         }
+    }
+
+    private fun statusText(channel: ToggleChannel?, enabled: Boolean, config: AutoReplyConfig): String {
+        val subject = if (channel != null) "Auto-reply for ${channel.label}" else "Auto-reply"
+        val changed = "$subject is now ${if (enabled) "ON" else "OFF"}."
+        val enabledApps = TOGGLE_CHANNELS.filter { it.isEnabled(config) }
+        return when {
+            !config.globalEnabled && channel == null -> changed
+            !config.globalEnabled -> "$changed Auto-reply is OFF overall, so no replies will go out."
+            enabledApps.isEmpty() -> "$changed No apps are enabled, so no replies will go out."
+            else -> "$changed Enabled for ${enabledApps.joinToString(", ") { it.label }}. " +
+                "Reply delay: ${config.replyDelayMinutes} minutes."
+        }
+    }
+
+    private class ToggleChannel(
+        val appName: String,
+        val label: String,
+        val isEnabled: (AutoReplyConfig) -> Boolean,
+        val withEnabled: (AutoReplyConfig, Boolean) -> AutoReplyConfig
+    )
+
+    private companion object {
+        /** Blank covers a planner that leaves the app empty rather than out. */
+        val GLOBAL_APP_NAMES = setOf("", "all", "everything", "global")
+
+        val TOGGLE_CHANNELS = listOf(
+            ToggleChannel("whatsapp", "WhatsApp", { it.whatsappEnabled }, { c, on -> c.copy(whatsappEnabled = on) }),
+            ToggleChannel("telegram", "Telegram", { it.telegramEnabled }, { c, on -> c.copy(telegramEnabled = on) }),
+            ToggleChannel("discord", "Discord", { it.discordEnabled }, { c, on -> c.copy(discordEnabled = on) }),
+            ToggleChannel("sms", "SMS", { it.smsEnabled }, { c, on -> c.copy(smsEnabled = on) }),
+            ToggleChannel("email", "Email", { it.emailEnabled }, { c, on -> c.copy(emailEnabled = on) })
+        )
     }
 }
 
