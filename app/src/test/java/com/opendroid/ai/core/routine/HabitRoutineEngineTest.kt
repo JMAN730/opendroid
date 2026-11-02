@@ -379,9 +379,6 @@ class FakeNotificationDao : NotificationDao {
     override suspend fun getNotificationsByApp(packageName: String, limit: Int): List<NotificationEntity> =
         notifications.filter { it.packageName == packageName }.takeLast(limit).reversed()
 
-    override suspend fun getNotificationsForContact(contactName: String, limit: Int): List<NotificationEntity> =
-        notifications.filter { it.contactName == contactName }.takeLast(limit).reversed()
-
     override suspend fun getNotificationsForContactInApp(
         packageName: String,
         contactName: String,
@@ -405,8 +402,10 @@ class FakeNotificationDao : NotificationDao {
         if (idx >= 0) notifications[idx] = notifications[idx].copy(isAutoReplied = true, autoReplyText = replyText)
     }
 
-    override suspend fun getAutoReplyCountForContact(contactName: String, since: Long): Int =
-        notifications.count { it.contactName == contactName && it.isAutoReplied && it.timestamp > since }
+    override suspend fun getAutoReplyCountForContact(packageName: String, contactName: String, since: Long): Int =
+        notifications.count {
+            it.packageName == packageName && it.contactName == contactName && it.isAutoReplied && it.timestamp > since
+        }
 
     override suspend fun getNotificationCountByApp(since: Long): List<AppNotificationCount> = emptyList()
 

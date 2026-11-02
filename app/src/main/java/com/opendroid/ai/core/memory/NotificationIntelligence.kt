@@ -144,11 +144,12 @@ class NotificationIntelligence @Inject constructor(
     }
 
     /**
-     * Get conversation context for a specific contact from notification history.
+     * Get conversation context for a specific contact in one app from notification history.
+     * The name is a free-form title, so another app's rows may belong to someone else entirely.
      */
-    suspend fun buildContactContext(contactName: String): String {
+    suspend fun buildContactContext(packageName: String, contactName: String): String {
         return try {
-            val messages = notificationDao.getNotificationsForContact(contactName)
+            val messages = notificationDao.getNotificationsForContactInApp(packageName, contactName)
             if (messages.isEmpty()) return "No previous messages with $contactName."
 
             messages.sortedBy { it.timestamp }.takeLast(10).joinToString("\n") { msg ->
