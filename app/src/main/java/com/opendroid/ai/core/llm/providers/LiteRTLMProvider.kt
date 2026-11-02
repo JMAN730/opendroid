@@ -493,12 +493,7 @@ class LiteRTLMProvider @Inject constructor(
         val minOutput = minOf(requestedMaxTokens, 512).coerceAtLeast(PromptBudget.MIN_OUTPUT_TOKENS)
 
         val sbHeader = StringBuilder()
-        val systemPromptHead = PromptBudget.takeFirstTokens(systemPrompt, window / 2)
-        val trimmedSystemPrompt = if (systemPromptHead.length < systemPrompt.length) {
-            systemPromptHead + "\n...[instructions truncated for on-device context]"
-        } else {
-            systemPrompt
-        }
+        val trimmedSystemPrompt = PromptBudget.trimSystemPrompt(systemPrompt, window)
 
         if (trimmedSystemPrompt.isNotEmpty()) {
             sbHeader.append("System Instructions:\n").append(trimmedSystemPrompt).append("\n\n")
