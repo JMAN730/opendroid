@@ -62,7 +62,7 @@ open class ContactResolver @Inject constructor(
 
         /**
          * Legacy static resolve for backward compatibility.
-         * Used by CommunicationActions.resolveContactToPhoneNumber().
+         * Guesses the shortest matching name: actions use [resolveWithDisambiguation].
          */
         fun resolve(context: Context, input: String): ContactResult {
             val cleaned = input.trim()
