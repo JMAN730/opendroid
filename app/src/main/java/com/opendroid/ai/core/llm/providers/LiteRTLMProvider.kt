@@ -10,8 +10,6 @@ import com.opendroid.ai.data.repository.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -45,13 +43,7 @@ class LiteRTLMProvider @Inject constructor(
     private val modelRepository: dagger.Lazy<com.opendroid.ai.data.repository.ModelRepository>
 ) : LLMProvider {
 
-    private var cachedEngine: Engine? = null
-    private var cachedModelPath: String? = null
-    /**
-     * Held by every request from engine lookup to the end of decoding, so a request for another
-     * model cannot close the engine while a conversation is still decoding on it.
-     */
-    private val engineMutex = Mutex()
+    private val engineHost = LiteRTEngineHost(::openEngine)
     private val artifactVerifier = ModelArtifactVerifier(
         hashVerifier = CachingFileHashVerifier()
     )
@@ -175,26 +167,7 @@ class LiteRTLMProvider @Inject constructor(
                 request.maxTokens
             )
 
-            val maxAllowedTokens = checkPromptFits(prompt, spec, request.maxTokens)
-            // Held across decoding so no other request can replace the engine this stream decodes on.
-            engineMutex.withLock {
-                val engine = getOrInitializeEngine(modelPath, spec)
-
-                val samplerConfig = SamplerConfig(
-                    topK = 40,
-                    topP = 0.95,
-                    temperature = request.temperature.toDouble(),
-                    seed = 0
-                )
-                val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
-                val conversation = engine.createConversation(conversationConfig)
-
-                try {
-                    PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) { emit(it) }
-                } finally {
-                    conversation.cancelAndClose()
-                }
-            }
+            emitAll(engineHost.stream(modelPath, spec, prompt, request.maxTokens, request.temperature))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -296,104 +269,82 @@ class LiteRTLMProvider @Inject constructor(
         verifyModelFileIntegrity(modelPath, spec)
     }
 
-    /**
-     * Attempts to invoke LiteRT-LM inference.
-     *
-     * This uses reflection to call the LiteRT-LM SDK so the project compiles
-     * even if the SDK is not yet on the classpath. When the gradle dependency
-     * `com.google.ai.edge.litertlm:litertlm-android` is available, this will
-     * call through to the real engine.
-     */
-    @Synchronized
-    private fun getOrInitializeEngine(modelPath: String, spec: OnDeviceModelSpec): Engine {
-        if (cachedModelPath != modelPath) {
-            Log.i(TAG, "[INIT FLOW] Active model path changed from '$cachedModelPath' to '$modelPath'. Resetting cached engine.")
-            closeCachedEngine()
+    /** Loads the model into a new native engine, trying each backend the model may run on. */
+    private fun openEngine(modelPath: String, spec: OnDeviceModelSpec): LiteRTEngine {
+        verifyModelFileIntegrity(modelPath, spec)
+
+        Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: ${spec.contextWindow}")
+        // maxNumTokens is the TOTAL token capacity (input + output) of the
+        // engine. It must match the model's KV-cache size (spec.contextWindow),
+        // NOT a request's output-token budget — undersizing it makes the native
+        // runtime abort (force close) as soon as a prompt exceeds it.
+        // Gemma 4 LiteRT packages require the GPU-constrained main section,
+        // while older catalog models and custom imports may only load on
+        // CPU, so fall back rather than locking every model to one backend.
+        Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
+        var lastFailure: Throwable? = null
+        val backends = if (spec.modelFilename.contains("q8", ignoreCase = true) || spec.family.equals("Qwen", ignoreCase = true)) {
+            listOf<() -> Backend>({ Backend.CPU() }, { Backend.GPU() })
+        } else {
+            LiteRtCompatibility.backendPreference
         }
-
-        var engine = cachedEngine
-        if (engine == null) {
-            verifyModelFileIntegrity(modelPath, spec)
-
-            Log.i(TAG, "[INIT FLOW] Configuring EngineConfig with path: $modelPath, maxNumTokens: ${spec.contextWindow}")
-            // maxNumTokens is the TOTAL token capacity (input + output) of the
-            // engine. It must match the model's KV-cache size (spec.contextWindow),
-            // NOT a request's output-token budget — undersizing it makes the native
-            // runtime abort (force close) as soon as a prompt exceeds it.
-            // Gemma 4 LiteRT packages require the GPU-constrained main section,
-            // while older catalog models and custom imports may only load on
-            // CPU, so fall back rather than locking every model to one backend.
-            Log.i(TAG, "[INIT FLOW] Initializing Engine (loading model)...")
-            var lastFailure: Throwable? = null
-            val backends = if (spec.modelFilename.contains("q8", ignoreCase = true) || spec.family.equals("Qwen", ignoreCase = true)) {
-                listOf<() -> Backend>({ Backend.CPU() }, { Backend.GPU() })
-            } else {
-                LiteRtCompatibility.backendPreference
-            }
-            for (backend in backends) {
-                val config = EngineConfig(
-                    modelPath = modelPath,
-                    backend = backend(),
-                    maxNumTokens = spec.contextWindow,
-                    cacheDir = context.cacheDir.absolutePath
-                )
-                var candidate: Engine? = null
-                try {
-                    candidate = Engine(config)
-                    candidate.initialize()
-                    engine = candidate
-                    cachedEngine = candidate
-                    cachedModelPath = modelPath
-                    Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} and cached.")
-                    lastFailure = null
-                    break
-                } catch (e: Throwable) {
-                    Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend}.", e)
-                    lastFailure = e
-                    runCatching { candidate?.close() }
-                }
-            }
-            if (lastFailure != null) {
-                Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
-                throw lastFailure
-            }
-        }
-        return requireNotNull(engine) { "LiteRT Engine initialization produced no engine" }
-    }
-
-    /**
-     * Verifies the prompt fits the model's context window BEFORE handing it to
-     * the native runtime. LiteRT-LM aborts the whole process (native SIGABRT,
-     * not a catchable exception) when the prompt overflows the engine's token
-     * capacity — this guard turns that force close into a normal error message.
-     */
-    private fun checkPromptFits(prompt: String, spec: OnDeviceModelSpec, requestedMaxTokens: Int): Int {
-        return PromptBudget.outputBudget(prompt, spec.contextWindow, requestedMaxTokens)
-            ?: throw IllegalStateException(
-                "This conversation is too long for ${spec.displayName} " +
-                "(~${PromptBudget.budgetedPromptTokens(prompt)} tokens, limit ${spec.contextWindow}). " +
-                "Start a new chat, shorten the message, or switch to a larger model."
+        for (backend in backends) {
+            val config = EngineConfig(
+                modelPath = modelPath,
+                backend = backend(),
+                maxNumTokens = spec.contextWindow,
+                cacheDir = context.cacheDir.absolutePath
             )
+            var candidate: Engine? = null
+            try {
+                candidate = Engine(config)
+                candidate.initialize()
+                Log.i(TAG, "[INIT FLOW] LiteRT Engine initialized successfully on ${config.backend} and cached.")
+                return NativeEngine(candidate)
+            } catch (e: Throwable) {
+                Log.e(TAG, "[INIT FLOW] Failed to initialize LiteRT Engine on ${config.backend}.", e)
+                lastFailure = e
+                runCatching { candidate?.close() }
+            }
+        }
+        Log.e(TAG, "[INIT FLOW] [CRITICAL FAILURE] Failed to initialize LiteRT Engine on every backend.", lastFailure)
+        throw lastFailure ?: IllegalStateException("LiteRT Engine initialization produced no engine")
     }
 
-    /** The text deltas of the reply to [prompt]. LiteRT-LM emits only the new text in each message. */
-    private fun Conversation.textChunks(prompt: String): Flow<String> =
-        sendMessageAsync(prompt)
-            .map { msg -> msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text } }
-            .filter { it.isNotEmpty() }
-
-    /**
-     * Ends a conversation whether or not it is still decoding. The flow from `sendMessageAsync`
-     * does not cancel anything when its collector stops, so decoding has to be cancelled here.
-     * Cancelling after decoding has finished is a no-op.
-     */
-    private fun Conversation.cancelAndClose() {
-        try {
-            cancelProcess()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cancelling LiteRT conversation: ${e.message}")
+    private class NativeEngine(private val engine: Engine) : LiteRTEngine {
+        override fun openSession(temperature: Double): LiteRTSession {
+            val samplerConfig = SamplerConfig(
+                topK = 40,
+                topP = 0.95,
+                temperature = temperature,
+                seed = 0
+            )
+            val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
+            return NativeSession(engine.createConversation(conversationConfig))
         }
-        close()
+
+        override fun close() = engine.close()
+    }
+
+    private class NativeSession(private val conversation: Conversation) : LiteRTSession {
+        /** LiteRT-LM emits only the new text in each message. */
+        override fun textChunks(prompt: String): Flow<String> =
+            conversation.sendMessageAsync(prompt)
+                .map { msg -> msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text } }
+                .filter { it.isNotEmpty() }
+
+        /**
+         * The flow from `sendMessageAsync` does not cancel anything when its collector stops,
+         * so decoding has to be cancelled here. Cancelling after decoding has finished is a no-op.
+         */
+        override fun cancelAndClose() {
+            try {
+                conversation.cancelProcess()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cancelling LiteRT conversation: ${e.message}")
+            }
+            conversation.close()
+        }
     }
 
     private suspend fun invokeLiteRTInference(
@@ -402,111 +353,26 @@ class LiteRTLMProvider @Inject constructor(
         prompt: String,
         maxTokens: Int,
         temperature: Float
-    ): String = engineMutex.withLock {
-        runLiteRTInference(modelPath, spec, prompt, maxTokens, temperature)
-    }
-
-    private suspend fun runLiteRTInference(
-        modelPath: String,
-        spec: OnDeviceModelSpec,
-        prompt: String,
-        maxTokens: Int,
-        temperature: Float
     ): String {
-        try {
-            checkPromptFits(prompt, spec, maxTokens)
-            // 1. Verify LiteRT library classes / static classpath integrity
-            Log.i(TAG, "[INIT FLOW] [STEP 1/6] Verifying LiteRT SDK classes on classpath...")
-            // Compiles statically with com.google.ai.edge.litertlm.*
-            Log.i(TAG, "[INIT FLOW] [SUCCESS] LiteRT SDK classes verified on classpath.")
-
-            // 2. Verify model file exists, is a file, and is readable
-            Log.i(TAG, "[INIT FLOW] [STEP 2/6] Verifying model file status at: $modelPath")
-            val modelFile = File(modelPath)
-            if (!modelFile.exists()) {
-                Log.e(TAG, "[INIT FLOW] [FAILURE] Model file does not exist: $modelPath")
-                throw java.io.FileNotFoundException("Model file not downloaded / missing at path: $modelPath")
-            }
-            if (modelFile.isDirectory) {
-                Log.e(TAG, "[INIT FLOW] [FAILURE] Model path is a directory: $modelPath")
-                throw IllegalArgumentException("Invalid model path: '$modelPath' is a directory, not a file.")
-            }
-            if (!modelFile.canRead()) {
-                Log.e(TAG, "[INIT FLOW] [FAILURE] Model file is not readable: $modelPath")
-                throw IOException("Model file at '$modelPath' exists but is not readable. Check storage permissions.")
-            }
-            Log.i(TAG, "[INIT FLOW] [SUCCESS] Model file verified (size: ${modelFile.length()} bytes).")
-
-            // 3 & 4. Verify options configuration & engine initialization
-            Log.i(TAG, "[INIT FLOW] [STEP 3/6 & 4/6] Creating & Initializing Engine...")
-            val engine = try {
-                getOrInitializeEngine(modelPath, spec)
-            } catch (e: LinkageError) {
-                Log.e(TAG, "[INIT FLOW] [FAILURE] JNI native library failed to load (liblitertlm_jni.so)", e)
-                throw UnsatisfiedLinkError("LiteRT JNI native library failed to load (liblitertlm_jni.so). Error: ${e.localizedMessage}")
-            } catch (e: Exception) {
-                val cause = e.cause
-                if (cause is UnsatisfiedLinkError) {
-                    Log.e(TAG, "[INIT FLOW] [FAILURE] JNI native library failed to load (wrapped)", cause)
-                    throw UnsatisfiedLinkError("LiteRT JNI native library failed to load (liblitertlm_jni.so). Error: ${cause.localizedMessage}")
-                }
-                Log.e(TAG, "[INIT FLOW] [FAILURE] Engine initialization failed", e)
-                throw IOException("LiteRT Engine initialization failed: ${cause?.localizedMessage ?: e.localizedMessage}", cause ?: e)
-            }
-
-            // 5. Verify JNI library link status
-            Log.i(TAG, "[INIT FLOW] [STEP 5/6] Verifying JNI library link status...")
-            // If the engine instance exists and is initialized, JNI link succeeded.
-            Log.i(TAG, "[INIT FLOW] [SUCCESS] JNI library links verified.")
-
-            // 6. Execute inference
-            Log.i(TAG, "[INIT FLOW] [STEP 6/6] Executing inference on prompt...")
-            val result = try {
-                val samplerConfig = SamplerConfig(
-                    topK = 40,
-                    topP = 0.95,
-                    temperature = temperature.toDouble(),
-                    seed = 0
-                )
-                val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
-                val conversation = engine.createConversation(conversationConfig)
-
-                try {
-                    val maxAllowedTokens = checkPromptFits(prompt, spec, maxTokens)
-                    PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) {}
-                } finally {
-                    conversation.cancelAndClose()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val cause = e.cause
-                Log.e(TAG, "[INIT FLOW] [FAILURE] Inference execution failed", e)
-                throw IOException("LiteRT Inference execution failed: ${cause?.localizedMessage ?: e.localizedMessage}", cause ?: e)
-            }
-            Log.i(TAG, "[INIT FLOW] [SUCCESS] Inference succeeded. Received response of length ${result.length}.")
-            return result
-
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            closeCachedEngine()
-            throw e
+        Log.i(TAG, "[INIT FLOW] Verifying model file status at: $modelPath")
+        val modelFile = File(modelPath)
+        if (!modelFile.exists()) {
+            Log.e(TAG, "[INIT FLOW] [FAILURE] Model file does not exist: $modelPath")
+            throw java.io.FileNotFoundException("Model file not downloaded / missing at path: $modelPath")
         }
-    }
-
-    @Synchronized
-    fun closeCachedEngine() {
-        cachedEngine?.let { engine ->
-            try {
-                Log.i(TAG, "Closing cached LiteRT engine")
-                engine.close()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error closing cached engine: ${e.message}")
-            }
+        if (modelFile.isDirectory) {
+            Log.e(TAG, "[INIT FLOW] [FAILURE] Model path is a directory: $modelPath")
+            throw IllegalArgumentException("Invalid model path: '$modelPath' is a directory, not a file.")
         }
-        cachedEngine = null
-        cachedModelPath = null
+        if (!modelFile.canRead()) {
+            Log.e(TAG, "[INIT FLOW] [FAILURE] Model file is not readable: $modelPath")
+            throw IOException("Model file at '$modelPath' exists but is not readable. Check storage permissions.")
+        }
+        Log.i(TAG, "[INIT FLOW] [SUCCESS] Model file verified (size: ${modelFile.length()} bytes).")
+
+        val result = engineHost.complete(modelPath, spec, prompt, maxTokens, temperature)
+        Log.i(TAG, "[INIT FLOW] [SUCCESS] Inference succeeded. Received response of length ${result.length}.")
+        return result
     }
 
     // ── Prompt building (shared with GemmaProvider pattern) ─────────────
