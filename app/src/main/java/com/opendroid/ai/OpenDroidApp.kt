@@ -8,6 +8,7 @@ import com.opendroid.ai.core.crash.OpenDroidCrashHandler
 import com.opendroid.ai.core.llm.OnDeviceEngineReleaseMonitor
 import com.opendroid.ai.core.llm.providers.LiteRTLMProvider
 import com.opendroid.ai.core.memory.LegacyPoisonedMemoryCleanup
+import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
 import com.opendroid.ai.core.security.LegacyPreferenceMigration
 import com.opendroid.ai.data.crash.CrashLogRepository
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -24,6 +25,9 @@ class OpenDroidApp : Application() {
 
     @Inject
     lateinit var legacyPoisonedMemoryCleanup: LegacyPoisonedMemoryCleanup
+
+    @Inject
+    lateinit var personalGrowthEngine: PersonalGrowthEngine
 
     @Inject
     lateinit var crashLogRepository: CrashLogRepository
@@ -62,6 +66,12 @@ class OpenDroidApp : Application() {
                 legacyPoisonedMemoryCleanup.cleanPoisonedMemories()
             } catch (e: Exception) {
                 // Silently ignore cleanup errors to not block app startup
+            }
+            // Collapse the per-run routine memories older versions wrote. A no-op once they're gone.
+            try {
+                personalGrowthEngine.pruneDuplicateRoutineMemories()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to collapse duplicate routine memories", e)
             }
         }
 
