@@ -6,6 +6,10 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.test.core.app.ApplicationProvider
+import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.ActionSchema
+import com.opendroid.ai.core.agent.isUserFacingStepError
+import com.opendroid.ai.core.agent.stopsPlanAfterUserHandOff
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,40 +26,172 @@ import org.robolectric.annotation.Config
 class FinanceActionsTest {
 
     @Test
-    fun `gpay opens the UPI payment flow in Google Pay`() = runBlocking {
+    fun `gpay hands the UPI payment to Google Pay without claiming it was sent`() = runBlocking {
         val context = recordingContext(GPAY_PACKAGE)
 
-        val result = payUpi(context, app = "gpay", note = "Lunch")
+        val result = payUpi(context, app = "gpay", to = "alice@okaxis", amount = "500", note = "Lunch")
 
-        assertTrue(result.success)
-        assertEquals(GPAY_PACKAGE, context.startedIntent?.`package`)
         assertEquals(
-            "upi://pay?pa=alice@upi&pn=Recipient&tn=Lunch&am=100&cu=INR",
-            context.startedIntent?.dataString
+            ActionResult.UserActionRequired(
+                "I opened Google Pay with \u20B9500 to alice@okaxis. " +
+                    "Confirm and enter your UPI PIN there; I can't see whether it went through."
+            ),
+            result
         )
-        assertEquals("Sending \u20B9100 to alice@upi!", result.data)
+        assertEquals(GPAY_PACKAGE, context.startedIntent?.`package`)
+        val uri = context.startedIntent?.data
+        assertEquals("upi", uri?.scheme)
+        assertEquals("pay", uri?.host)
+        assertEquals("alice@okaxis", uri?.getQueryParameter("pa"))
+        assertEquals("Recipient", uri?.getQueryParameter("pn"))
+        assertEquals("Lunch", uri?.getQueryParameter("tn"))
+        assertEquals("500", uri?.getQueryParameter("am"))
+        assertEquals("INR", uri?.getQueryParameter("cu"))
     }
 
     @Test
-    fun `phonepe opens the UPI payment flow in PhonePe`() = runBlocking {
+    fun `phonepe hands the UPI payment to PhonePe`() = runBlocking {
         val context = recordingContext(PHONEPE_PACKAGE)
 
         val result = payUpi(context, app = "phonepe")
 
-        assertTrue(result.success)
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertTrue(result.error!!.startsWith("I opened PhonePe with \u20B9100 to alice@upi."))
         assertEquals(PHONEPE_PACKAGE, context.startedIntent?.`package`)
-        assertEquals("Sending \u20B9100 to alice@upi!", result.data)
     }
 
     @Test
-    fun `paytm opens the UPI payment flow in Paytm`() = runBlocking {
+    fun `paytm hands the UPI payment to Paytm`() = runBlocking {
         val context = recordingContext(PAYTM_PACKAGE)
 
         val result = payUpi(context, app = "paytm")
 
-        assertTrue(result.success)
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertTrue(result.error!!.startsWith("I opened Paytm with \u20B9100 to alice@upi."))
         assertEquals(PAYTM_PACKAGE, context.startedIntent?.`package`)
-        assertEquals("Sending \u20B9100 to alice@upi!", result.data)
+    }
+
+    @Test
+    fun `the payment hand-off reaches the user and stops the plan`() = runBlocking {
+        val result = payUpi(recordingContext(GPAY_PACKAGE))
+
+        // The plan summary only repeats a failed step's error when this accepts it.
+        assertTrue(isUserFacingStepError(result.error!!))
+        assertTrue(stopsPlanAfterUserHandOff("PAY_UPI"))
+        assertFalse(stopsPlanAfterUserHandOff("SEND_EMAIL"))
+    }
+
+    @Test
+    fun `contact name asks for the UPI ID and starts nothing`() = runBlocking {
+        val context = recordingContext(GPAY_PACKAGE)
+
+        val result = payUpi(context, to = "John")
+
+        assertEquals(
+            ActionResult.NeedsInput("What's John's UPI ID?", metadata = mapOf("param" to "to")),
+            result
+        )
+        assertNull(context.startedIntent)
+    }
+
+    @Test
+    fun `recipients that are not UPI IDs ask for one and start nothing`() = runBlocking {
+        val notVpas = listOf(
+            "9876543210",
+            "john@gmail.com",
+            "x@upi&am=5000",
+            "x@upi?am=5000",
+            "x y@upi",
+            "@upi",
+            "alice@",
+            " "
+        )
+        notVpas.forEach { to ->
+            val context = recordingContext(GPAY_PACKAGE)
+
+            val result = payUpi(context, to = to)
+
+            assertEquals(
+                to,
+                ActionResult.NeedsInput(
+                    "What's the recipient's UPI ID? It looks like name@bank.",
+                    metadata = mapOf("param" to "to")
+                ),
+                result
+            )
+            assertNull(to, context.startedIntent)
+        }
+    }
+
+    @Test
+    fun `UPI IDs with digits, dots and dashes are accepted`() = runBlocking {
+        listOf("9876543210@ybl", "john.doe-1_a@kotak811").forEach { to ->
+            val context = recordingContext(GPAY_PACKAGE)
+
+            val result = payUpi(context, to = to)
+
+            assertTrue(to, result is ActionResult.UserActionRequired)
+            assertEquals(to, context.startedIntent?.data?.getQueryParameter("pa"))
+        }
+    }
+
+    @Test
+    fun `amounts that are not plain numbers ask again and start nothing`() = runBlocking {
+        val notAmounts = listOf(
+            "Total: 100 divided among 4 people. Individual Share: 25.00 per person.",
+            "500&am=1",
+            "-500",
+            "1,000",
+            "12.345",
+            "\u0665\u0660\u0660",
+            ""
+        )
+        notAmounts.forEach { amount ->
+            val context = recordingContext(GPAY_PACKAGE)
+
+            val result = payUpi(context, amount = amount)
+
+            assertEquals(
+                amount,
+                ActionResult.NeedsInput(
+                    "How much should I send to alice@upi? Use a number like 500 or 500.50.",
+                    metadata = mapOf("param" to "amount")
+                ),
+                result
+            )
+            assertNull(amount, context.startedIntent)
+        }
+    }
+
+    @Test
+    fun `amount with paise is passed through`() = runBlocking {
+        val context = recordingContext(GPAY_PACKAGE)
+
+        val result = payUpi(context, amount = "500.50")
+
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertEquals("500.50", context.startedIntent?.data?.getQueryParameter("am"))
+    }
+
+    @Test
+    fun `a note cannot add parameters to the payment URI`() = runBlocking {
+        val context = recordingContext(GPAY_PACKAGE)
+
+        payUpi(context, amount = "500", note = "Lunch & drinks&am=5000")
+
+        val uri = context.startedIntent?.data
+        assertEquals("Lunch & drinks&am=5000", uri?.getQueryParameter("tn"))
+        assertEquals(listOf("500"), uri?.getQueryParameters("am"))
+    }
+
+    @Test
+    fun `PAY_UPI schema stops offering contact names as recipients`() {
+        val definition = ActionSchema.getAction("PAY_UPI")!!
+        val to = definition.params.single { it.name == "to" }
+
+        assertFalse(to.description, to.description.contains("contact", ignoreCase = true))
+        assertTrue(to.description, to.description.contains("name@bank"))
+        assertTrue(definition.examples.toString(), definition.examples.all { it.contains("@") })
     }
 
     @Test
@@ -86,14 +222,19 @@ class FinanceActionsTest {
 
         val result = payUpi(context, app = "phonepe")
 
-        assertTrue(result.success)
-        assertEquals("phonepe isn't installed, so I opened the default payment app.", result.data)
+        assertEquals(
+            ActionResult.UserActionRequired(
+                "PhonePe isn't installed, so I opened your default payment app with \u20B9100 to alice@upi. " +
+                    "Confirm and enter your UPI PIN there; I can't see whether it went through."
+            ),
+            result
+        )
         assertEquals(Intent.ACTION_VIEW, context.startedIntent?.action)
         assertNull(context.startedIntent?.`package`)
-        assertEquals(
-            "upi://pay?pa=alice@upi&pn=Recipient&tn=Sent+via+OpenDroid&am=100&cu=INR",
-            context.startedIntent?.dataString
-        )
+        val uri = context.startedIntent?.data
+        assertEquals("alice@upi", uri?.getQueryParameter("pa"))
+        assertEquals("100", uri?.getQueryParameter("am"))
+        assertEquals("Sent via OpenDroid", uri?.getQueryParameter("tn"))
     }
 
     @Test

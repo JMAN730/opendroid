@@ -78,6 +78,14 @@ internal fun isUserFacingStepError(error: String): Boolean =
         error.contains("tap", ignoreCase = true) ||
         error.contains("couldn't confirm", ignoreCase = true)
 
+/**
+ * Whether the rest of a plan must not run after this action hands off to the user. The outcome of
+ * a UPI payment can't be observed, so a later "tell John I paid" could announce a payment that the
+ * user cancelled or is still confirming.
+ */
+internal fun stopsPlanAfterUserHandOff(canonicalActionName: String): Boolean =
+    canonicalActionName == "PAY_UPI"
+
 internal fun extractJsonPayload(raw: String): String {
     val trimmed = raw.trim()
 
@@ -1422,6 +1430,11 @@ class AgentLoop @Inject constructor(
                     StepStatus.FAILED,
                     error = actionResult.error ?: "User action is required before this step can complete."
                 )
+                if (stopsPlanAfterUserHandOff(canonicalActionName)) {
+                    planManager.updatePlanStatus(PlanStatus.FAILED)
+                    speakAndSaveSummary(planManager.currentPlan.value ?: currentPlanState, false, sessionId)
+                    return
+                }
                 // Skip the generic re-evaluation below: its prompt allows adding
                 // alternative steps, which would let the agent launch another
                 // action or duplicate composer while the user is still reviewing
