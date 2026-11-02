@@ -9,6 +9,7 @@ import com.opendroid.ai.core.llm.LLMResponse
 import com.opendroid.ai.core.llm.LatencyBudgetStatus
 import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
+import com.opendroid.ai.core.llm.buildPlanningRequest
 import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.core.memory.MemoryManager
 import com.opendroid.ai.core.memory.ExecutionHistoryPrivacy
@@ -962,34 +963,18 @@ class AgentLoop @Inject constructor(
             val relevantContext = memoryManager.getRelevantContext(userMsg.text)
             val isOnDevice = ProviderCatalog.isOnDevice(provider.name)
 
-            val basePlanningPrompt = if (isOnDevice) {
-                PlanningPrompts.buildOnDevicePlanningPrompt()
-            } else {
-                PlanningPrompts.PLANNING_SYSTEM_PROMPT
-            }
-
-            val sysPrompt = if (isOnDevice) {
-                if (relevantContext.isNotBlank()) {
-                    "$basePlanningPrompt\n\nContext:\n${relevantContext.take(250)}"
-                } else {
-                    basePlanningPrompt
-                }
-            } else {
-                "$basePlanningPrompt\n\nContext about user and device:\n$relevantContext"
-            }
-            
             val config = settingsRepository.llmConfig.first()
             val maxTokensForPlan = if (isOnDevice) 512 else 1500
             val plan = if (config.multiAgentModeEnabled && !isOnDevice) {
                 kotlinx.coroutines.coroutineScope {
                     val plannerDeferred = async(Dispatchers.Default) {
                         provider.complete(
-                            LLMRequest(
-                                systemPrompt = sysPrompt,
-                                messages = listOf(userMsg),
+                            buildPlanningRequest(
+                                userMsg = userMsg,
+                                relevantContext = relevantContext,
+                                isOnDevice = isOnDevice,
                                 temperature = 0.2f,
-                                maxTokens = 1500,
-                                responseFormat = ResponseFormat.JSON
+                                maxTokens = 1500
                             )
                         )
                     }
@@ -1042,12 +1027,12 @@ class AgentLoop @Inject constructor(
                 }
             } else {
                 val response = provider.complete(
-                    LLMRequest(
-                        systemPrompt = sysPrompt,
-                        messages = listOf(userMsg),
+                    buildPlanningRequest(
+                        userMsg = userMsg,
+                        relevantContext = relevantContext,
+                        isOnDevice = isOnDevice,
                         temperature = 0.1f,
-                        maxTokens = maxTokensForPlan,
-                        responseFormat = ResponseFormat.JSON
+                        maxTokens = maxTokensForPlan
                     )
                 )
                 reportLocalPlanningLatency(response)

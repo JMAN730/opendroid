@@ -77,12 +77,26 @@ data class LLMRequest(
     val responseFormat: ResponseFormat = ResponseFormat.JSON,
     val tools: List<Tool>? = null,
     val retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
+    /**
+     * Marks the request for [PlanningRequestRewriter]. Only [buildPlanningRequest] sets it; prompt
+     * text never decides this, because prompts can embed text written by third parties.
+     */
+    @Transient
+    val purpose: RequestPurpose = RequestPurpose.GENERAL,
+    /** What a [RequestPurpose.PLANNING] request hands the rewriter as its memory context. */
+    @Transient
+    val memoryContext: String = "",
     @Transient
     val providerConfig: ProviderRequestConfig? = null
 )
 
 enum class ResponseFormat {
     JSON, TEXT
+}
+
+enum class RequestPurpose {
+    GENERAL,
+    PLANNING
 }
 
 enum class RetryPolicy {
