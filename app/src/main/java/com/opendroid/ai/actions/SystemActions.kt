@@ -165,9 +165,13 @@ private class AndroidDndController(
 private fun dndController(context: Context): DndController =
     AndroidDndController(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
 
+private const val DND_SETTLE_POLL_MS = 100L
+private const val DND_SETTLE_POLLS = 10
+
 internal class ToggleDndAction(
     private val controllerProvider: (Context) -> DndController = ::dndController,
-    private val launchIntent: (Context, Intent) -> Unit = { context, intent -> context.startActivity(intent) }
+    private val launchIntent: (Context, Intent) -> Unit = { context, intent -> context.startActivity(intent) },
+    private val settleDelay: suspend () -> Unit = { kotlinx.coroutines.delay(DND_SETTLE_POLL_MS) }
 ) : Action {
     override val name: String = "TOGGLE_DND"
     override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
@@ -204,7 +208,15 @@ internal class ToggleDndAction(
             val filter = if (targetOn) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL
             controller.setInterruptionFilter(filter)
             val stateWord = if (targetOn) "on" else "off"
-            val nowOn = controller.currentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL
+            // Android 8 applies the zen config on a handler, so the read-back can lag the
+            // write. Poll briefly before calling it a failure.
+            var nowOn = controller.currentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL
+            var polls = 0
+            while (nowOn != targetOn && polls < DND_SETTLE_POLLS) {
+                settleDelay()
+                polls++
+                nowOn = controller.currentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL
+            }
             if (nowOn != targetOn) {
                 return ActionResult(false, null, "Do Not Disturb didn't turn $stateWord.")
             }
