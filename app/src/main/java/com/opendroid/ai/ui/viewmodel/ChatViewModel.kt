@@ -181,9 +181,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun approvePlan(context: Context, grants: Set<String> = emptySet()) {
+    fun approvePlan(context: Context, planId: String, grants: Set<String> = emptySet()) {
         pinTaskSessionSnapshot()
-        agentLoop.approveProposedPlan(context, grants)
+        agentLoop.approveProposedPlan(context, planId, grants)
     }
 
     /** Chip tap: Off <-> Auto only. YOLO is entered solely from Settings behind
