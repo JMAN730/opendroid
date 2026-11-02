@@ -72,12 +72,24 @@ class InboxAndPlainTextSendsTest {
         """.trimIndent()
 
         val first = adapter.fetchInbox(telegram, null).getOrThrow()
+        adapter.acknowledgeInbox(telegram)
         responseBody = """{"ok":true,"result":[]}"""
         adapter.fetchInbox(telegram, null)
 
         assertNull(requests[0].url.queryParameter("offset"))
         assertEquals("43", requests[1].url.queryParameter("offset"))
         assertEquals("555:3", first.single().replyTargetId)
+    }
+
+    @Test
+    fun `Telegram inbox polling fetches a batch again until it has been saved`() = runBlocking {
+        val adapter = TelegramAdapter(client)
+        responseBody = """{"ok":true,"result":[{"update_id":41,"message":{"message_id":3,"date":1,"text":"hi","chat":{"id":555}}}]}"""
+
+        adapter.fetchInbox(telegram, null)
+        adapter.fetchInbox(telegram, null)
+
+        assertNull("an unsaved batch must not be confirmed to Telegram", requests[1].url.queryParameter("offset"))
     }
 
     @Test

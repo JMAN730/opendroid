@@ -432,6 +432,7 @@ class SocialManager @Inject constructor(
             if (interactions.isNotEmpty()) {
                 socialRepository.saveInteractions(interactions.map { it.copy(accountId = account.id) })
             }
+            adapter.acknowledgeInbox(credentials)
         }
 
         // 2. Sync Comments
