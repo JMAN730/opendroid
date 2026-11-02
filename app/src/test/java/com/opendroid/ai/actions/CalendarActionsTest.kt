@@ -7,8 +7,10 @@ import android.content.Intent
 import android.provider.CalendarContract
 import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.isUserFacingStepError
 import java.time.Clock
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -74,8 +76,55 @@ class CalendarActionsTest {
 
         val intent = context.started.single()
         assertTrue(intent.isAllDay())
-        assertEquals(millis(2026, 11, 5, 0, 0), intent.beginTime())
-        assertEquals(millis(2026, 11, 6, 0, 0), intent.endTime())
+        assertEquals(utcMidnight(2026, 11, 5), intent.beginTime())
+        assertEquals(utcMidnight(2026, 11, 6), intent.endTime())
+    }
+
+    @Test
+    fun `all day times are UTC midnight of the local date on either side of UTC`() = runBlocking {
+        // "today" at noon on 2026-11-02, so the expected date is the same in both zones.
+        listOf("Asia/Tokyo", "America/Los_Angeles").forEach { zoneId ->
+            val zone = ZoneId.of(zoneId)
+            val clock = Clock.fixed(ZonedDateTime.of(2026, 11, 2, 12, 0, 0, 0, zone).toInstant(), zone)
+            val recording = RecordingContext(ApplicationProvider.getApplicationContext())
+
+            CalendarActions.CreateTaskAction(clock).execute(
+                mapOf("title" to "renew passport", "dueDate" to "today"),
+                recording
+            )
+
+            val intent = recording.started.single()
+            assertTrue(zoneId, intent.isAllDay())
+            assertEquals(zoneId, utcMidnight(2026, 11, 2), intent.beginTime())
+            assertEquals(zoneId, utcMidnight(2026, 11, 3), intent.endTime())
+        }
+    }
+
+    @Test
+    fun `the editor hand-off and its notes get past the agent loop's user-facing filter`() = runBlocking {
+        val results = listOf(
+            CalendarActions.CreateCalendarEventAction(CLOCK).execute(
+                mapOf("title" to "Sync", "date" to "sometime soon"),
+                context
+            ),
+            CalendarActions.SetReminderAction(CLOCK).execute(
+                mapOf("text" to "water", "datetime" to "whenever", "repeat" to "when it rains"),
+                context
+            ),
+            CalendarActions.CreateTaskAction(CLOCK).execute(
+                mapOf("title" to "renew passport", "dueDate" to "someday"),
+                context
+            )
+        )
+
+        results.forEach { result ->
+            assertTrue(result is ActionResult.UserActionRequired)
+            assertTrue(result.error.orEmpty(), isUserFacingStepError(result.error.orEmpty()))
+        }
+        assertTrue(results[0].error.orEmpty().contains("sometime soon"))
+        assertTrue(results[1].error.orEmpty().contains("whenever"))
+        assertTrue(results[1].error.orEmpty().contains("when it rains"))
+        assertTrue(results[2].error.orEmpty().contains("someday"))
     }
 
     @Test
@@ -197,7 +246,7 @@ class CalendarActionsTest {
         val intent = context.started.single()
         assertEquals(Intent.ACTION_INSERT, intent.action)
         assertEquals("renew passport", intent.getStringExtra(CalendarContract.Events.TITLE))
-        assertEquals(millis(2026, 11, 6, 0, 0), intent.beginTime())
+        assertEquals(utcMidnight(2026, 11, 6), intent.beginTime())
         assertTrue(intent.isAllDay())
         val description = intent.getStringExtra(CalendarContract.Events.DESCRIPTION).orEmpty()
         assertTrue(description.contains("high"))
@@ -220,6 +269,9 @@ class CalendarActionsTest {
 
     private fun millis(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
         ZonedDateTime.of(year, month, day, hour, minute, 0, 0, ZONE).toInstant().toEpochMilli()
+
+    private fun utcMidnight(year: Int, month: Int, day: Int): Long =
+        ZonedDateTime.of(year, month, day, 0, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
 
     private class RecordingContext(
         base: Context,

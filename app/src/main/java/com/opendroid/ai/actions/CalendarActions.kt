@@ -18,6 +18,7 @@ import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
 import java.time.Clock
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.Calendar
 import com.opendroid.ai.core.memory.graph.KnowledgeCategory
@@ -81,12 +82,14 @@ class CalendarActions @Inject constructor(
             putExtra(CalendarContract.Events.TITLE, title)
             putExtra(CalendarContract.Events.DESCRIPTION, description)
             if (moment != null) {
+                // Calendar editors read all-day times as UTC, so local midnight east of UTC would land on the day before.
+                val begin = if (moment.hasTime) moment.begin else moment.begin.toLocalDate().atStartOfDay(ZoneOffset.UTC)
                 val end = if (moment.hasTime) {
-                    moment.begin.plusSeconds(durationSeconds.toLong())
+                    begin.plusSeconds(durationSeconds.toLong())
                 } else {
-                    moment.begin.plusDays(1)
+                    begin.plusDays(1)
                 }
-                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, moment.begin.toInstant().toEpochMilli())
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin.toInstant().toEpochMilli())
                 putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end.toInstant().toEpochMilli())
                 putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, !moment.hasTime)
             }
@@ -142,7 +145,7 @@ class CalendarActions @Inject constructor(
                 durationText?.takeIf { durationSeconds == null && moment?.hasTime == true }
                     ?.let { "I couldn't read the duration '$it', so I used one hour." }
             )
-            return openCalendarEditor(context, intent, "Review '$title' in the calendar and save it to add the event.", notes)
+            return openCalendarEditor(context, intent, "I opened the calendar with '$title'; please review it and save to add the event.", notes)
         }
     }
 
@@ -365,7 +368,7 @@ class CalendarActions @Inject constructor(
                 repeatText?.takeIf { repeat == null }
                     ?.let { "I couldn't read the repeat schedule '$it', so set it in the editor." }
             )
-            return openCalendarEditor(context, intent, "Review your reminder '$title' in the calendar and save it to set it.", notes)
+            return openCalendarEditor(context, intent, "I opened the calendar with your reminder '$title'; please review it and save to set it.", notes)
         }
     }
 
@@ -386,7 +389,7 @@ class CalendarActions @Inject constructor(
             return openCalendarEditor(
                 context,
                 intent,
-                "Review the task '$title' in the calendar and save it to add it.",
+                "I opened the calendar with the task '$title'; please review it and save to add it.",
                 listOfNotNull(unreadTimeNote(dueText, moment))
             )
         }
