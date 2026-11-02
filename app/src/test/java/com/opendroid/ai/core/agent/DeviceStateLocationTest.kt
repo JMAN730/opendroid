@@ -10,7 +10,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.core.memory.WorkingMemory
 import com.opendroid.ai.data.db.MigrationTestApplication
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -65,6 +67,18 @@ class DeviceStateLocationTest {
         assertEquals("51.51, -0.13", shown)
         assertTrue("location read blocked for $elapsedMs ms", elapsedMs < 1000)
         assertFalse("geocoder ran on the main thread", calledOnMain.contains(true))
+    }
+
+    @Test
+    fun `a background lookup publishes the resolved name for the screen to observe`() = runBlocking {
+        val provider = DeviceStateProvider(context, ReverseGeocoder { _, _ -> "London, United Kingdom" })
+        val workingMemory = WorkingMemory(context, provider)
+
+        assertEquals("51.51, -0.13", workingMemory.locationContext)
+
+        val published = withTimeout(2000) { workingMemory.resolvedLocation.first { it != null } }
+        assertEquals("London, United Kingdom", published)
+        assertEquals("London, United Kingdom", workingMemory.locationContext)
     }
 
     @Test
