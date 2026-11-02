@@ -199,10 +199,7 @@ object StorageWorkspaceProvider {
     fun listFiles(context: Context, pathStr: String?): ActionResult {
         return if (shouldUseCustomFolder(context, pathStr)) {
             try {
-                val customUri = getCustomFolderUri(context)
-                    ?: return listFilesLocal(context, pathStr)
-                val root = DocumentFile.fromTreeUri(context, customUri)
-                    ?: return listFilesLocal(context, pathStr)
+                val root = customFolderRoot(context)
                 val cleanPath = cleanRelativePath(pathStr)
                 val targetDir = if (cleanPath.isEmpty()) root else findDocumentByPath(root, cleanPath)
                 if (targetDir == null || !targetDir.exists()) {
@@ -218,7 +215,7 @@ object StorageWorkspaceProvider {
                 }
                 ActionResult(true, if (fileList.isEmpty()) "Directory is empty." else fileList, null)
             } catch (e: Exception) {
-                listFilesLocal(context, pathStr)
+                ActionResult(false, null, "Couldn't list files in your chosen folder: ${e.localizedMessage}")
             }
         } else {
             listFilesLocal(context, pathStr)
@@ -248,10 +245,7 @@ object StorageWorkspaceProvider {
     fun readFile(context: Context, filePath: String): ActionResult {
         return if (shouldUseCustomFolder(context, filePath)) {
             try {
-                val customUri = getCustomFolderUri(context)
-                    ?: return readFileLocal(context, filePath)
-                val root = DocumentFile.fromTreeUri(context, customUri)
-                    ?: return readFileLocal(context, filePath)
+                val root = customFolderRoot(context)
                 val cleanPath = cleanRelativePath(filePath)
                 val file = findDocumentByPath(root, cleanPath)
                 if (file == null || !file.exists()) {
@@ -267,7 +261,7 @@ object StorageWorkspaceProvider {
                     ?: return ActionResult(false, null, "Could not open file stream: $filePath")
                 ActionResult(true, content, null)
             } catch (e: Exception) {
-                readFileLocal(context, filePath)
+                ActionResult(false, null, "Couldn't read file in your chosen folder: ${e.localizedMessage}")
             }
         } else {
             readFileLocal(context, filePath)
@@ -296,22 +290,22 @@ object StorageWorkspaceProvider {
     fun writeFile(context: Context, filePath: String, content: String): ActionResult {
         return if (shouldUseCustomFolder(context, filePath)) {
             try {
-                val customUri = getCustomFolderUri(context)
-                    ?: return writeFileLocal(context, filePath, content)
-                val root = DocumentFile.fromTreeUri(context, customUri)
-                    ?: return writeFileLocal(context, filePath, content)
+                val root = customFolderRoot(context)
                 val cleanPath = cleanRelativePath(filePath)
                 if (pathSegments(cleanPath).isEmpty()) {
                     return ActionResult(false, null, "Path is the custom folder itself, not a file: $filePath")
                 }
                 val doc = findOrCreateDocumentByPath(root, cleanPath, isDirectory = false)
-                    ?: return writeFileLocal(context, filePath, content)
+                    ?: return ActionResult(false, null, "Couldn't create $filePath in your chosen folder; part of the path may be a file")
+                if (doc.isDirectory) {
+                    return ActionResult(false, null, "Path is a directory, not a file: $filePath")
+                }
                 context.contentResolver.openOutputStream(doc.uri, "wt")?.use { stream ->
                     stream.bufferedWriter().use { it.write(content) }
                 } ?: return ActionResult(false, null, "Could not open file stream to write: $filePath")
                 ActionResult(true, "File saved at ${doc.name ?: filePath}", null)
             } catch (e: Exception) {
-                writeFileLocal(context, filePath, content)
+                ActionResult(false, null, "Couldn't write to file in your chosen folder: ${e.localizedMessage}")
             }
         } else {
             writeFileLocal(context, filePath, content)
@@ -332,10 +326,7 @@ object StorageWorkspaceProvider {
     fun deleteFile(context: Context, filePath: String): ActionResult {
         return if (shouldUseCustomFolder(context, filePath)) {
             try {
-                val customUri = getCustomFolderUri(context)
-                    ?: return deleteFileLocal(context, filePath)
-                val root = DocumentFile.fromTreeUri(context, customUri)
-                    ?: return deleteFileLocal(context, filePath)
+                val root = customFolderRoot(context)
                 val cleanPath = cleanRelativePath(filePath)
                 if (pathSegments(cleanPath).isEmpty()) {
                     return ActionResult(false, null, "Refusing to delete the whole custom folder: '$filePath'")
@@ -351,7 +342,7 @@ object StorageWorkspaceProvider {
                     ActionResult(false, null, "Failed to delete: $filePath")
                 }
             } catch (e: Exception) {
-                deleteFileLocal(context, filePath)
+                ActionResult(false, null, "Couldn't delete in your chosen folder: ${e.localizedMessage}")
             }
         } else {
             deleteFileLocal(context, filePath)
@@ -381,19 +372,16 @@ object StorageWorkspaceProvider {
     fun createDirectory(context: Context, pathStr: String): ActionResult {
         return if (shouldUseCustomFolder(context, pathStr)) {
             try {
-                val customUri = getCustomFolderUri(context)
-                    ?: return createDirectoryLocal(context, pathStr)
-                val root = DocumentFile.fromTreeUri(context, customUri)
-                    ?: return createDirectoryLocal(context, pathStr)
+                val root = customFolderRoot(context)
                 val cleanPath = cleanRelativePath(pathStr)
                 val dir = findOrCreateDocumentByPath(root, cleanPath, isDirectory = true)
                 if (dir != null && dir.isDirectory) {
                     ActionResult(true, "Folder created at $pathStr!", null)
                 } else {
-                    createDirectoryLocal(context, pathStr)
+                    ActionResult(false, null, "Couldn't create folder $pathStr in your chosen folder; part of the path may be a file")
                 }
             } catch (e: Exception) {
-                createDirectoryLocal(context, pathStr)
+                ActionResult(false, null, "Couldn't create folder in your chosen folder: ${e.localizedMessage}")
             }
         } else {
             createDirectoryLocal(context, pathStr)
@@ -423,6 +411,32 @@ object StorageWorkspaceProvider {
     }
 
     fun copyFile(context: Context, srcPath: String, destPath: String): ActionResult {
+        mixedBackendError(context, srcPath, destPath)?.let { return it }
+        return if (shouldUseCustomFolder(context, srcPath)) {
+            copyFileCustom(context, srcPath, destPath)
+        } else {
+            copyFileLocal(context, srcPath, destPath)
+        }
+    }
+
+    private fun copyFileCustom(context: Context, srcPath: String, destPath: String): ActionResult {
+        return try {
+            val root = customFolderRoot(context)
+            val src = findDocumentByPath(root, cleanRelativePath(srcPath))
+            if (src == null || !src.exists()) {
+                return ActionResult(false, null, "Source path does not exist: $srcPath")
+            }
+            val srcParts = customPathSegments(srcPath)
+            val destParts = customPathSegments(destPath)
+            documentOverlapError(srcParts, destParts, srcPath, destPath)?.let { return ActionResult(false, null, it) }
+            copyDocumentTo(context, src, root, destParts)
+            ActionResult(true, "Copied from $srcPath to $destPath!", null)
+        } catch (e: Exception) {
+            ActionResult(false, null, "Couldn't copy file in your chosen folder: ${e.localizedMessage}")
+        }
+    }
+
+    private fun copyFileLocal(context: Context, srcPath: String, destPath: String): ActionResult {
         return try {
             val src = resolveFile(context, srcPath)
             val dest = resolveFile(context, destPath)
@@ -438,6 +452,46 @@ object StorageWorkspaceProvider {
     }
 
     fun moveFile(context: Context, srcPath: String, destPath: String): ActionResult {
+        mixedBackendError(context, srcPath, destPath)?.let { return it }
+        return if (shouldUseCustomFolder(context, srcPath)) {
+            moveFileCustom(context, srcPath, destPath)
+        } else {
+            moveFileLocal(context, srcPath, destPath)
+        }
+    }
+
+    private fun moveFileCustom(context: Context, srcPath: String, destPath: String): ActionResult {
+        return try {
+            val root = customFolderRoot(context)
+            val src = findDocumentByPath(root, cleanRelativePath(srcPath))
+            if (src == null || !src.exists()) {
+                return ActionResult(false, null, "Source path does not exist: $srcPath")
+            }
+            val srcParts = customPathSegments(srcPath)
+            val destParts = customPathSegments(destPath)
+            // A rename is safe here, but on case-insensitive storage a copy would write the file onto itself.
+            val caseOnly = srcParts.isNotEmpty() && srcParts != destParts && srcParts.dropLast(1) == destParts.dropLast(1) &&
+                srcParts.last().equals(destParts.lastOrNull(), ignoreCase = true)
+            if (caseOnly) {
+                return if (src.renameTo(destParts.last())) {
+                    ActionResult(true, "Moved from $srcPath to $destPath!", null)
+                } else {
+                    ActionResult(false, null, "Couldn't rename $srcPath to $destPath")
+                }
+            }
+            documentOverlapError(srcParts, destParts, srcPath, destPath)?.let { return ActionResult(false, null, it) }
+            copyDocumentTo(context, src, root, destParts)
+            if (src.delete()) {
+                ActionResult(true, "Moved from $srcPath to $destPath!", null)
+            } else {
+                ActionResult(false, null, "Copied to $destPath, but couldn't fully delete the source: $srcPath")
+            }
+        } catch (e: Exception) {
+            ActionResult(false, null, "Couldn't move file in your chosen folder: ${e.localizedMessage}")
+        }
+    }
+
+    private fun moveFileLocal(context: Context, srcPath: String, destPath: String): ActionResult {
         return try {
             val src = resolveFile(context, srcPath)
             val dest = resolveFile(context, destPath)
@@ -483,6 +537,43 @@ object StorageWorkspaceProvider {
     }
 
     fun zipFiles(context: Context, srcPath: String, zipFilePath: String): ActionResult {
+        mixedBackendError(context, srcPath, zipFilePath)?.let { return it }
+        return if (shouldUseCustomFolder(context, srcPath)) {
+            zipFilesCustom(context, srcPath, zipFilePath)
+        } else {
+            zipFilesLocal(context, srcPath, zipFilePath)
+        }
+    }
+
+    private fun zipFilesCustom(context: Context, srcPath: String, zipFilePath: String): ActionResult {
+        return try {
+            val root = customFolderRoot(context)
+            val src = findDocumentByPath(root, cleanRelativePath(srcPath))
+            if (src == null || !src.exists()) {
+                return ActionResult(false, null, "Source path does not exist: $srcPath")
+            }
+            val zipParts = customPathSegments(zipFilePath)
+            if (zipParts.isEmpty()) {
+                return ActionResult(false, null, "Zip file can't be the custom folder itself: '$zipFilePath'")
+            }
+            if (zipParts.isSameOrInside(customPathSegments(srcPath))) {
+                return ActionResult(false, null, "Zip file can't be the source or inside it: $zipFilePath")
+            }
+            val zipDoc = findOrCreateDocumentByPath(root, zipParts.joinToString("/"), isDirectory = false)
+                ?: return ActionResult(false, null, "Couldn't create $zipFilePath in your chosen folder; part of the path may be a file")
+            if (zipDoc.isDirectory) {
+                return ActionResult(false, null, "Path is a directory, not a file: $zipFilePath")
+            }
+            ZipOutputStream(openDocumentOutput(context, zipDoc).buffered()).use { zos ->
+                zipDocument(context, src, src.name ?: "unnamed", zos)
+            }
+            ActionResult(true, "Zipped $srcPath into $zipFilePath!", null)
+        } catch (e: Exception) {
+            ActionResult(false, null, "Couldn't zip files in your chosen folder: ${e.localizedMessage}")
+        }
+    }
+
+    private fun zipFilesLocal(context: Context, srcPath: String, zipFilePath: String): ActionResult {
         return try {
             val src = resolveFile(context, srcPath)
             val zipFile = resolveFile(context, zipFilePath)
@@ -506,6 +597,55 @@ object StorageWorkspaceProvider {
     }
 
     fun unzipFile(context: Context, zipFilePath: String, destDirPath: String): ActionResult {
+        mixedBackendError(context, zipFilePath, destDirPath)?.let { return it }
+        return if (shouldUseCustomFolder(context, zipFilePath)) {
+            unzipFileCustom(context, zipFilePath, destDirPath)
+        } else {
+            unzipFileLocal(context, zipFilePath, destDirPath)
+        }
+    }
+
+    private fun unzipFileCustom(context: Context, zipFilePath: String, destDirPath: String): ActionResult {
+        return try {
+            val root = customFolderRoot(context)
+            val zipDoc = findDocumentByPath(root, cleanRelativePath(zipFilePath))
+            if (zipDoc == null || !zipDoc.exists()) {
+                return ActionResult(false, null, "Zip file does not exist: $zipFilePath")
+            }
+            val destParts = customPathSegments(destDirPath)
+            if (destParts.isEmpty()) {
+                return ActionResult(false, null, "Can't unzip over the custom folder root; name a folder inside it: '$destDirPath'")
+            }
+            val destDir = directoryDocumentAt(root, destParts)
+            ZipInputStream(openDocumentInput(context, zipDoc).buffered()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val parts = pathSegments(entry.name)
+                    if (".." in parts) {
+                        throw SecurityException("ZipSlip: entry '${entry.name}' is outside of target dir")
+                    }
+                    if (entry.isDirectory) {
+                        directoryDocumentAt(destDir, parts)
+                    } else {
+                        val doc = findOrCreateDocumentByPath(destDir, parts.joinToString("/"), isDirectory = false)
+                        if (doc == null || doc.isDirectory) {
+                            throw IOException("Can't write zip entry '${entry.name}'; the path is a folder or part of it is a file")
+                        }
+                        openDocumentOutput(context, doc).use { output ->
+                            zis.copyTo(output)
+                        }
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+            ActionResult(true, "Unzipped $zipFilePath to $destDirPath!", null)
+        } catch (e: Exception) {
+            ActionResult(false, null, "Couldn't unzip file in your chosen folder: ${e.localizedMessage}")
+        }
+    }
+
+    private fun unzipFileLocal(context: Context, zipFilePath: String, destDirPath: String): ActionResult {
         return try {
             val zipFile = resolveFile(context, zipFilePath)
             val destDir = resolveFile(context, destDirPath)
@@ -545,6 +685,17 @@ object StorageWorkspaceProvider {
 
     // ── Helper Utilities ─────────────────────────────────────────────────
 
+    /** The custom folder's root. Throws when it can't be opened: a SAF failure must never reach the workspace. */
+    private fun customFolderRoot(context: Context): DocumentFile =
+        getCustomFolderUri(context)?.let { DocumentFile.fromTreeUri(context, it) }
+            ?: throw IOException("Your chosen folder isn't available")
+
+    /** Refuses a two-path call whose paths would run on different backends. */
+    private fun mixedBackendError(context: Context, firstPath: String, secondPath: String): ActionResult? {
+        if (shouldUseCustomFolder(context, firstPath) == shouldUseCustomFolder(context, secondPath)) return null
+        return ActionResult(false, null, "'$firstPath' and '$secondPath' must both be in your chosen folder or both in the app workspace")
+    }
+
     // lint false positive: these prefixes are only stripped from a typed path string to make it relative; they are never used to open storage.
     @SuppressLint("SdCardPath")
     private fun cleanRelativePath(pathStr: String?): String {
@@ -561,6 +712,8 @@ object StorageWorkspaceProvider {
 
     private fun pathSegments(path: String): List<String> = path.split("/").filter { it.isNotEmpty() && it != "." }
 
+    private fun customPathSegments(pathStr: String?): List<String> = pathSegments(cleanRelativePath(pathStr))
+
     private fun findDocumentByPath(root: DocumentFile, path: String): DocumentFile? {
         var current = root
         for (part in pathSegments(path)) {
@@ -576,6 +729,7 @@ object StorageWorkspaceProvider {
     ): DocumentFile? {
         val parts = pathSegments(path)
         if (parts.isEmpty()) return root
+        if (".." in parts) return null
         var current = root
         for (i in 0 until parts.size - 1) {
             val part = parts[i]
@@ -583,6 +737,7 @@ object StorageWorkspaceProvider {
             if (child == null) {
                 child = current.createDirectory(part) ?: return null
             }
+            if (!child.isDirectory) return null
             current = child
         }
         val leaf = parts.last()
@@ -597,6 +752,20 @@ object StorageWorkspaceProvider {
             current.createFile(mime, leaf)
         }
     }
+
+    private fun directoryDocumentAt(root: DocumentFile, parts: List<String>): DocumentFile {
+        val dir = findOrCreateDocumentByPath(root, parts.joinToString("/"), isDirectory = true)
+        if (dir == null || !dir.isDirectory) {
+            throw IOException("Can't create folder '${parts.joinToString("/")}'; part of the path may be a file")
+        }
+        return dir
+    }
+
+    private fun openDocumentInput(context: Context, doc: DocumentFile): InputStream =
+        context.contentResolver.openInputStream(doc.uri) ?: throw IOException("Could not open file stream: ${doc.name}")
+
+    private fun openDocumentOutput(context: Context, doc: DocumentFile): OutputStream =
+        context.contentResolver.openOutputStream(doc.uri, "wt") ?: throw IOException("Could not open file stream to write: ${doc.name}")
 
     private fun guessMimeType(fileName: String): String {
         return when (fileName.substringAfterLast('.', "").lowercase()) {
@@ -626,6 +795,22 @@ object StorageWorkspaceProvider {
         }
     }
 
+    /** [overlapError] for custom folder paths, given as path segments under the folder's root. */
+    private fun documentOverlapError(src: List<String>, dest: List<String>, srcPath: String, destPath: String): String? {
+        val destInSrc = dest.isSameOrInside(src)
+        val srcInDest = src.isSameOrInside(dest)
+        return when {
+            destInSrc && srcInDest -> "Source and destination are the same path: $srcPath"
+            destInSrc -> "Destination is inside the source: $destPath is in $srcPath"
+            srcInDest -> "Source is inside the destination: $srcPath is in $destPath"
+            else -> null
+        }
+    }
+
+    // Ignores case because a chosen folder is usually on external storage, which is case-insensitive on Android.
+    private fun List<String>.isSameOrInside(other: List<String>): Boolean =
+        size >= other.size && other.indices.all { this[it].equals(other[it], ignoreCase = true) }
+
     // Ignores case because the workspace lives on external storage, which is case-insensitive on Android.
     private fun File.isSameOrInside(other: File): Boolean =
         File(canonicalPath.lowercase(Locale.ROOT)).startsWith(File(other.canonicalPath.lowercase(Locale.ROOT)))
@@ -647,6 +832,50 @@ object StorageWorkspaceProvider {
                     input.copyTo(output)
                 }
             }
+        }
+    }
+
+    private fun copyDocumentTo(context: Context, src: DocumentFile, root: DocumentFile, destParts: List<String>) {
+        if (".." in destParts) {
+            throw SecurityException("Path traversal attempt detected: ${destParts.joinToString("/")}")
+        }
+        copyDocument(context, src, directoryDocumentAt(root, destParts.dropLast(1)), destParts.last())
+    }
+
+    private fun copyDocument(context: Context, src: DocumentFile, destParent: DocumentFile, name: String) {
+        val existing = destParent.findFile(name)
+        if (src.isDirectory) {
+            // List first: a destination inside src must not show up as one of its children.
+            val children = src.listFiles()
+            val dir = existing ?: destParent.createDirectory(name) ?: throw IOException("Can't create folder: $name")
+            if (!dir.isDirectory) throw IOException("Can't copy a folder over a file: $name")
+            children.forEach { child ->
+                copyDocument(context, child, dir, child.name ?: throw IOException("Unnamed file in ${src.name}"))
+            }
+        } else {
+            val file = existing ?: destParent.createFile(guessMimeType(name), name) ?: throw IOException("Can't create file: $name")
+            if (file.isDirectory) throw IOException("Can't copy a file over a folder: $name")
+            openDocumentInput(context, src).use { input ->
+                openDocumentOutput(context, file).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
+
+    private fun zipDocument(context: Context, doc: DocumentFile, entryPath: String, zos: ZipOutputStream) {
+        if (doc.isDirectory) {
+            zos.putNextEntry(ZipEntry("$entryPath/"))
+            zos.closeEntry()
+            doc.listFiles().forEach { child ->
+                zipDocument(context, child, "$entryPath/${child.name ?: throw IOException("Unnamed file in ${doc.name}")}", zos)
+            }
+        } else {
+            zos.putNextEntry(ZipEntry(entryPath))
+            openDocumentInput(context, doc).use { input ->
+                input.copyTo(zos)
+            }
+            zos.closeEntry()
         }
     }
 
