@@ -77,6 +77,9 @@ class MemoryManager @Inject constructor(
             .filterNot { it.key.startsWith(CONTACT_PREF_PREFIX) }
             // Notification patterns reach the prompt through getLearnedPatterns below.
             .filterNot { it.key.startsWith(NotificationIntelligence.PATTERN_PREFIX) }
+            // Knowledge-graph rows are raw node JSON; the growth section below already summarises
+            // the graph with caps, so dumping them here too would only grow the prompt.
+            .filterNot { it.key.startsWith(PKG_NODE_PREFIX) || it.key == PKG_RELATION_KEY }
             .filter { memoryExtractor.shouldStoreInSemanticMemory(it.key) && memoryExtractor.shouldStoreInSemanticMemory(it.value) }
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
@@ -345,6 +348,8 @@ class MemoryManager @Inject constructor(
 
     private companion object {
         const val CONTACT_PREF_PREFIX = "contact_pref_"
+        const val PKG_NODE_PREFIX = "pkg_node_"
+        const val PKG_RELATION_KEY = "pkg_relations_index"
     }
 }
 

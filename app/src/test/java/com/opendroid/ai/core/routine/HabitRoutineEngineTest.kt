@@ -7,6 +7,9 @@ import com.opendroid.ai.core.agent.ActionSequenceExecutor
 import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.core.memory.WorkingMemory
+import com.opendroid.ai.core.memory.graph.KnowledgeCategory
+import com.opendroid.ai.core.memory.graph.KnowledgeNode
+import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
 import com.opendroid.ai.core.security.SensitiveMemoryStore
 import com.opendroid.ai.data.db.dao.*
@@ -16,6 +19,9 @@ import com.opendroid.ai.data.repository.MemoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -32,6 +38,7 @@ class HabitRoutineEngineTest {
     private lateinit var executedActions: MutableList<String>
     private lateinit var actionSequenceExecutor: ActionSequenceExecutor
     private lateinit var engine: HabitRoutineEngine
+    private val nodeJson = Json { ignoreUnknownKeys = true }
 
     @Before
     fun setUp() {
@@ -80,7 +87,116 @@ class HabitRoutineEngineTest {
 
     @Test
     fun `detects repeated weekday morning pattern for Gmail, Calendar, and Slack`() = runBlocking {
-        // Simulate 4 weekday mornings around 9:00 AM where user opens Gmail -> Calendar -> Slack -> Chrome
+        seedWeekdayMorningEvents()
+
+        val routines = engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
+        assertFalse("Should have detected recurring routine", routines.isEmpty())
+
+        val morningRoutine = routines.firstOrNull { it.name == "Morning Routine" }
+        assertNotNull("Morning Routine must be detected", morningRoutine)
+        assertEquals("Every weekday at 9:00 AM", morningRoutine!!.triggerLabel)
+        assertEquals("0 9 * * 1-5", morningRoutine.triggerCron)
+        assertEquals(RoutineStatus.SUGGESTED, morningRoutine.status)
+        assertTrue(morningRoutine.suggestionMessage.contains("usually do these tasks every weekday morning"))
+
+        // Check proposed steps include calendar, meetings summary, notifications, task list, briefing
+        val steps = morningRoutine.suggestedSteps
+        assertTrue("Must have synthesized automation steps", steps.size >= 5)
+        assertTrue(steps.any { it.description.contains("Read calendar", ignoreCase = true) })
+        assertTrue(steps.any { it.description.contains("Summarize today's meetings", ignoreCase = true) })
+        assertTrue(steps.any { it.description.contains("notifications", ignoreCase = true) })
+        assertTrue(steps.any { it.description.contains("task list", ignoreCase = true) })
+        assertTrue(steps.any { it.description.contains("morning briefing", ignoreCase = true) })
+    }
+
+    @Test
+    fun `repeated detection keeps a single memory per routine`() = runBlocking {
+        seedWeekdayMorningEvents()
+
+        repeat(5) {
+            engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
+            Thread.sleep(20) // a fresh clock tick per run, as on a device (Windows ticks are ~16 ms)
+        }
+
+        assertEquals(1, nodesForRoutine("routine_weekday_morning").size)
+    }
+
+    @Test
+    fun `repeated detection does not push the user's own memories out of the prompt`() = runBlocking {
+        personalGrowthEngine.recordExplicitMemory(label = "Favourite food", summary = "Pizza")
+        seedWeekdayMorningEvents()
+
+        repeat(20) {
+            Thread.sleep(20)
+            engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
+        }
+
+        assertTrue(personalGrowthEngine.generateSynthesizedContext().contains("Favourite food"))
+    }
+
+    @Test
+    fun `approving a detected routine updates its memory instead of adding one`() = runBlocking {
+        seedWeekdayMorningEvents()
+        engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
+
+        engine.approveRoutine("routine_weekday_morning")
+
+        val nodes = nodesForRoutine("routine_weekday_morning")
+        assertEquals(1, nodes.size)
+        assertTrue(nodes.single().summary.contains("User approved"))
+        assertNotNull(nodes.single().properties["macroId"])
+    }
+
+    @Test
+    fun `legacy duplicate routine memories collapse to the newest one`() = runBlocking {
+        for (i in 1..3) {
+            memoryDao.insertOrUpdateMemory(legacyRoutineRow("routine_weekday_morning", "Morning Routine v$i", 1_000L * i))
+        }
+        memoryDao.insertOrUpdateMemory(legacyRoutineRow("routine_daily_evening", "Evening Wrap-up", 500L))
+        personalGrowthEngine.recordExplicitMemory(label = "Favourite food", summary = "Pizza")
+
+        personalGrowthEngine.pruneDuplicateRoutineMemories()
+
+        val morning = nodesForRoutine("routine_weekday_morning")
+        assertEquals(1, morning.size)
+        assertEquals("Morning Routine v3", morning.single().label)
+        assertEquals(1, nodesForRoutine("routine_daily_evening").size)
+        assertTrue(personalGrowthEngine.getSnapshot().nodes.values.any { it.label == "Favourite food" })
+        assertTrue(memoryDao.getAllMemories().none { it.key.startsWith("pkg_node_explicit_morning") })
+
+        // A later detection reuses the migrated node rather than adding another.
+        seedWeekdayMorningEvents()
+        engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
+        assertEquals(1, nodesForRoutine("routine_weekday_morning").size)
+    }
+
+    private suspend fun nodesForRoutine(routineId: String): List<KnowledgeNode> =
+        memoryDao.getAllMemories()
+            .filter { it.key.startsWith("pkg_node_") }
+            .map { nodeJson.decodeFromString<KnowledgeNode>(it.value) }
+            .filter { it.properties["routineId"] == routineId }
+
+    private fun legacyRoutineRow(routineId: String, label: String, updatedAt: Long): MemoryEntity {
+        val id = "explicit_${label.lowercase().replace(Regex("[^a-z0-9_]"), "_")}_$updatedAt"
+        val node = KnowledgeNode(
+            id = id,
+            label = label,
+            category = KnowledgeCategory.TASK_ROUTINE,
+            tier = MemoryTier.LONG_TERM,
+            summary = "Detected routine: $label",
+            properties = mapOf("routineId" to routineId, "confidence" to "0.6"),
+            lastUpdated = updatedAt
+        )
+        return MemoryEntity(
+            key = "pkg_node_$id",
+            value = nodeJson.encodeToString(node),
+            type = "SEMANTIC",
+            timestamp = updatedAt
+        )
+    }
+
+    // 4 weekday mornings around 9:00 AM where the user opens Gmail -> Calendar -> Slack
+    private suspend fun seedWeekdayMorningEvents() {
         val baseCal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 9)
             set(Calendar.MINUTE, 0)
@@ -134,25 +250,6 @@ class HabitRoutineEngineTest {
                 )
             )
         }
-
-        val routines = engine.detectRoutines(lookbackDays = 14, minRepetitions = 3)
-        assertFalse("Should have detected recurring routine", routines.isEmpty())
-
-        val morningRoutine = routines.firstOrNull { it.name == "Morning Routine" }
-        assertNotNull("Morning Routine must be detected", morningRoutine)
-        assertEquals("Every weekday at 9:00 AM", morningRoutine!!.triggerLabel)
-        assertEquals("0 9 * * 1-5", morningRoutine.triggerCron)
-        assertEquals(RoutineStatus.SUGGESTED, morningRoutine.status)
-        assertTrue(morningRoutine.suggestionMessage.contains("usually do these tasks every weekday morning"))
-
-        // Check proposed steps include calendar, meetings summary, notifications, task list, briefing
-        val steps = morningRoutine.suggestedSteps
-        assertTrue("Must have synthesized automation steps", steps.size >= 5)
-        assertTrue(steps.any { it.description.contains("Read calendar", ignoreCase = true) })
-        assertTrue(steps.any { it.description.contains("Summarize today's meetings", ignoreCase = true) })
-        assertTrue(steps.any { it.description.contains("notifications", ignoreCase = true) })
-        assertTrue(steps.any { it.description.contains("task list", ignoreCase = true) })
-        assertTrue(steps.any { it.description.contains("morning briefing", ignoreCase = true) })
     }
 
     @Test
