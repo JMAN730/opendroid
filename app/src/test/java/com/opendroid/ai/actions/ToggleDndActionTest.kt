@@ -64,22 +64,58 @@ class ToggleDndActionTest {
         assertEquals("Do Not Disturb didn't turn on.", result.error)
     }
 
+    @Test
+    fun `waits for a write the system applies asynchronously before reporting`() = runBlocking {
+        for ((state, start) in listOf(
+            "on" to NotificationManager.INTERRUPTION_FILTER_ALL,
+            "off" to NotificationManager.INTERRUPTION_FILTER_PRIORITY
+        )) {
+            val controller = FakeDndController(start, staleReadsAfterWrite = 3)
+
+            val result = actionFor(controller).execute(mapOf("state" to state), context)
+
+            assertTrue("state=$state", result.success)
+            assertEquals("state=$state", "Do Not Disturb is $state.", result.data)
+        }
+    }
+
     private fun actionFor(controller: FakeDndController) = ToggleDndAction(
         controllerProvider = { controller },
-        launchIntent = { _, _ -> error("settings should not be opened") }
+        launchIntent = { _, _ -> error("settings should not be opened") },
+        settleDelay = {}
     )
 
     private class FakeDndController(
         var filter: Int,
-        private val applyWrites: Boolean = true
+        private val applyWrites: Boolean = true,
+        private val staleReadsAfterWrite: Int = 0
     ) : DndController {
         val writes = mutableListOf<Int>()
+        private var pending: Int? = null
+        private var staleReadsLeft = 0
 
         override fun isPolicyAccessGranted(): Boolean = true
-        override fun currentInterruptionFilter(): Int = filter
+        override fun currentInterruptionFilter(): Int {
+            val queued = pending
+            if (queued != null) {
+                if (staleReadsLeft > 0) {
+                    staleReadsLeft--
+                } else {
+                    filter = queued
+                    pending = null
+                }
+            }
+            return filter
+        }
         override fun setInterruptionFilter(filter: Int) {
             writes += filter
-            if (applyWrites) this.filter = filter
+            if (!applyWrites) return
+            if (staleReadsAfterWrite == 0) {
+                this.filter = filter
+            } else {
+                pending = filter
+                staleReadsLeft = staleReadsAfterWrite
+            }
         }
     }
 }
