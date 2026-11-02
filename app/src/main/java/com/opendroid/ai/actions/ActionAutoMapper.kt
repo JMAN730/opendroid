@@ -630,7 +630,9 @@ class ActionAutoMapper @Inject constructor() {
         for (rule in semanticRules) {
             val allKeywordsMatch = rule.keywords.all { normalized.contains(it) }
             val noExcludesMatch = rule.excludeKeywords.none { normalized.contains(it) }
-            val requiredWordMatch = rule.requiredWords.isEmpty() || hasWord(normalized, rule.requiredWords)
+            // A read word only counts when the name isn't a send: "SEND_SMS_TO_JOHN_READ" names its recipient.
+            val requiredWordMatch = rule.requiredWords.isEmpty() ||
+                (hasWord(normalized, rule.requiredWords) && !namesTheAct(action, params, SEND_ACT))
             if (allKeywordsMatch && noExcludesMatch && requiredWordMatch &&
                 (rule.namedAct == null || namesTheAct(action, params, rule.namedAct))
             ) {

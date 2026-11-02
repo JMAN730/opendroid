@@ -245,6 +245,19 @@ class ActionAutoMapperTest {
     }
 
     @Test
+    fun `a read word inside the recipient's name does not turn a send into a read`() {
+        val johnRead = mapOf("contact" to "John Read")
+        mapOf(
+            "SEND_SMS_TO_JOHN_READ" to "SEND_SMS",
+            "SEND_WHATSAPP_TO_JOHN_READ" to "SEND_WHATSAPP",
+            "SEND_EMAIL_TO_JOHN_READ" to "SEND_EMAIL",
+            "SMS_TO_JOHN_READ" to "SEND_SMS"
+        ).forEach { (name, expected) ->
+            assertEquals(name, expected, map(name, johnRead).mappedAction)
+        }
+    }
+
+    @Test
     fun `the canonical name for history uses the step's params, as execution does`() {
         val bob = mapOf("contact" to "Bob", "to" to "bob@example.com", "subject" to "Hi", "body" to "Secret")
         assertEquals("SEND_EMAIL", map("EMAIL_BOB", bob).mappedAction)
