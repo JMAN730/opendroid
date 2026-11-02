@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.telephony.TelephonyManager
 import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.accessibility.CallFlowVerifier
 import com.opendroid.ai.actions.base.ActionResult
@@ -64,7 +65,8 @@ class MakeVideoCallActionTest {
 
     @Test
     fun `single match opens the WhatsApp chat with their number`() = runBlocking {
-        FakeContactsProvider.rows += FakeContactRow("Sam Lee", "555 0101", "key-lee")
+        setSimRegion("us")
+        FakeContactsProvider.rows += FakeContactRow("Sam Lee", "(479) 555-0142", "key-lee")
 
         val result = videoCall("sam")
 
@@ -72,7 +74,7 @@ class MakeVideoCallActionTest {
         assertEquals("Video call to sam is starting!", result.data)
         val intent = context.startedIntents.single()
         assertEquals("com.whatsapp", intent.`package`)
-        assertEquals("5550101", intent.data?.getQueryParameter("phone"))
+        assertEquals("14795550142", intent.data?.getQueryParameter("phone"))
     }
 
     @Test
@@ -90,6 +92,7 @@ class MakeVideoCallActionTest {
 
     @Test
     fun `saved pick says which contact was used`() = runBlocking {
+        setSimRegion("in")
         FakeContactsProvider.rows += FakeContactRow("Dad", "9876543210", "key-dad")
         val resolver = SavedPickResolver(context, Contact("Dad", "9876543210", lookupKey = "key-dad"))
 
@@ -127,6 +130,10 @@ class MakeVideoCallActionTest {
         }),
         TelegramAutoSender { false }
     ).getActions()
+
+    private fun setSimRegion(region: String) {
+        shadowOf(base.getSystemService(TelephonyManager::class.java)).setSimCountryIso(region)
+    }
 
     @Suppress("DEPRECATION")
     private fun installDialer() {
