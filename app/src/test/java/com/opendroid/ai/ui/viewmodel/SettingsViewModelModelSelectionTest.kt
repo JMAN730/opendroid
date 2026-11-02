@@ -128,6 +128,28 @@ class SettingsViewModelModelSelectionTest {
         }
     }
 
+    @Test
+    fun `a later provider switch is not overwritten by an earlier one that flushed a model pick`() {
+        runBlocking { settings.updateConfig { LLMConfig(activeProvider = "OpenAI", activeModel = "gpt-4o") } }
+        val viewModel = viewModel()
+        pumpUntil("initial config loaded") { viewModel.llmConfig.value.activeProvider == "OpenAI" }
+
+        viewModel.updateActiveModel("gpt-4o-mini")
+        viewModel.updateActiveProvider("Groq")
+        viewModel.updateActiveProvider("Google Gemini")
+
+        pumpUntil("pick flushed") { stored().selectedModelFor("OpenAI") == "gpt-4o-mini" }
+        // Let every launched save land, in whatever order it resumes.
+        repeat(10) {
+            pump(Duration.ofMillis(200))
+            Thread.sleep(20)
+        }
+
+        assertEquals("Google Gemini", stored().activeProvider)
+        assertEquals("gpt-4o-mini", stored().selectedModelFor("OpenAI"))
+        assertEquals("Google Gemini", viewModel.llmConfig.value.activeProvider)
+    }
+
     private fun viewModel() = SettingsViewModel(
         context = context,
         settingsRepository = settings,
