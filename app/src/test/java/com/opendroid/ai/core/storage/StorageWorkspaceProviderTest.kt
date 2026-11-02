@@ -1,7 +1,13 @@
 package com.opendroid.ai.core.storage
 
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
+import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
+import android.provider.DocumentsContract
 import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.actions.AdvancedControlActions
 import kotlinx.coroutines.runBlocking
@@ -14,6 +20,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
@@ -421,5 +428,253 @@ class StorageWorkspaceProviderTest {
         assertTrue(result.error, result.success)
         assertEquals("inner", File(dest, "mmm/inner.txt").readText())
         assertFalse(notes.exists())
+    }
+
+    // ── Confinement to the workspace ─────────────────────────────────────
+
+    /** The path as an action would send it. Windows drops the drive so the path still starts with "/". */
+    private val File.actionPath: String
+        get() = absolutePath.substringAfter(':').replace('\\', '/')
+
+    private fun givenModelFile(): File =
+        File(context.getExternalFilesDir(null), "models/model.litertlm").apply {
+            parentFile?.mkdirs()
+            writeText("model")
+        }
+
+    private fun givenDatastoreFile(): File =
+        File(context.filesDir, "datastore/settings.preferences_pb").apply {
+            parentFile?.mkdirs()
+            writeText("settings")
+        }
+
+    @Test
+    fun `delete by absolute path leaves the downloaded models alone`() {
+        val model = givenModelFile()
+
+        val fileResult = StorageWorkspaceProvider.deleteFile(context, model.actionPath)
+        val dirResult = StorageWorkspaceProvider.deleteFile(context, model.parentFile!!.actionPath)
+
+        assertFalse(fileResult.data, fileResult.success)
+        assertFalse(dirResult.data, dirResult.success)
+        assertEquals("model", model.readText())
+    }
+
+    @Test
+    fun `write and delete by absolute path leave the settings datastore alone`() {
+        val datastore = givenDatastoreFile()
+
+        val writeResult = StorageWorkspaceProvider.writeFile(context, datastore.actionPath, "pwned")
+        val deleteResult = StorageWorkspaceProvider.deleteFile(context, datastore.actionPath)
+
+        assertFalse(writeResult.data, writeResult.success)
+        assertFalse(deleteResult.data, deleteResult.success)
+        assertEquals("settings", datastore.readText())
+    }
+
+    @Test
+    fun `read by absolute path can't see app private files`() {
+        val result = StorageWorkspaceProvider.readFile(context, givenDatastoreFile().actionPath)
+
+        assertFalse(result.data, result.success)
+        assertNull(result.data)
+    }
+
+    @Test
+    fun `copy move zip and unzip can't reach app private directories`() {
+        val notes = givenNotesFolder()
+        val model = givenModelFile()
+        val outside = File(context.getExternalFilesDir(null), "outside")
+        assertTrue(StorageWorkspaceProvider.zipFiles(context, "notes", "notes.zip").success)
+
+        val results = listOf(
+            StorageWorkspaceProvider.copyFile(context, "notes", outside.actionPath),
+            StorageWorkspaceProvider.copyFile(context, model.actionPath, "stolen"),
+            StorageWorkspaceProvider.moveFile(context, "notes", outside.actionPath),
+            StorageWorkspaceProvider.zipFiles(context, "notes", File(outside, "n.zip").actionPath),
+            StorageWorkspaceProvider.unzipFile(context, "notes.zip", outside.actionPath),
+        )
+
+        results.forEach { assertFalse(it.data, it.success) }
+        assertFalse(outside.exists())
+        assertFalse(File(workspace, "stolen").exists())
+        assertTrue(notes.exists())
+    }
+
+    @Test
+    fun `a sibling directory sharing the workspace name prefix is outside the workspace`() {
+        val sibling = File(workspace.parentFile, "${workspace.name}X").apply { mkdirs() }
+        val victim = File(sibling, "victim.txt").apply { writeText("keep") }
+        try {
+            val relative = StorageWorkspaceProvider.deleteFile(context, "../${sibling.name}/victim.txt")
+            val absolute = StorageWorkspaceProvider.deleteFile(context, victim.actionPath)
+
+            assertFalse(relative.data, relative.success)
+            assertFalse(absolute.data, absolute.success)
+            assertEquals("keep", victim.readText())
+        } finally {
+            sibling.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a sibling directory sharing the files dir name prefix is outside the workspace`() {
+        val sibling = File(context.filesDir.parentFile, "${context.filesDir.name}_other").apply { mkdirs() }
+        val victim = File(sibling, "victim.txt").apply { writeText("keep") }
+        try {
+            val result = StorageWorkspaceProvider.deleteFile(context, victim.actionPath)
+
+            assertFalse(result.data, result.success)
+            assertEquals("keep", victim.readText())
+        } finally {
+            sibling.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `absolute paths outside shared storage are rejected instead of flattened into the workspace`() {
+        for (path in listOf("/foo/bar.txt", "/sdcardfoo/bar.txt", "/sdcard/../../etc/passwd", "/")) {
+            val result = StorageWorkspaceProvider.writeFile(context, path, "x")
+
+            assertFalse(path, result.success)
+        }
+        assertFalse(File(workspace, "bar.txt").exists())
+        assertFalse(File(workspace, "foo/bar.txt").exists())
+    }
+
+    @Test
+    fun `shared storage paths still map into the workspace`() {
+        val fromSdcard = StorageWorkspaceProvider.writeFile(context, "/sdcard/Download/x.txt", "a")
+        val fromEmulated = StorageWorkspaceProvider.writeFile(context, "/storage/emulated/0/Download/y.txt", "b")
+
+        assertTrue(fromSdcard.error, fromSdcard.success)
+        assertTrue(fromEmulated.error, fromEmulated.success)
+        assertEquals("a", File(workspace, "Download/x.txt").readText())
+        assertEquals("b", File(workspace, "Download/y.txt").readText())
+    }
+
+    @Test
+    fun `an absolute path inside the workspace still works`() {
+        val notes = givenNotesFolder()
+
+        val result = StorageWorkspaceProvider.readFile(context, File(notes, "todo.txt").actionPath)
+
+        assertTrue(result.error, result.success)
+        assertEquals("todo", result.data)
+    }
+
+    // ── Refusing the workspace root ──────────────────────────────────────
+
+    private val rootLikePaths = listOf(
+        "", " ", ".", "./", "/", "/sdcard", "/sdcard/", "/storage/emulated/0", "/storage/emulated/0/", "notes/..",
+    )
+
+    @Test
+    fun `delete of a root like path deletes nothing`() {
+        givenNotesFolder()
+
+        for (path in rootLikePaths) {
+            val result = StorageWorkspaceProvider.deleteFile(context, path)
+
+            assertFalse("'$path'", result.success)
+            assertNotesFolderIntact()
+        }
+    }
+
+    @Test
+    fun `the workspace root can't be a copy move zip or unzip destination`() {
+        givenNotesFolder()
+        File(workspace, "report.txt").writeText("report")
+        assertTrue(StorageWorkspaceProvider.zipFiles(context, "notes", "notes.zip").success)
+        File(workspace, "notes/todo.txt").writeText("edited")
+
+        for (path in listOf("", ".", "/sdcard")) {
+            val results = listOf(
+                StorageWorkspaceProvider.copyFile(context, "report.txt", path),
+                StorageWorkspaceProvider.moveFile(context, "report.txt", path),
+                StorageWorkspaceProvider.zipFiles(context, "notes", path),
+                StorageWorkspaceProvider.unzipFile(context, "notes.zip", path),
+            )
+
+            results.forEach { assertFalse("'$path': ${it.data}", it.success) }
+        }
+        assertEquals("edited", File(workspace, "notes/todo.txt").readText())
+        assertEquals("report", File(workspace, "report.txt").readText())
+    }
+
+    @Test
+    fun `the workspace root can't be moved away`() {
+        givenNotesFolder()
+
+        val result = StorageWorkspaceProvider.moveFile(context, ".", "elsewhere")
+
+        assertFalse(result.data, result.success)
+        assertNotesFolderIntact()
+    }
+
+    @Test
+    fun `listing the workspace root still works`() {
+        givenNotesFolder()
+
+        val result = StorageWorkspaceProvider.listFiles(context, ".")
+
+        assertTrue(result.error, result.success)
+        assertTrue(result.data, result.data!!.contains("notes"))
+    }
+
+    // ── Refusing the custom folder root ──────────────────────────────────
+
+    /** Answers every document query with one row, and records what the app asks it to change. */
+    class FakeDocumentsProvider : ContentProvider() {
+        val calls = mutableListOf<String>()
+
+        override fun onCreate() = true
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor = MatrixCursor(projection ?: arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)).apply {
+            addRow(arrayOfNulls<Any>(columnCount).also { it[0] = "root" })
+        }
+
+        override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+            calls += method
+            return Bundle()
+        }
+
+        override fun getType(uri: Uri): String? = null
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
+        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
+    }
+
+    @Test
+    fun `delete of a root like path can't delete the custom folder`() {
+        val authority = "com.opendroid.test.documents"
+        val provider = Robolectric.setupContentProvider(FakeDocumentsProvider::class.java, authority)
+        val tree = DocumentsContract.buildTreeDocumentUri(authority, "root")
+        StorageWorkspaceProvider.setCustomFolderUri(context, tree)
+
+        for (path in listOf("", " ", ".", "./", "/sdcard", "/sdcard/", "/storage/emulated/0", "/storage/emulated/0/")) {
+            val result = StorageWorkspaceProvider.deleteFile(context, path)
+
+            assertFalse("'$path'", result.success)
+            assertEquals("'$path'", emptyList<String>(), provider.calls)
+        }
+    }
+
+    @Test
+    fun `absolute paths outside shared storage don't reach the custom folder`() {
+        val authority = "com.opendroid.test.documents"
+        Robolectric.setupContentProvider(FakeDocumentsProvider::class.java, authority)
+        StorageWorkspaceProvider.setCustomFolderUri(context, DocumentsContract.buildTreeDocumentUri(authority, "root"))
+
+        assertFalse(StorageWorkspaceProvider.shouldUseCustomFolder(context, "/"))
+        assertFalse(StorageWorkspaceProvider.shouldUseCustomFolder(context, "/foo/bar.txt"))
+        assertFalse(StorageWorkspaceProvider.shouldUseCustomFolder(context, givenModelFile().actionPath))
+        assertTrue(StorageWorkspaceProvider.shouldUseCustomFolder(context, "/sdcard/Download/x.txt"))
     }
 }

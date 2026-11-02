@@ -264,4 +264,31 @@ class ActionSchemaTest {
         assertEquals("wifi_password", params["key"])
         assertEquals("secret123", params["secret"])
     }
+
+    @Test
+    fun `blank required path params are reported as missing`() {
+        val cases = mapOf(
+            "LIST_FILES" to mapOf("path" to ""),
+            "READ_FILE" to mapOf("filePath" to ""),
+            "WRITE_FILE" to mapOf("filePath" to "  ", "content" to "x"),
+            "DELETE_FILE" to mapOf("filePath" to ""),
+            "CREATE_DIRECTORY" to mapOf("path" to " "),
+            "COPY_FILE" to mapOf("sourcePath" to "a", "destPath" to ""),
+            "MOVE_FILE" to mapOf("sourcePath" to "", "destPath" to "b"),
+            "ZIP_FILES" to mapOf("sourcePath" to "a", "zipFilePath" to ""),
+            "UNZIP_FILE" to mapOf("zipFilePath" to "a.zip", "destDirPath" to ""),
+        )
+
+        for ((action, params) in cases) {
+            val (result, _) = ActionSchema.validateParams(action, params)
+            assertTrue(action, result is ActionSchema.ValidationResult.MissingParams)
+        }
+    }
+
+    @Test
+    fun `blank non path params stay valid`() {
+        val (result, _) = ActionSchema.validateParams("WRITE_FILE", mapOf("filePath" to "a.txt", "content" to ""))
+
+        assertTrue(result is ActionSchema.ValidationResult.Valid)
+    }
 }
