@@ -1,5 +1,12 @@
 package com.opendroid.ai.core.agent
 
+/**
+ * The user's answer to a prompt: what they said, and the contact they tapped on a picker
+ * card, if that is how they answered. Both travel together through the one completion of
+ * the prompt, so the contact acted on is always the one from the answer that was taken.
+ */
+data class UserReply(val text: String, val contact: Map<String, String>? = null)
+
 /** Resolves the user's answer to a contact picker against that picker's own matches. */
 object ContactPickerSelection {
 
@@ -19,4 +26,7 @@ object ContactPickerSelection {
 
         else -> selectContact(selection, matches.map { it["name"].orEmpty() })?.let { matches[it] }
     }
+
+    fun resolve(reply: UserReply, matches: List<Map<String, String>>): Map<String, String>? =
+        resolve(reply.text, matches, reply.contact)
 }
