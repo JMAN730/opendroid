@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -180,6 +181,119 @@ internal fun normalizePlan(plan: Plan): Plan {
     )
 }
 
+private val planReplyJson = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
+
+/**
+ * Reads the planner's reply as a Plan. A CLARIFY reply is a question for the user, not
+ * an instruction, so an action riding along with it is never turned into a step.
+ */
+internal fun parsePlanFromLlmResponse(raw: String, userGoal: String): Plan {
+    val extracted = extractJsonPayload(raw)
+    val reply = runCatching { planReplyJson.parseToJsonElement(extracted) }.getOrNull()
+    require(!(reply is JsonObject && isClarifyReply(reply))) { "The planner asked a clarifying question" }
+
+    // Prefer wrapper action before unwrapping plan — handles {"action":"...","plan":null}.
+    try {
+        val root = planReplyJson.parseToJsonElement(extracted)
+        if (root is JsonObject) {
+            val action = root["action"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() && it != "null" }
+            val planElement = root["plan"]
+            val hasPlanObject = planElement is JsonObject
+
+            if (action != null && !hasPlanObject) {
+                val params = jsonObjectToStringMap(root["params"]?.jsonObject)
+                return buildSingleStepPlan(userGoal, action, params)
+            }
+
+            if (hasPlanObject) {
+                return normalizePlan(planReplyJson.decodeFromString<Plan>(planElement.toString()))
+            }
+        }
+    } catch (_: Exception) {
+        // Fall through to direct Plan parsing
+    }
+
+    val cleaned = cleanPlanJson(raw)
+    try {
+        return normalizePlan(planReplyJson.decodeFromString<Plan>(cleaned))
+    } catch (_: Exception) {
+        // Continue with wrapper/single-action parsing below
+    }
+
+    try {
+        val root = planReplyJson.parseToJsonElement(cleaned)
+        if (root is JsonObject) {
+            root["plan"]?.let { planElement ->
+                if (planElement is JsonObject) {
+                    try {
+                        return normalizePlan(planReplyJson.decodeFromString<Plan>(planElement.toString()))
+                    } catch (_: Exception) {
+                        // fall through
+                    }
+                }
+            }
+
+            val action = root["action"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+            if (action != null) {
+                val params = jsonObjectToStringMap(root["params"]?.jsonObject)
+                return buildSingleStepPlan(userGoal, action, params)
+            }
+        }
+    } catch (_: Exception) {
+        // fall through
+    }
+
+    throw IllegalArgumentException("Could not parse a valid plan from LLM response")
+}
+
+private fun isClarifyReply(root: JsonObject): Boolean =
+    root["type"]?.jsonPrimitive?.contentOrNull.equals("CLARIFY", ignoreCase = true)
+
+internal fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
+    return Plan(
+        planId = Plan.newId(),
+        goal = goal,
+        estimatedDuration = "instant",
+        estimatedSteps = 1,
+        steps = listOf(
+            PlanStep(
+                stepId = "s1",
+                order = 1,
+                description = "Execute $action",
+                action = action,
+                params = params,
+                fallback = ""
+            )
+        )
+    )
+}
+
+// A JSON null is an absent param, not the text "null": dropped, the dispatcher asks for it.
+private fun jsonObjectToStringMap(obj: JsonObject?): Map<String, String> {
+    if (obj == null) return emptyMap()
+    return obj.filterValues { it !is JsonNull }.mapValues { (_, value) ->
+        value.jsonPrimitive.contentOrNull ?: value.toString().trim('"')
+    }
+}
+
+private fun cleanPlanJson(raw: String): String {
+    val content = extractJsonPayload(raw)
+    try {
+        val jsonElement = planReplyJson.parseToJsonElement(content)
+        if (jsonElement is JsonObject) {
+            val planElement = jsonElement["plan"]
+            // Only unwrap when plan is an object — preserve wrappers with "plan": null.
+            if (planElement is JsonObject) {
+                return planElement.toString()
+            }
+        }
+    } catch (e: Exception) {
+        // Silently ignore parsing errors here and let downstream deserialization report them if needed
+    }
+    return content
+}
+
 sealed interface AgentState {
     object Idle : AgentState
     object Listening : AgentState
@@ -237,7 +351,6 @@ class AgentLoop @Inject constructor(
             android.util.Log.e("AgentLoop", "Uncaught agent task failure: ${e.localizedMessage}", e)
         }
     )
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
     private val queryMutex = Mutex()
 
     // The currently in-flight processQuery/approveProposedPlan job, if any. Tracked so a
@@ -1873,107 +1986,6 @@ class AgentLoop @Inject constructor(
         if (!text.startsWith("Error streaming")) return text
         val technical = text.substringAfter(": ", text)
         return NetworkErrorFormatter.toUserMessage(technical)
-    }
-
-    private fun parsePlanFromLlmResponse(raw: String, userGoal: String): Plan {
-        val extracted = extractJsonPayload(raw)
-
-        // Prefer wrapper action before unwrapping plan — handles {"action":"...","plan":null}.
-        try {
-            val root = json.parseToJsonElement(extracted)
-            if (root is JsonObject) {
-                val action = root["action"]?.jsonPrimitive?.contentOrNull
-                    ?.takeIf { it.isNotBlank() && it != "null" }
-                val planElement = root["plan"]
-                val hasPlanObject = planElement is JsonObject
-
-                if (action != null && !hasPlanObject) {
-                    val params = jsonObjectToStringMap(root["params"]?.jsonObject)
-                    return buildSingleStepPlan(userGoal, action, params)
-                }
-
-                if (hasPlanObject) {
-                    return normalizePlan(json.decodeFromString<Plan>(planElement.toString()))
-                }
-            }
-        } catch (_: Exception) {
-            // Fall through to direct Plan parsing
-        }
-
-        val cleaned = cleanPlanJson(raw)
-        try {
-            return normalizePlan(json.decodeFromString<Plan>(cleaned))
-        } catch (_: Exception) {
-            // Continue with wrapper/single-action parsing below
-        }
-
-        try {
-            val root = json.parseToJsonElement(cleaned)
-            if (root is JsonObject) {
-                root["plan"]?.let { planElement ->
-                    if (planElement is JsonObject) {
-                        try {
-                            return normalizePlan(json.decodeFromString<Plan>(planElement.toString()))
-                        } catch (_: Exception) {
-                            // fall through
-                        }
-                    }
-                }
-
-                val action = root["action"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
-                if (action != null) {
-                    val params = jsonObjectToStringMap(root["params"]?.jsonObject)
-                    return buildSingleStepPlan(userGoal, action, params)
-                }
-            }
-        } catch (_: Exception) {
-            // fall through
-        }
-
-        throw IllegalArgumentException("Could not parse a valid plan from LLM response")
-    }
-
-    private fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
-        return Plan(
-            planId = Plan.newId(),
-            goal = goal,
-            estimatedDuration = "instant",
-            estimatedSteps = 1,
-            steps = listOf(
-                PlanStep(
-                    stepId = "s1",
-                    order = 1,
-                    description = "Execute $action",
-                    action = action,
-                    params = params,
-                    fallback = ""
-                )
-            )
-        )
-    }
-
-    private fun jsonObjectToStringMap(obj: JsonObject?): Map<String, String> {
-        if (obj == null) return emptyMap()
-        return obj.mapValues { (_, value) ->
-            value.jsonPrimitive.contentOrNull ?: value.toString().trim('"')
-        }
-    }
-
-    private fun cleanPlanJson(raw: String): String {
-        val content = extractJsonPayload(raw)
-        try {
-            val jsonElement = json.parseToJsonElement(content)
-            if (jsonElement is JsonObject) {
-                val planElement = jsonElement["plan"]
-                // Only unwrap when plan is an object — preserve wrappers with "plan": null.
-                if (planElement is JsonObject) {
-                    return planElement.toString()
-                }
-            }
-        } catch (e: Exception) {
-            // Silently ignore parsing errors here and let downstream deserialization report them if needed
-        }
-        return content
     }
 
     /**

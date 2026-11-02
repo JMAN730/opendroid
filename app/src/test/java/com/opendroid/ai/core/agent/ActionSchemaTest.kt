@@ -25,6 +25,45 @@ class ActionSchemaTest {
     }
 
     @Test
+    fun `a placeholder or unresolved step reference counts as a missing message`() {
+        listOf(
+            "...", "…", "null", "", "   ", "<message>", "[s1.result]", "<result of s1>",
+            "Weather: {{s1.result}}", "{{s1}}", "\${s1}", "\$\$s2","Forecast: \$s2"
+        ).forEach { message ->
+            val (result, enriched) = ActionSchema.validateParams(
+                "SEND_SMS", mapOf("contact" to "+15551234567", "message" to message)
+            )
+            assertEquals(message, ActionSchema.ValidationResult.MissingParams(listOf("message")), result)
+            assertFalse(message, enriched.containsKey("message"))
+        }
+    }
+
+    @Test
+    fun `a placeholder contact, body or group is missing on every send action`() {
+        val cases = listOf(
+            Triple("SEND_WHATSAPP", mapOf("contact" to "<contact>", "message" to "hi"), "contact"),
+            Triple("SEND_WHATSAPP_GROUP", mapOf("groupName" to "Family", "message" to "..."), "message"),
+            Triple("SEND_TELEGRAM", mapOf("contact" to "@bob", "message" to "{{s1}}"), "message"),
+            Triple("SEND_EMAIL", mapOf("to" to "a@b.c", "subject" to "Hi", "body" to "null"), "body")
+        )
+        cases.forEach { (action, params, missing) ->
+            val (result, _) = ActionSchema.validateParams(action, params)
+            assertEquals(action, ActionSchema.ValidationResult.MissingParams(listOf(missing)), result)
+        }
+    }
+
+    @Test
+    fun `real message text is still valid, dollar amounts and brackets inside included`() {
+        listOf("Weather: Sunny", "I owe you \$5", "Running late [again]", "a < b").forEach { message ->
+            val (result, enriched) = ActionSchema.validateParams(
+                "SEND_SMS", mapOf("contact" to "Mom", "message" to message)
+            )
+            assertTrue(message, result is ActionSchema.ValidationResult.Valid)
+            assertEquals(message, enriched["message"])
+        }
+    }
+
+    @Test
     fun `missing required param is reported`() {
         val (result, _) = ActionSchema.validateParams("OPEN_APP", emptyMap())
         assertTrue(result is ActionSchema.ValidationResult.MissingParams)

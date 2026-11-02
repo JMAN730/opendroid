@@ -1495,7 +1495,16 @@ object ActionSchema {
         val invalid = mutableListOf<ValidationResult.InvalidParam>()
 
         definition.params.forEach { paramDef ->
-            val value = enrichedParams[paramDef.name]
+            val given = enrichedParams[paramDef.name]
+            // A placeholder the model left in, such as "..." or an unresolved "{{s1}}", is
+            // not a value: sent as a message it would go out as that literal text.
+            val value = if (paramDef.required && paramDef.type == ParamType.STRING &&
+                given is String && isPlaceholderValue(given)) {
+                enrichedParams.remove(paramDef.name)
+                null
+            } else {
+                given
+            }
 
             when {
                 // Param provided — validate enum if needed
@@ -1537,6 +1546,23 @@ object ActionSchema {
             missingRequired.isEmpty() -> Pair(ValidationResult.Valid, enrichedParams)
             else -> Pair(ValidationResult.MissingParams(missingRequired), enrichedParams)
         }
+    }
+
+    private val PLACEHOLDER_LITERALS = setOf("null", "...", "…")
+    private val BARE_PLACEHOLDER = Regex("""^(<[^<>]*>|\[[^\[\]]*])$""")
+    // {{s1}}, ${s1}, $$anyId, or $sN: the forms models write for another step's output.
+    private val UNRESOLVED_REFERENCE = Regex("\\{\\{.*?\\}\\}|\\\$\\{[^}]*\\}|\\\$\\\$\\w+|\\\$s\\d+\\b")
+
+    /**
+     * Whether [value] is filler rather than a real value: blank, "null", "...", a bare
+     * "<message>" or "[s1.result]", or a step reference that resolution left in place.
+     */
+    internal fun isPlaceholderValue(value: String): Boolean {
+        val trimmed = value.trim()
+        return trimmed.isEmpty() ||
+            trimmed.lowercase() in PLACEHOLDER_LITERALS ||
+            BARE_PLACEHOLDER.matches(trimmed) ||
+            UNRESOLVED_REFERENCE.containsMatchIn(trimmed)
     }
 
     /** Fix minor enum value variations */
