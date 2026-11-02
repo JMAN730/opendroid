@@ -3,6 +3,7 @@ package com.opendroid.ai.core.storage
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
@@ -13,6 +14,8 @@ import android.provider.DocumentsContract.Document
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -34,6 +37,13 @@ class StorageCustomFolderTest {
         val rootDir: File by lazy { File(context!!.cacheDir, "saf-folder").apply { deleteRecursively(); mkdirs() } }
         var failStreams = false
 
+        /** Children queries of this document throw, the first [failListingTimes] times. */
+        var failListingOf: String? = null
+        var failListingTimes = Int.MAX_VALUE
+
+        /** Children queries of this document report that the provider is still fetching more rows. */
+        var loadingListingOf: String? = null
+
         private fun fileOf(documentId: String) = File(rootDir, documentId.removePrefix("root").trimStart('/'))
 
         override fun onCreate() = true
@@ -47,13 +57,21 @@ class StorageCustomFolderTest {
         ): Cursor {
             val columns = projection ?: arrayOf(Document.COLUMN_DOCUMENT_ID)
             val id = DocumentsContract.getDocumentId(uri)
-            val ids = if (uri.lastPathSegment == "children") {
+            val isListing = uri.lastPathSegment == "children"
+            if (isListing && id == failListingOf && failListingTimes > 0) {
+                failListingTimes--
+                throw IllegalStateException("Provider failed to list $id")
+            }
+            val ids = if (isListing) {
                 fileOf(id).list().orEmpty().map { "$id/$it" }
             } else {
                 listOf(id).filter { fileOf(it).exists() }
             }
             return MatrixCursor(columns).apply {
                 ids.forEach { rowId -> addRow(columns.map { column(rowId, it) }) }
+                if (isListing && id == loadingListingOf) {
+                    extras = Bundle().apply { putBoolean(DocumentsContract.EXTRA_LOADING, true) }
+                }
             }
         }
 
@@ -114,14 +132,15 @@ class StorageCustomFolderTest {
     private lateinit var context: Context
     private lateinit var provider: FolderDocumentsProvider
     private lateinit var workspace: File
+    private val authority = "com.opendroid.test.folder"
+    private val chosenFolder get() = DocumentsContract.buildTreeDocumentUri(authority, "root")
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        val authority = "com.opendroid.test.folder"
         provider = Robolectric.setupContentProvider(FolderDocumentsProvider::class.java, authority)
         provider.rootDir
-        StorageWorkspaceProvider.setCustomFolderUri(context, DocumentsContract.buildTreeDocumentUri(authority, "root"))
+        StorageWorkspaceProvider.setCustomFolderUri(context, chosenFolder)
         workspace = StorageWorkspaceProvider.getDefaultWorkspaceDir(context)
         workspace.deleteRecursively()
         workspace.mkdirs()
@@ -488,5 +507,153 @@ class StorageCustomFolderTest {
         assertFalse(folderFile("report.txt").exists())
         val backup = StorageWorkspaceProvider.readFile(context, "bak/report.txt")
         assertEquals("real", backup.data)
+    }
+
+    // ── A listing that failed is an error, not an empty folder ───────────
+
+    private fun givenDocsFolder() {
+        givenFolderFile("docs/a.txt", "a")
+        givenFolderFile("docs/deep/b.txt", "b")
+    }
+
+    private fun assertDocsFolderIntact() {
+        assertEquals("a", folderFile("docs/a.txt").readText())
+        assertEquals("b", folderFile("docs/deep/b.txt").readText())
+    }
+
+    @Test
+    fun `a move keeps the source when listing the folder or a subfolder fails`() {
+        for (failing in listOf("root/docs", "root/docs/deep")) {
+            givenDocsFolder()
+            provider.failListingOf = failing
+
+            val result = StorageWorkspaceProvider.moveFile(context, "docs", "archive/docs")
+
+            assertFalse(failing, result.success)
+            assertDocsFolderIntact()
+        }
+    }
+
+    @Test
+    fun `a move keeps the source when a listing fails once and then recovers`() {
+        givenDocsFolder()
+        provider.failListingOf = "root/docs"
+        provider.failListingTimes = 1
+
+        val result = StorageWorkspaceProvider.moveFile(context, "docs", "archive/docs")
+
+        assertFalse(result.success)
+        assertDocsFolderIntact()
+    }
+
+    @Test
+    fun `a move keeps the source when the provider is still loading the listing`() {
+        givenDocsFolder()
+        provider.loadingListingOf = "root/docs"
+
+        val result = StorageWorkspaceProvider.moveFile(context, "docs", "archive/docs")
+
+        assertFalse(result.success)
+        assertDocsFolderIntact()
+    }
+
+    @Test
+    fun `copy fails when listing a subfolder fails`() {
+        givenDocsFolder()
+        provider.failListingOf = "root/docs/deep"
+
+        val result = StorageWorkspaceProvider.copyFile(context, "docs", "bak/docs")
+
+        assertFalse(result.success)
+        assertDocsFolderIntact()
+    }
+
+    @Test
+    fun `zip fails when listing a subfolder fails`() {
+        givenDocsFolder()
+        provider.failListingOf = "root/docs/deep"
+
+        val result = StorageWorkspaceProvider.zipFiles(context, "docs", "docs.zip")
+
+        assertFalse(result.success)
+    }
+
+    @Test
+    fun `listing a folder fails instead of calling it empty when the query fails`() {
+        givenDocsFolder()
+        provider.failListingOf = "root/docs"
+
+        val result = StorageWorkspaceProvider.listFiles(context, "docs")
+
+        assertFalse(result.success)
+    }
+
+    // ── A lost grant is an error, whatever other grants are left ─────────
+
+    private fun givenChosenFolderGrantLostWithAnotherGrantLeft() {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        val leftover = DocumentsContract.buildTreeDocumentUri(authority, "previous")
+        context.contentResolver.takePersistableUriPermission(leftover, flags)
+        context.contentResolver.releasePersistableUriPermission(chosenFolder, flags)
+        assertEquals(listOf(leftover), context.contentResolver.persistedUriPermissions.map { it.uri })
+    }
+
+    @Test
+    fun `the chosen folder works while its grant is held alongside another`() {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        context.contentResolver.takePersistableUriPermission(DocumentsContract.buildTreeDocumentUri(authority, "previous"), flags)
+
+        val result = StorageWorkspaceProvider.writeFile(context, "report.txt", "real")
+
+        assertTrue(result.error, result.success)
+        assertEquals("real", folderFile("report.txt").readText())
+        assertWorkspaceEmpty()
+    }
+
+    @Test
+    fun `no file action reaches the workspace after the chosen folder's grant is lost`() {
+        val report = givenWorkspaceFile("report.txt", "stale")
+        val zip = givenWorkspaceFile("in.zip", "not read")
+        val before = workspace.walkTopDown().map { it.path }.toList()
+        givenChosenFolderGrantLostWithAnotherGrantLeft()
+
+        val results = mapOf(
+            "list" to StorageWorkspaceProvider.listFiles(context, null),
+            "read" to StorageWorkspaceProvider.readFile(context, "report.txt"),
+            "write" to StorageWorkspaceProvider.writeFile(context, "report.txt", "lost"),
+            "delete" to StorageWorkspaceProvider.deleteFile(context, "report.txt"),
+            "mkdir" to StorageWorkspaceProvider.createDirectory(context, "dir"),
+            "copy" to StorageWorkspaceProvider.copyFile(context, "report.txt", "bak/report.txt"),
+            "move" to StorageWorkspaceProvider.moveFile(context, "report.txt", "bak/report.txt"),
+            "zip" to StorageWorkspaceProvider.zipFiles(context, "report.txt", "report.zip"),
+            "unzip" to StorageWorkspaceProvider.unzipFile(context, "in.zip", "out"),
+        )
+
+        results.forEach { (action, result) ->
+            assertFalse(action, result.success)
+            assertNotNull(action, result.error)
+        }
+        assertEquals(before, workspace.walkTopDown().map { it.path }.toList())
+        assertEquals("stale", report.readText())
+        assertEquals("not read", zip.readText())
+    }
+
+    @Test
+    fun `a lost grant counts as no usable folder for the permissions screen`() {
+        givenChosenFolderGrantLostWithAnotherGrantLeft()
+
+        assertFalse(StorageWorkspaceProvider.hasCustomFolder(context))
+        assertNull(StorageWorkspaceProvider.getCustomFolderUri(context))
+    }
+
+    @Test
+    fun `clearing the folder after a lost grant returns to the workspace`() {
+        givenChosenFolderGrantLostWithAnotherGrantLeft()
+
+        StorageWorkspaceProvider.clearCustomFolder(context)
+        val result = StorageWorkspaceProvider.writeFile(context, "report.txt", "local")
+
+        assertTrue(result.error, result.success)
+        assertEquals("local", File(workspace, "report.txt").readText())
     }
 }
