@@ -247,6 +247,17 @@ class SocialViewModel @Inject constructor(
         }
     }
 
+    fun resolveInterruptedPublish(postId: String, wasPublished: Boolean) {
+        viewModelScope.launch {
+            val result = socialManager.resolveInterruptedPublish(postId, wasPublished)
+            _statusMessage.value = if (result.isSuccess) {
+                if (wasPublished) "Post marked as published." else "Post marked as failed. Retry when you're ready."
+            } else {
+                "Couldn't update post: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
     fun cancelPost(postId: String) {
         viewModelScope.launch {
             socialRepository.cancelPost(postId)
@@ -268,6 +279,17 @@ class SocialViewModel @Inject constructor(
                 _statusMessage.value = "Reply sent!"
             } else {
                 _statusMessage.value = "Reply failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
+    fun resolveInterruptedReply(commentId: String, wasSent: Boolean) {
+        viewModelScope.launch {
+            val result = socialManager.resolveInterruptedReply(commentId, wasSent)
+            _statusMessage.value = if (result.isSuccess) {
+                if (wasSent) "Reply marked as sent." else "You can reply to this comment again."
+            } else {
+                "Couldn't update comment: ${result.exceptionOrNull()?.message}"
             }
         }
     }

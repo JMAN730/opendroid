@@ -38,6 +38,7 @@ fun SocialContentTab(
     onSchedulePost: (String, Long) -> Unit,
     onCancelPost: (String) -> Unit,
     onDeletePost: (String) -> Unit,
+    onResolveInterruptedPublish: (String, Boolean) -> Unit,
     onShorten: (String, SocialPlatform, (String) -> Unit) -> Unit,
     onExpand: (String, SocialPlatform, (String) -> Unit) -> Unit,
     onChangeTone: (String, Tone, SocialPlatform, (String) -> Unit) -> Unit,
@@ -363,7 +364,7 @@ fun SocialContentTab(
                     )
                 }
 
-                items(listOf(PostStatus.DRAFT, PostStatus.SCHEDULED, PostStatus.PUBLISHED, PostStatus.FAILED)) { status ->
+                items(listOf(PostStatus.DRAFT, PostStatus.SCHEDULED, PostStatus.PUBLISHING, PostStatus.PUBLISHED, PostStatus.FAILED)) { status ->
                     val count = posts.count { it.status == status }
                     FilterChip(
                         selected = activeFilter == status,
@@ -396,7 +397,8 @@ fun SocialContentTab(
                     onPublishNow = { onPublishPostNow(post.id) },
                     onSchedule = { schedulingPostId = post.id },
                     onCancel = { onCancelPost(post.id) },
-                    onDelete = { onDeletePost(post.id) }
+                    onDelete = { onDeletePost(post.id) },
+                    onResolveInterrupted = { wasPublished -> onResolveInterruptedPublish(post.id, wasPublished) }
                 )
             }
         }
@@ -453,7 +455,8 @@ private fun PostItemCard(
     onPublishNow: () -> Unit,
     onSchedule: () -> Unit,
     onCancel: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onResolveInterrupted: (Boolean) -> Unit
 ) {
     val theme = AppTheme.colors
     val timeFormat = SimpleDateFormat("MMM d, HH:mm", LocalConfiguration.current.locales[0])
@@ -506,6 +509,15 @@ private fun PostItemCard(
             if (!post.errorMessage.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Error: ${post.errorMessage}", color = theme.accentRed, fontSize = 11.sp)
+            }
+
+            if (post.status == PostStatus.PUBLISHING) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Sending, or the app stopped mid-send. It may already be live, so it won't be re-sent automatically. Check ${post.platform.displayName}, then choose below.",
+                    color = theme.accentOrange,
+                    fontSize = 11.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -569,6 +581,24 @@ private fun PostItemCard(
                         ) {
                             Text("Retry", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+                    } else if (post.status == PostStatus.PUBLISHING) {
+                        OutlinedButton(
+                            onClick = { onResolveInterrupted(false) },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, theme.borderColor)
+                        ) {
+                            Text("Not live", color = theme.textPrimary, fontSize = 11.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { onResolveInterrupted(true) },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, theme.borderColor)
+                        ) {
+                            Text("It's live", color = theme.textPrimary, fontSize = 11.sp)
+                        }
                     }
                 }
             }
@@ -582,6 +612,7 @@ private fun PostStatusBadge(status: PostStatus) {
     val (color, text) = when (status) {
         PostStatus.PUBLISHED -> theme.accentCyan to "PUBLISHED"
         PostStatus.SCHEDULED -> theme.accentCyan to "SCHEDULED"
+        PostStatus.PUBLISHING -> theme.accentOrange to "PUBLISHING"
         PostStatus.DRAFT -> theme.textSecondary to "DRAFT"
         PostStatus.FAILED -> theme.accentRed to "FAILED"
         PostStatus.CANCELLED -> theme.textSecondary to "CANCELLED"
