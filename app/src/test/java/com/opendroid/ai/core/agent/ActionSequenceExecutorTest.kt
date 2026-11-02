@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.data.models.PlanStep
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -140,6 +143,37 @@ class ActionSequenceExecutorTest {
 
         assertEquals(declined, result)
         assertEquals(listOf("CONFIRM_ACTION"), calls)
+    }
+
+    @Test
+    fun `a cancel during the primary action never fires its fallback`() {
+        val calls = mutableListOf<String>()
+        val executor = executor { action, _, _ ->
+            calls += action
+            // A handler that swallows the cancel and reports an ordinary failure.
+            currentCoroutineContext().job.cancel()
+            ActionResult.Failure("interrupted")
+        }
+
+        runBlocking {
+            val job = launch {
+                executor.executeStep(
+                    step("s1", order = 1, action = "ANALYZE_SCREENSHOT", fallback = "SEND_SMS"),
+                    completedResults = emptyMap(),
+                    context = context
+                )
+            }
+            job.join()
+            assertTrue(job.isCancelled)
+        }
+
+        assertEquals(listOf("ANALYZE_SCREENSHOT"), calls)
+    }
+
+    @Test
+    fun `a completed step's result is the action's own data, with a placeholder when it has none`() {
+        assertEquals("screen text", completedStepResult(ActionResult.Success(mapOf("message" to "screen text"))))
+        assertEquals("Completed successfully.", completedStepResult(ActionResult.Success()))
     }
 
     private fun executor(

@@ -8,6 +8,7 @@ import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -65,6 +66,38 @@ class ActionDispatcher @Inject constructor(
             "SUMMARIZE_URL",
             "FACT_CHECK"
         )
+
+        // ── Safe execution wrapper ──────────────────────────────────────
+
+        internal suspend fun safeExecute(
+            handler: Action,
+            params: Map<String, String>,
+            context: Context,
+            actionName: String
+        ): ActionResult {
+            return try {
+                handler.execute(params, context)
+            } catch (e: CancellationException) {
+                // A cancel is not a failure: turning it into one would let the caller
+                // run the step's fallback after the user stopped the task.
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Execution failed for $actionName: ${e.message}")
+                ActionResult.Failure(
+                    errorMsg = e.message ?: "Execution failed",
+                    fallback = "Try alternative approach"
+                )
+            }
+        }
+
+        /** Asks for a valid value instead of running the handler on one it can't read. */
+        internal fun invalidParamPrompt(invalid: ActionSchema.ValidationResult.InvalidParam): ActionResult.NeedsInput =
+            ActionResult.NeedsInput(
+                question = "\"${invalid.value}\" isn't a valid ${invalid.param}. " +
+                    "Choose one of: ${invalid.options.joinToString(", ")}.",
+                options = invalid.options,
+                metadata = mapOf("param" to invalid.param)
+            )
     }
 
     // ── Centralized Action Registry ─────────────────────────────────
@@ -264,28 +297,12 @@ class ActionDispatcher @Inject constructor(
                 }
             }
 
+            is ActionSchema.ValidationResult.InvalidParam -> {
+                Log.d(TAG, "║ Invalid:      ${validation.param}=${validation.value} for $actionName")
+                invalidParamPrompt(validation)
+            }
+
             is ActionSchema.ValidationResult.InvalidAction -> null
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    //  Safe execution wrapper
-    // ════════════════════════════════════════════════════════════════
-
-    private suspend fun safeExecute(
-        handler: Action,
-        params: Map<String, String>,
-        context: Context,
-        actionName: String
-    ): ActionResult {
-        return try {
-            handler.execute(params, context)
-        } catch (e: Exception) {
-            Log.e(TAG, "Execution failed for $actionName: ${e.message}")
-            ActionResult.Failure(
-                errorMsg = e.message ?: "Execution failed",
-                fallback = "Try alternative approach"
-            )
         }
     }
 
