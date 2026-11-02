@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -91,9 +92,13 @@ object StorageWorkspaceProvider {
     }
 
     /**
-     * Checks whether a custom folder is currently configured.
+     * Checks whether a custom folder is configured and its grant is still held.
      */
     fun hasCustomFolder(context: Context): Boolean = getCustomFolderUri(context) != null
+
+    /** Checks whether the user chose a custom folder, even if its grant has since been lost. */
+    private fun isCustomFolderChosen(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).contains(KEY_CUSTOM_FOLDER_URI)
 
     /**
      * Returns a human-readable display name for the custom folder, or a default label.
@@ -121,7 +126,8 @@ object StorageWorkspaceProvider {
      * Checks if operations for this path should target the user's custom SAF folder.
      */
     fun shouldUseCustomFolder(context: Context, pathStr: String?): Boolean {
-        if (!hasCustomFolder(context)) return false
+        // Not hasCustomFolder: a lost grant must fail in customFolderRoot, not move the call to the workspace.
+        if (!isCustomFolderChosen(context)) return false
         if (pathStr.isNullOrBlank()) return true
         val trimmed = pathStr.trim()
         if (trimmed.startsWith("content://")) return true
@@ -208,7 +214,7 @@ object StorageWorkspaceProvider {
                 if (!targetDir.isDirectory) {
                     return ActionResult(false, null, "Path is not a directory: ${pathStr ?: ""}")
                 }
-                val files = targetDir.listFiles()
+                val files = listDocuments(context, targetDir)
                 val fileList = files.joinToString("\n") { file ->
                     val type = if (file.isDirectory) "DIR" else "FILE"
                     "${file.name ?: "unnamed"} [$type] (${file.length()} bytes)"
@@ -688,7 +694,7 @@ object StorageWorkspaceProvider {
     /** The custom folder's root. Throws when it can't be opened: a SAF failure must never reach the workspace. */
     private fun customFolderRoot(context: Context): DocumentFile =
         getCustomFolderUri(context)?.let { DocumentFile.fromTreeUri(context, it) }
-            ?: throw IOException("Your chosen folder isn't available")
+            ?: throw IOException("Your chosen folder isn't available; choose it again under Storage / Workspace in Permissions")
 
     /** Refuses a two-path call whose paths would run on different backends. */
     private fun mixedBackendError(context: Context, firstPath: String, secondPath: String): ActionResult? {
@@ -751,6 +757,25 @@ object StorageWorkspaceProvider {
             val mime = guessMimeType(leaf)
             current.createFile(mime, leaf)
         }
+    }
+
+    /**
+     * The children of [dir], or an exception if they can't all be read. DocumentFile.listFiles logs a failed
+     * query and returns what it got, which looks like an empty folder, so it's checked against a query that fails.
+     */
+    private fun listDocuments(context: Context, dir: DocumentFile): List<DocumentFile> {
+        val children = dir.listFiles()
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(dir.uri, DocumentsContract.getDocumentId(dir.uri))
+        val cursor = context.contentResolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+            ?: throw IOException("Can't list ${dir.name}")
+        cursor.use {
+            // A provider may answer with what it has so far, or with an error, and flag it in the extras.
+            if (it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) || it.extras.containsKey(DocumentsContract.EXTRA_ERROR)) {
+                throw IOException("Can't list all of ${dir.name} yet; the provider is still loading it or reported an error")
+            }
+            if (it.count != children.size) throw IOException("Can't list all of ${dir.name}")
+        }
+        return children.toList()
     }
 
     private fun directoryDocumentAt(root: DocumentFile, parts: List<String>): DocumentFile {
@@ -846,7 +871,7 @@ object StorageWorkspaceProvider {
         val existing = destParent.findFile(name)
         if (src.isDirectory) {
             // List first: a destination inside src must not show up as one of its children.
-            val children = src.listFiles()
+            val children = listDocuments(context, src)
             val dir = existing ?: destParent.createDirectory(name) ?: throw IOException("Can't create folder: $name")
             if (!dir.isDirectory) throw IOException("Can't copy a folder over a file: $name")
             children.forEach { child ->
@@ -867,7 +892,7 @@ object StorageWorkspaceProvider {
         if (doc.isDirectory) {
             zos.putNextEntry(ZipEntry("$entryPath/"))
             zos.closeEntry()
-            doc.listFiles().forEach { child ->
+            listDocuments(context, doc).forEach { child ->
                 zipDocument(context, child, "$entryPath/${child.name ?: throw IOException("Unnamed file in ${doc.name}")}", zos)
             }
         } else {
