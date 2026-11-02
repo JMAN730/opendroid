@@ -147,7 +147,9 @@ object EventTimeParser {
         // "half past 5" → 5:30, "quarter past 5 pm" → 17:15, "quarter to 6 in the evening" → 17:45
         RELATIVE_CLOCK_TIME.find(clean)?.let { match ->
             val (form, hourText, meridiem, dayPart) = match.destructured
-            val hour = relativeClockHour(hourText.toInt(), meridiem, dayPart) ?: return null
+            // "quarter to 12 in the morning" counts back from noon; "half past 12 in the morning" is 00:30.
+            val countsBackFromNoon = form == "quarter to" && hourText.toInt() == 12 && dayPart == "morning"
+            val hour = if (countsBackFromNoon) 12 else relativeClockHour(hourText.toInt(), meridiem, dayPart) ?: return null
             return when (form) {
                 "half past" -> Pair(hour, 30)
                 "quarter past" -> Pair(hour, 15)
@@ -165,6 +167,8 @@ object EventTimeParser {
             meridiem.isNotEmpty() -> meridiem.startsWith("p")
             // Night runs past midnight: "half past 1 at night" is 01:30.
             dayPart == "night" -> hour in 5..11
+            // 12 in the evening is midnight, never noon.
+            dayPart == "evening" -> hour != 12
             else -> dayPart != "morning"
         }
         return hour % 12 + if (isPm) 12 else 0
