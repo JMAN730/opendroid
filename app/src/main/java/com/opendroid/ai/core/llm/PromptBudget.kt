@@ -18,8 +18,9 @@ import com.opendroid.ai.data.models.ChatMessage
 object PromptBudget {
 
     /**
-     * Cost of a char, in thirds of a token. About 3 ASCII chars make a token. Digits
-     * are split one per token by Qwen's BPE. A non-ASCII char is at least one token,
+     * Cost of a char, in thirds of a token. About 3 ASCII chars make a token. Qwen's
+     * pre-tokenizer splits digits one per token and cuts the chars on either side away
+     * from them, so those are whole tokens too. A non-ASCII char is at least one token,
      * so a surrogate pair (most emoji) counts as two, and the space or punctuation
      * right after one does not merge into it, so it is a whole token too.
      */
@@ -37,10 +38,12 @@ object PromptBudget {
     /** Smallest output allocation worth running inference for. */
     const val MIN_OUTPUT_TOKENS = 64
 
+    private fun isWholeToken(c: Char): Boolean = c.code >= 0x80 || c in '0'..'9'
+
     private fun unitsAt(text: String, index: Int): Int {
-        val c = text[index]
-        val mergesIntoAsciiRun = c.code < 0x80 && c !in '0'..'9' &&
-            (index == 0 || text[index - 1].code < 0x80)
+        val mergesIntoAsciiRun = !isWholeToken(text[index]) &&
+            (index == 0 || !isWholeToken(text[index - 1])) &&
+            (index == text.lastIndex || text[index + 1] !in '0'..'9')
         return if (mergesIntoAsciiRun) 1 else UNITS_PER_TOKEN
     }
 
@@ -59,6 +62,20 @@ object PromptBudget {
         }
         if (end in 1 until text.length && text[end - 1].isHighSurrogate()) end--
         return text.substring(0, end)
+    }
+
+    /**
+     * [systemPrompt], cut to two thirds of a [contextWindow]-token context if it is over. At 3 ASCII
+     * chars per token that is 2 chars per window token, so English prompts keep the length they had
+     * at 4 chars per token and half the window, and the planning prompt keeps its context.
+     */
+    fun trimSystemPrompt(systemPrompt: String, contextWindow: Int): String {
+        val head = takeFirstTokens(systemPrompt, contextWindow * 2 / 3)
+        return if (head.length < systemPrompt.length) {
+            head + "\n...[instructions truncated for on-device context]"
+        } else {
+            systemPrompt
+        }
     }
 
     /** The longest end of [text] that [estimateTokens] puts within [maxTokens]. */

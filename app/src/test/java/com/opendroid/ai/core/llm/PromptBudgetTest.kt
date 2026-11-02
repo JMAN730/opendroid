@@ -1,6 +1,8 @@
 package com.opendroid.ai.core.llm
 
+import com.opendroid.ai.core.llm.prompts.PlanningPrompts
 import com.opendroid.ai.data.models.ChatMessage
+import java.util.regex.Pattern
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -29,15 +31,43 @@ class PromptBudgetTest {
     }
 
     @Test
-    fun `estimateTokens is an upper bound on the real Qwen token counts`() {
-        // Counts measured with Qwen's real BPE (see #110). The ticket did not record its
-        // strings, so these are same-length stand-ins for its 93, 83 and 51 char samples.
+    fun `estimateTokens clears the counts #110 measured at the same lengths`() {
+        // #110 did not record its strings, so these same-length stand-ins were not the strings
+        // measured and this is no bound on them. The next test checks each string against itself.
         assertEquals(93, HINDI_93.length)
         assertEquals(83, DIGITS_83.length)
         assertEquals(51, ZH_51.length)
-        mapOf(HINDI_93 to 82, DIGITS_83 to 55, ZH_51 to 29).forEach { (text, qwen) ->
+        mapOf(HINDI_93 to 82, DIGITS_83 to 55, ZH_51 to 29).forEach { (text, measured) ->
             val estimate = PromptBudget.estimateTokens(text)
-            assertTrue("estimate $estimate < real $qwen for: $text", estimate >= qwen)
+            assertTrue("estimate $estimate < measured $measured for: $text", estimate >= measured)
+        }
+    }
+
+    @Test
+    fun `estimateTokens covers the Qwen pre-tokenizer pieces of the same string`() {
+        listOf(
+            HINDI_93, DIGITS_83, ZH_51, RUSSIAN, EMOJI, JSON, ENGLISH,
+            "1,".repeat(500), "3 ".repeat(500), "1 - ".repeat(200), "a1".repeat(300),
+            "2026-11-02, ".repeat(100), "192.168.0.1 ".repeat(100), "3f9a0c7e ".repeat(100),
+            "550e8400-e29b-41d4-a716-446655440000 ".repeat(30), "at 10:30 am, ".repeat(80).trimEnd()
+        ).forEach { text ->
+            val estimate = PromptBudget.estimateTokens(text)
+            val pieces = qwenPieces(text)
+            assertTrue("estimate $estimate < $pieces pieces for: ${text.take(40)}", estimate >= pieces)
+        }
+    }
+
+    @Test
+    fun `a guard-approved digit-heavy prompt fits the window in real tokens`() {
+        val chatHeader = "System Instructions:\n" + "x".repeat(918) + "\n\n" // ~306 tokens, like the chat prompt
+        listOf(chatHeader, HEADER).forEach { header ->
+            listOf("1,".repeat(1500), "3 ".repeat(1500), "2026-11-02, ".repeat(250)).forEach { text ->
+                val prompt = fittedPrompt(header, listOf(message("1", text)))
+                val output = PromptBudget.outputBudget(prompt, 1280, 512)
+                assertNotNull("guard rejected a fitted prompt", output)
+                val used = qwenPieces(prompt) + 32 + output!!
+                assertTrue("$used real tokens overflow 1280 for: ${text.take(12)}", used <= 1280)
+            }
         }
     }
 
@@ -201,15 +231,42 @@ class PromptBudgetTest {
     }
 
     @Test
-    fun `fitMessagesToBudget keeps an English request whole next to the planning prompt`() {
-        // The on-device planning prompt is ~1900 chars; the request must not be cut to fit beside it.
+    fun `the on-device planning prompt keeps its context and an English request on Qwen`() {
+        // AgentLoop.generatePlan appends up to 250 chars of context to this prompt.
+        val context = PLANNING_CONTEXT.take(250)
+        val systemPrompt = "${PlanningPrompts.buildOnDevicePlanningPrompt()}\n\nContext:\n$context"
+        assertEquals(systemPrompt, PromptBudget.trimSystemPrompt(systemPrompt, 1280))
+
+        val header = "System Instructions:\n$systemPrompt\n\n"
         val fitted = PromptBudget.fitMessagesToBudget(
             messages = listOf(message("1", ENGLISH)),
             contextWindow = 1280,
             reservedOutputTokens = 512,
-            overheadTokens = PromptBudget.estimateTokens("x".repeat(1900))
+            overheadTokens = PromptBudget.estimateTokens(header)
         )
         assertEquals(ENGLISH, fitted.single().text)
+        assertNotNull(
+            "guard rejected the planning prompt",
+            PromptBudget.outputBudget(fittedPrompt(header, fitted), 1280, 512)
+        )
+    }
+
+    @Test
+    fun `trimSystemPrompt keeps the ASCII length the old cap allowed`() {
+        assertEquals("x".repeat(2559), PromptBudget.trimSystemPrompt("x".repeat(2559), 1280))
+        assertTrue(PromptBudget.trimSystemPrompt("x".repeat(2600), 1280).startsWith("x".repeat(2559)))
+        assertTrue(PromptBudget.trimSystemPrompt("x".repeat(2600), 1280).endsWith("on-device context]"))
+    }
+
+    @Test
+    fun `trimSystemPrompt leaves a non-Latin prompt at its cap room to pass the guard`() {
+        val trimmed = PromptBudget.trimSystemPrompt("ह".repeat(2000), 1280)
+        assertTrue("Expected the prompt to be cut", trimmed.endsWith("on-device context]"))
+        val prompt = fittedPrompt(
+            "System Instructions:\n$trimmed\n\n",
+            listOf(message("1", "ह".repeat(500)))
+        )
+        assertNotNull("guard rejected a fitted prompt", PromptBudget.outputBudget(prompt, 1280, 512))
     }
 
     @Test
@@ -249,7 +306,25 @@ class PromptBudgetTest {
         return sb.append("Model:").toString()
     }
 
+    /** Pieces Qwen's pre-tokenizer cuts [text] into: a lower bound on real tokens, as BPE only splits a piece further. */
+    private fun qwenPieces(text: String): Int {
+        val matcher = QWEN_PRE_TOKENIZER.matcher(text)
+        var pieces = 0
+        while (matcher.find()) pieces++
+        return pieces
+    }
+
     private companion object {
+        /** PAT_STR from Qwen's tokenization_qwen.py. */
+        val QWEN_PRE_TOKENIZER: Pattern = Pattern.compile(
+            """(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+""",
+            Pattern.UNICODE_CHARACTER_CLASS
+        )
+        const val PLANNING_CONTEXT =
+            "[Current Date & Time]\nDate: Monday, November 2, 2026\nTime: 1:24 AM\n\n" +
+                "[Facts about User]\nUser Name: Alex; User Date of Birth (DOB): 1990-01-01; " +
+                "home: 12 Elm Street, Boston; work: Lakeside School, room 204; phone: 415-555-0132\n\n" +
+                "[Working Memory]\nNo active plan.\n"
         const val HINDI_93 =
             "नमस्ते आप कैसे हैं? मुझे कल सुबह दिल्ली जाने के लिए ट्रेन का टिकट बुक करना है, कृपया मदद करें"
         const val DIGITS_83 =
