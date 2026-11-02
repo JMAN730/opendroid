@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
+import com.opendroid.ai.data.models.OllamaTimeout
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.withActiveProvider
 import com.opendroid.ai.data.models.withSelectedModel
@@ -34,7 +35,6 @@ import com.opendroid.ai.data.models.selectedModelFor
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Build
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
@@ -108,6 +108,7 @@ class SettingsViewModel @Inject constructor(
     private var elevenLabsApiKeyJob: Job? = null
     private var elevenLabsVoiceIdJob: Job? = null
     private var ollamaUrlJob: Job? = null
+    private var ollamaTimeoutJob: Job? = null
     private var copilotUrlJob: Job? = null
     private var customEndpointJob: Job? = null
 
@@ -148,6 +149,7 @@ class SettingsViewModel @Inject constructor(
                         elevenLabsApiKey = _llmConfig.value.elevenLabsApiKey,
                         elevenLabsVoiceId = _llmConfig.value.elevenLabsVoiceId,
                         ollamaUrl = _llmConfig.value.ollamaUrl,
+                        ollamaTimeoutSeconds = _llmConfig.value.ollamaTimeoutSeconds,
                         copilotUrl = _llmConfig.value.copilotUrl
                     )
                 }
@@ -506,6 +508,25 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Out-of-range values are clamped rather than rejected, so a half-typed number still saves. */
+    fun updateOllamaTimeout(seconds: Int) {
+        val clamped = OllamaTimeout.clamp(seconds)
+        _llmConfig.value = _llmConfig.value.copy(ollamaTimeoutSeconds = clamped)
+        ollamaTimeoutJob?.cancel()
+        ollamaTimeoutJob = viewModelScope.launch {
+            try {
+                delay(1000)
+                settingsRepository.updateConfig { current ->
+                    current.copy(ollamaTimeoutSeconds = clamped)
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    android.util.Log.e("SettingsViewModel", "Failed to update Ollama timeout: ${e.message}", e)
+                }
+            }
+        }
+    }
+
     fun updateCopilotUrl(url: String) {
         _llmConfig.value = _llmConfig.value.copy(copilotUrl = url)
         copilotUrlJob?.cancel()
@@ -735,17 +756,10 @@ class SettingsViewModel @Inject constructor(
         return try {
             val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
                 ?: return false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val network = connectivityManager.activeNetwork ?: return false
-                val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-                    connectivityManager.isActiveNetworkMetered
-            } else {
-                @Suppress("DEPRECATION")
-                val networkInfo = connectivityManager.activeNetworkInfo ?: return false
-                @Suppress("DEPRECATION")
-                networkInfo.type == ConnectivityManager.TYPE_MOBILE
-            }
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                connectivityManager.isActiveNetworkMetered
         } catch (_: Exception) {
             false
         }
