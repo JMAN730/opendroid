@@ -1,6 +1,7 @@
 package com.opendroid.ai.core.agent
 
 import android.content.Context
+import android.provider.Telephony
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.opendroid.ai.core.llm.LLMProviderFactory
@@ -101,7 +102,8 @@ class AutoReplyEngine @Inject constructor(
             try {
                 val config = settingsRepository.autoReplyConfig.first()
 
-                if (!shouldAutoReply(notification, config)) {
+                val channel = replyChannelFor(notification, config, Telephony.Sms.getDefaultSmsPackage(context))
+                if (channel == null) {
                     Log.d(TAG, "Auto-reply skipped for ${notification.contactName}: policy check failed")
                     return@launch
                 }
@@ -134,13 +136,13 @@ class AutoReplyEngine @Inject constructor(
                 }
 
                 // Generate and send reply
-                val replyText = generateReply(notification, freshConfig)
+                val replyText = generateReply(notification, freshConfig, channel)
                 if (replyText.isNullOrBlank()) {
                     Log.w(TAG, "LLM returned empty reply, skipping")
                     return@launch
                 }
 
-                val sent = dispatchReply(notification, sbn, replyText, context)
+                val sent = dispatchReply(notification, sbn, replyText, context, channel)
                 if (sent) {
                     // Record the send timestamp AND reply text BEFORE marking in DB so the
                     // bounceback check is ready when the echo notification fires
@@ -183,37 +185,11 @@ class AutoReplyEngine @Inject constructor(
         pendingReplies.clear()
     }
 
-    private fun shouldAutoReply(notification: NotificationEntity, config: AutoReplyConfig): Boolean {
-        if (!config.globalEnabled) return false
-
-        // Check per-app enablement
-        val appEnabled = when {
-            notification.packageName.contains("whatsapp", ignoreCase = true) -> config.whatsappEnabled
-            notification.packageName.contains("telegram", ignoreCase = true) -> config.telegramEnabled
-            notification.packageName.contains("discord", ignoreCase = true) -> config.discordEnabled
-            notification.category == "EMAIL" -> config.emailEnabled
-            notification.category == "MESSAGE" -> config.smsEnabled
-            else -> false
-        }
-        if (!appEnabled) return false
-
-        // Check blacklist
-        val contact = notification.contactName ?: notification.title
-        if (config.blacklistedContacts.any { it.equals(contact, ignoreCase = true) }) {
-            return false
-        }
-
-        // Check whitelist (if set, only reply to whitelisted contacts)
-        if (config.whitelistedContacts.isNotEmpty()) {
-            if (!config.whitelistedContacts.any { it.equals(contact, ignoreCase = true) }) {
-                return false
-            }
-        }
-
-        return true
-    }
-
-    private suspend fun generateReply(notification: NotificationEntity, config: AutoReplyConfig): String? {
+    private suspend fun generateReply(
+        notification: NotificationEntity,
+        config: AutoReplyConfig,
+        channel: AutoReplyChannel
+    ): String? {
         if (!config.customReplyText.isNullOrBlank()) {
             return config.customReplyText
         }
@@ -237,20 +213,18 @@ class AutoReplyEngine @Inject constructor(
                 }
 
             // Build the prompt based on app type
-            val systemPrompt = when {
-                notification.packageName.contains("whatsapp", ignoreCase = true) ||
-                notification.packageName.contains("telegram", ignoreCase = true) ||
-                notification.packageName.contains("discord", ignoreCase = true) ->
+            val systemPrompt = when (channel) {
+                AutoReplyChannel.WHATSAPP, AutoReplyChannel.TELEGRAM, AutoReplyChannel.DISCORD ->
                     AutoReplyPrompts.buildWhatsAppReplyPrompt(
                         userName, senderName, notification.text,
                         conversationHistory, userContext, config.customPrompt
                     )
-                notification.category == "EMAIL" ->
+                AutoReplyChannel.EMAIL ->
                     AutoReplyPrompts.buildEmailReplyPrompt(
                         userName, senderName, notification.title, notification.text,
                         userContext, config.customPrompt
                     )
-                else ->
+                AutoReplyChannel.SMS ->
                     AutoReplyPrompts.buildSmsReplyPrompt(
                         userName, senderName, notification.text,
                         conversationHistory, userContext, config.customPrompt
@@ -284,16 +258,15 @@ class AutoReplyEngine @Inject constructor(
         notification: NotificationEntity,
         sbn: StatusBarNotification?,
         replyText: String,
-        context: Context
+        context: Context,
+        channel: AutoReplyChannel
     ): Boolean {
         // Only ever reply on the conversation this job was scheduled for: if it has no active
         // notification, use the original SBN rather than another conversation's reply action
         val conversation = ReplyConversation(notification.packageName, notification.contactName, sbn)
-        return when {
+        return when (channel) {
             // WhatsApp, Telegram, Discord — use notification inline reply with a fresh SBN
-            notification.packageName.contains("whatsapp", ignoreCase = true) ||
-            notification.packageName.contains("telegram", ignoreCase = true) ||
-            notification.packageName.contains("discord", ignoreCase = true) -> {
+            AutoReplyChannel.WHATSAPP, AutoReplyChannel.TELEGRAM, AutoReplyChannel.DISCORD -> {
                 // Fetch a fresh SBN from the NotificationListenerService — the original
                 // one captured at schedule time may have a stale PendingIntent after the delay
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
@@ -312,7 +285,7 @@ class AutoReplyEngine @Inject constructor(
                 }
             }
             // SMS
-            notification.category == "MESSAGE" -> {
+            AutoReplyChannel.SMS -> {
                 // Try fresh SBN for inline reply first
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
                 val freshSbn = listener?.getActiveNotification(conversation) ?: sbn
@@ -332,14 +305,13 @@ class AutoReplyEngine @Inject constructor(
                 }
             }
             // Email — use the extracted sender email address
-            notification.category == "EMAIL" -> {
+            AutoReplyChannel.EMAIL -> {
                 val senderEmail = notification.senderEmail ?: ""
                 // Try fresh SBN for inline reply first
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
                 val freshSbn = listener?.getActiveNotification(conversation) ?: sbn
                 replyDispatcher.replyViaEmail(freshSbn, senderEmail, notification.title, replyText, context)
             }
-            else -> false
         }
     }
 
