@@ -66,6 +66,22 @@ private class AndroidEmailComposer : EmailComposer {
     }
 }
 
+/**
+ * The digits of [number] as country code plus number, or null if they can't be worked out.
+ * Phone links read their digits that way, so a national number has to be converted first:
+ * "(479) 555-0142" sent as is would be +47 95550142 in Norway.
+ * The leading "+" is dropped because it would decode as a space in a query.
+ */
+internal fun internationalPhoneDigits(number: String, region: String?): String? {
+    val international = if (number.startsWith("+")) {
+        number
+    } else {
+        region ?: return null
+        PhoneNumberUtils.formatNumberToE164(number, region) ?: return null
+    }
+    return international.filter { it in '0'..'9' }
+}
+
 internal fun interface TelegramAutoSender {
     suspend fun send(message: String, targetPackage: String?): Boolean
 }
@@ -107,20 +123,11 @@ class CommunicationActions internal constructor(
             PHONE_NUMBER.matches(input) && input.count { it in '0'..'9' } >= MIN_PHONE_DIGITS
 
         /**
-         * The bare digits Telegram's phone links expect, or null if the country code isn't known.
-         * The links read the digits as country code plus number, so a national number has to be
-         * converted first: "(479) 555-0142" sent as is would be +47 95550142 in Norway.
-         * The leading "+" is dropped because it would decode as a space in a query.
+         * The bare digits Telegram's and WhatsApp's phone links expect, or null if the country
+         * code isn't known. See [internationalPhoneDigits].
          */
-        private fun telegramPhoneDigits(number: String, context: Context): String? {
-            val international = if (number.startsWith("+")) {
-                number
-            } else {
-                val region = deviceRegion(context) ?: return null
-                PhoneNumberUtils.formatNumberToE164(number, region) ?: return null
-            }
-            return international.filter { it in '0'..'9' }
-        }
+        private fun phoneLinkDigits(number: String, context: Context): String? =
+            internationalPhoneDigits(number, if (number.startsWith("+")) null else deviceRegion(context))
 
         private fun deviceRegion(context: Context): String? {
             val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
@@ -352,14 +359,17 @@ class CommunicationActions internal constructor(
     private suspend fun executeCall(phone: String, context: Context): ActionResult =
         callFlowExecutor.execute(phone, context)
 
-    private suspend fun executeWhatsApp(phone: String, contactLabel: String, message: String, context: Context): ActionResult {
+    private fun askForCountryCode(contactLabel: String): ActionResult.NeedsInput =
+        ActionResult.NeedsInput(
+            question = "What's the full number for '$contactLabel', including the country code?",
+            metadata = mapOf("param" to "contact")
+        )
+
+    private suspend fun executeWhatsApp(number: String, contactLabel: String, message: String, context: Context): ActionResult {
+        val phone = phoneLinkDigits(number, context) ?: return askForCountryCode(contactLabel)
         return try {
             val encodedMsg = URLEncoder.encode(message, "UTF-8")
-            val whatsappUri = if (phone.matches(Regex("\\+?[0-9]+"))) {
-                "https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg".toUri()
-            } else {
-                "whatsapp://send?text=$encodedMsg".toUri()
-            }
+            val whatsappUri = "https://api.whatsapp.com/send?phone=$phone&text=$encodedMsg".toUri()
             val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
                 setPackage("com.whatsapp")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -436,11 +446,7 @@ class CommunicationActions internal constructor(
         message: String,
         context: Context
     ): ActionResult {
-        val phone = telegramPhoneDigits(number, context)
-            ?: return ActionResult.NeedsInput(
-                question = "What's the full number for '$contactLabel', including the country code?",
-                metadata = mapOf("param" to "contact")
-            )
+        val phone = phoneLinkDigits(number, context) ?: return askForCountryCode(contactLabel)
         return executeTelegram(phone, contactLabel, message, context, isUsername = false)
     }
 
@@ -654,7 +660,8 @@ class CommunicationActions internal constructor(
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=${phone.filter { it.isDigit() || it == '+' }}".toUri()).apply {
+                        val digits = phoneLinkDigits(phone, context) ?: return askForCountryCode(contact)
+                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=$digits".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
