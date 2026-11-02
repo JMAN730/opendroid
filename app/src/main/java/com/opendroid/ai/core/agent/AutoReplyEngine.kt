@@ -286,6 +286,9 @@ class AutoReplyEngine @Inject constructor(
         replyText: String,
         context: Context
     ): Boolean {
+        // Only ever reply on the conversation this job was scheduled for: if it has no active
+        // notification, use the original SBN rather than another conversation's reply action
+        val conversation = ReplyConversation(notification.packageName, notification.contactName, sbn)
         return when {
             // WhatsApp, Telegram, Discord — use notification inline reply with a fresh SBN
             notification.packageName.contains("whatsapp", ignoreCase = true) ||
@@ -294,10 +297,7 @@ class AutoReplyEngine @Inject constructor(
                 // Fetch a fresh SBN from the NotificationListenerService — the original
                 // one captured at schedule time may have a stale PendingIntent after the delay
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
-                val freshSbn = listener?.getActiveNotification(
-                    notification.packageName,
-                    notification.contactName
-                )
+                val freshSbn = listener?.getActiveNotification(conversation)
                 val targetSbn = freshSbn ?: sbn
                 if (targetSbn != null) {
                     val replied = replyDispatcher.replyViaNotificationAction(targetSbn, replyText)
@@ -315,10 +315,7 @@ class AutoReplyEngine @Inject constructor(
             notification.category == "MESSAGE" -> {
                 // Try fresh SBN for inline reply first
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
-                val freshSbn = listener?.getActiveNotification(
-                    notification.packageName,
-                    notification.contactName
-                ) ?: sbn
+                val freshSbn = listener?.getActiveNotification(conversation) ?: sbn
 
                 if (freshSbn != null && replyDispatcher.replyViaNotificationAction(freshSbn, replyText)) {
                     true
@@ -339,10 +336,7 @@ class AutoReplyEngine @Inject constructor(
                 val senderEmail = notification.senderEmail ?: ""
                 // Try fresh SBN for inline reply first
                 val listener = com.opendroid.ai.core.service.OpenDroidNotificationListener.getInstance()
-                val freshSbn = listener?.getActiveNotification(
-                    notification.packageName,
-                    notification.contactName
-                ) ?: sbn
+                val freshSbn = listener?.getActiveNotification(conversation) ?: sbn
                 replyDispatcher.replyViaEmail(freshSbn, senderEmail, notification.title, replyText, context)
             }
             else -> false
