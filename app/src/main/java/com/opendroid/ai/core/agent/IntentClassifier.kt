@@ -104,8 +104,10 @@ class IntentClassifier @Inject constructor(
         // A conditional ("if it rains, text my wife …") needs a step that checks the
         // condition before the action, so it never gets the 1-step SIMPLE cap or a
         // single-action shortcut. Checked before every SIMPLE fast-path below.
+        // MEDIUM is a floor: several actions behind the condition still score COMPLEX.
         if (hasConditionalMarker(lowercaseQuery)) {
-            return if (compoundCount >= 2) QueryComplexity.COMPLEX else QueryComplexity.MEDIUM
+            if (compoundCount >= 2) return QueryComplexity.COMPLEX
+            return maxOf(QueryComplexity.MEDIUM, scoreComplexity(query, lowercaseQuery))
         }
 
         // ── Fast-path: "open youtube and search X" / "youtube search X" /
@@ -164,6 +166,10 @@ class IntentClassifier @Inject constructor(
         }
 
         // ONLY then check for complexity scoring using original logic
+        return scoreComplexity(query, lowercaseQuery)
+    }
+
+    private fun scoreComplexity(query: String, lowercaseQuery: String): QueryComplexity {
         val actionTriggers = listOf(
             "open", "launch", "start", "turn", "toggle", "enable", "disable", "set", "lock", "restart",
             "take", "record", "send", "make", "play", "pause", "resume", "next", "prev", "order", "search",
