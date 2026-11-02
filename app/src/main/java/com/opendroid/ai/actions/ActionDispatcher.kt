@@ -98,14 +98,8 @@ class ActionDispatcher @Inject constructor(
      * a non-canonical variant (e.g. "EMAIL", "send-email") that still maps to
      * a sensitive canonical action.
      */
-    fun canonicalActionName(actionName: String): String {
-        val normalized = autoMapper.normalizeActionName(actionName)
-        if (ActionSchema.isValid(normalized) || normalized in actionsMap.keys) {
-            return normalized
-        }
-        val mapping = autoMapper.mapAction(actionName, emptyMap(), actionsMap.keys)
-        return mapping.mappedAction ?: normalized
-    }
+    fun canonicalActionName(actionName: String, params: Map<String, String>): String =
+        autoMapper.canonicalActionName(actionName, params, actionsMap.keys)
 
     fun isRegistered(actionName: String): Boolean = hasAction(actionName)
 

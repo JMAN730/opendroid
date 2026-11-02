@@ -245,6 +245,14 @@ class ActionAutoMapperTest {
     }
 
     @Test
+    fun `the canonical name for history uses the step's params, as execution does`() {
+        val bob = mapOf("contact" to "Bob", "to" to "bob@example.com", "subject" to "Hi", "body" to "Secret")
+        assertEquals("SEND_EMAIL", map("EMAIL_BOB", bob).mappedAction)
+        assertEquals("SEND_EMAIL", mapper.canonicalActionName("EMAIL_BOB", bob, registered))
+        assertEquals("SEND_EMAIL", mapper.canonicalActionName("send-email", emptyMap(), registered))
+    }
+
+    @Test
     fun `schema actions pass through untouched`() {
         listOf("MAKE_CALL", "SEND_SMS", "SEND_WHATSAPP", "READ_MESSAGES", "OPEN_TELEGRAM").forEach { name ->
             assertEquals(name, name, map(name).mappedAction)
