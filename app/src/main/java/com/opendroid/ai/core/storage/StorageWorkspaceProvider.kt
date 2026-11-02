@@ -127,22 +127,14 @@ object StorageWorkspaceProvider {
         if (trimmed.startsWith("content://")) return true
         if (!trimmed.startsWith("/")) return true
 
-        // If explicit path is inside app-internal files, use File API
-        val appFiles = context.filesDir.canonicalPath
-        val extFiles = context.getExternalFilesDir(null)?.canonicalPath
-        val canonical = try { File(trimmed).canonicalPath } catch (_: Exception) { trimmed }
-        if (canonical.startsWith(appFiles) || (extFiles != null && canonical.startsWith(extFiles))) {
-            return false
-        }
-        return true
+        // Only shared storage paths map into the custom folder; resolveFile decides on the rest
+        return sharedStorageRelativePath(context, trimmed) != null
     }
 
     /**
-     * Resolves a path to a File in the app's workspace or allowed roots.
-     * Prevents path traversal and maps inaccessible external storage paths to workspace.
+     * Resolves a path to a File in the app's workspace, the only root file actions may touch.
+     * Shared storage paths map into the workspace; any other absolute path is rejected.
      */
-    // lint false positive: "/sdcard" is only matched in a typed path string to remap it into the workspace; it is never used to open storage.
-    @SuppressLint("SdCardPath")
     fun resolveFile(context: Context, pathStr: String?): File {
         val trimmed = pathStr?.trim().orEmpty()
         if (trimmed.startsWith("content://")) {
@@ -152,59 +144,55 @@ object StorageWorkspaceProvider {
         val workspace = getDefaultWorkspaceDir(context)
         val workspaceCanonical = workspace.canonicalPath
 
-        if (trimmed.isEmpty() || trimmed == "." || trimmed == "./") {
-            return workspace
-        }
-
-        val candidate = if (trimmed.startsWith("/")) {
-            val f = File(trimmed)
-            val canonical = try { f.canonicalPath } catch (_: Exception) { f.absolutePath }
-
-            val forbidden = listOf("/data/system", "/data/local", "/data/misc", "/etc", "/proc", "/sys")
-            if (forbidden.any { canonical == it || canonical.startsWith("$it/") }) {
-                throw SecurityException("Access to system directory is not permitted: $canonical")
-            }
-
-            val appDataDir = context.applicationInfo.dataDir
-            val appFilesDir = context.filesDir.canonicalPath
-            val extFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-
-            val isAppDir = (appDataDir != null && canonical.startsWith(appDataDir)) ||
-                canonical.startsWith(appFilesDir) ||
-                (extFilesDir != null && canonical.startsWith(extFilesDir)) ||
-                canonical.startsWith(workspaceCanonical)
-
-            if (isAppDir) {
-                File(canonical)
-            } else {
-                val extRoot = Environment.getExternalStorageDirectory().canonicalPath
-                val relative = if (canonical.startsWith(extRoot)) {
-                    canonical.removePrefix(extRoot).trimStart('/')
-                } else if (canonical.startsWith("/sdcard")) {
-                    canonical.removePrefix("/sdcard").trimStart('/')
-                } else if (canonical.startsWith("/storage/emulated/0")) {
-                    canonical.removePrefix("/storage/emulated/0").trimStart('/')
-                } else {
-                    File(canonical).name
-                }
+        val candidate = when {
+            !trimmed.startsWith("/") -> File(workspace, trimmed)
+            canonicalPathOf(File(trimmed)).isSameOrUnder(workspaceCanonical) -> File(trimmed)
+            else -> {
+                val relative = sharedStorageRelativePath(context, trimmed)
+                    ?: throw SecurityException("Only paths inside the workspace are allowed: $trimmed")
                 File(workspace, relative)
             }
-        } else {
-            File(workspace, trimmed)
         }
 
-        val canonicalResult = try { candidate.canonicalPath } catch (e: Exception) {
-            throw SecurityException("Invalid path: cannot resolve canonical path")
-        }
-
-        if (!trimmed.startsWith("/")) {
-            if (!canonicalResult.startsWith(workspaceCanonical)) {
-                throw SecurityException("Path traversal attempt detected: $canonicalResult")
-            }
+        val canonicalResult = canonicalPathOf(candidate)
+        if (!canonicalResult.isSameOrUnder(workspaceCanonical)) {
+            throw SecurityException("Path traversal attempt detected: $canonicalResult")
         }
 
         return File(canonicalResult)
     }
+
+    /**
+     * The workspace-relative form of an absolute path on shared storage, or null if it isn't on
+     * shared storage. The app's own external directory sits there too, but is never shared.
+     */
+    // lint false positive: these paths are only matched in a typed path string to remap it into the workspace; they are never used to open storage.
+    @SuppressLint("SdCardPath")
+    private fun sharedStorageRelativePath(context: Context, absolutePath: String): String? {
+        val canonical = canonicalPathOf(File(absolutePath))
+        val appExternalDir = context.getExternalFilesDir(null)?.parentFile?.canonicalPath
+        if (appExternalDir != null && canonical.isSameOrUnder(appExternalDir)) return null
+
+        val normalized = File(absolutePath).normalize().invariantSeparatorsPath
+        for (root in listOf("/sdcard", "/storage/emulated/0")) {
+            if (normalized == root || normalized.startsWith("$root/")) {
+                return normalized.removePrefix(root).trimStart('/')
+            }
+        }
+        val extRoot = Environment.getExternalStorageDirectory().canonicalPath
+        return if (canonical.isSameOrUnder(extRoot)) canonical.removePrefix(extRoot).trimStart(File.separatorChar) else null
+    }
+
+    private fun canonicalPathOf(file: File): String = try {
+        file.canonicalPath
+    } catch (_: IOException) {
+        throw SecurityException("Invalid path: cannot resolve canonical path")
+    }
+
+    private fun String.isSameOrUnder(root: String): Boolean = this == root || startsWith(root + File.separator)
+
+    private fun isWorkspaceRoot(context: Context, file: File): Boolean =
+        file.canonicalPath == getDefaultWorkspaceDir(context).canonicalPath
 
     // ── File Operations ──────────────────────────────────────────────────
 
@@ -313,6 +301,9 @@ object StorageWorkspaceProvider {
                 val root = DocumentFile.fromTreeUri(context, customUri)
                     ?: return writeFileLocal(context, filePath, content)
                 val cleanPath = cleanRelativePath(filePath)
+                if (pathSegments(cleanPath).isEmpty()) {
+                    return ActionResult(false, null, "Path is the custom folder itself, not a file: $filePath")
+                }
                 val doc = findOrCreateDocumentByPath(root, cleanPath, isDirectory = false)
                     ?: return writeFileLocal(context, filePath, content)
                 context.contentResolver.openOutputStream(doc.uri, "wt")?.use { stream ->
@@ -346,6 +337,9 @@ object StorageWorkspaceProvider {
                 val root = DocumentFile.fromTreeUri(context, customUri)
                     ?: return deleteFileLocal(context, filePath)
                 val cleanPath = cleanRelativePath(filePath)
+                if (pathSegments(cleanPath).isEmpty()) {
+                    return ActionResult(false, null, "Refusing to delete the whole custom folder: '$filePath'")
+                }
                 val doc = findDocumentByPath(root, cleanPath)
                 if (doc == null || !doc.exists()) {
                     return ActionResult(false, null, "File/directory does not exist: $filePath")
@@ -367,6 +361,9 @@ object StorageWorkspaceProvider {
     private fun deleteFileLocal(context: Context, filePath: String): ActionResult {
         return try {
             val file = resolveFile(context, filePath)
+            if (isWorkspaceRoot(context, file)) {
+                return ActionResult(false, null, "Refusing to delete the whole workspace: '$filePath'")
+            }
             if (!file.exists()) {
                 return ActionResult(false, null, "File/directory does not exist: ${file.absolutePath}")
             }
@@ -492,6 +489,9 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
+            if (isWorkspaceRoot(context, zipFile)) {
+                return ActionResult(false, null, "Zip file can't be the workspace itself: '$zipFilePath'")
+            }
             if (zipFile.isSameOrInside(src)) {
                 return ActionResult(false, null, "Zip file can't be the source or inside it: ${zipFile.absolutePath}")
             }
@@ -511,6 +511,9 @@ object StorageWorkspaceProvider {
             val destDir = resolveFile(context, destDirPath)
             if (!zipFile.exists()) {
                 return ActionResult(false, null, "Zip file does not exist: ${zipFile.absolutePath}")
+            }
+            if (isWorkspaceRoot(context, destDir)) {
+                return ActionResult(false, null, "Can't unzip over the workspace root; name a folder inside it: '$destDirPath'")
             }
             destDir.mkdirs()
             ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
@@ -546,6 +549,7 @@ object StorageWorkspaceProvider {
     @SuppressLint("SdCardPath")
     private fun cleanRelativePath(pathStr: String?): String {
         var clean = pathStr?.trim().orEmpty()
+        if (clean == "/sdcard" || clean == "/storage/emulated/0") return ""
         val prefixes = listOf("/sdcard/", "/storage/emulated/0/", "sdcard/", "./")
         for (prefix in prefixes) {
             if (clean.startsWith(prefix)) {
@@ -555,10 +559,11 @@ object StorageWorkspaceProvider {
         return clean.trimStart('/')
     }
 
+    private fun pathSegments(path: String): List<String> = path.split("/").filter { it.isNotEmpty() && it != "." }
+
     private fun findDocumentByPath(root: DocumentFile, path: String): DocumentFile? {
-        val parts = path.split("/").filter { it.isNotEmpty() && it != "." }
         var current = root
-        for (part in parts) {
+        for (part in pathSegments(path)) {
             current = current.findFile(part) ?: return null
         }
         return current
@@ -569,7 +574,7 @@ object StorageWorkspaceProvider {
         path: String,
         isDirectory: Boolean = false,
     ): DocumentFile? {
-        val parts = path.split("/").filter { it.isNotEmpty() && it != "." }
+        val parts = pathSegments(path)
         if (parts.isEmpty()) return root
         var current = root
         for (i in 0 until parts.size - 1) {
