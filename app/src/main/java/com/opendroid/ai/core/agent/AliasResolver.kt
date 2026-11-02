@@ -268,6 +268,33 @@ object AliasResolver {
         "play", "book", "order", "remind"
     )
 
+    /** "can you take a screenshot?" is a command, not a question about the device. */
+    private val politeRequestPrefix = Regex("""^(?:can|could|would|will)\s+you\s+""", RegexOption.IGNORE_CASE)
+
+    private val questionOpener = Regex(
+        """^(?:what|whats|how|hows|why|is|are|can|could|should|would|will|does|do|did|when|whens|where|wheres|who|whos|which|explain|tell\s+me)\b"""
+    )
+
+    /**
+     * A whole cleaned input built around one word: "lock", "lock my phone", "toggle wifi",
+     * "turn on my flashlight", "screenshot now". Group 1 is the candidate alias.
+     */
+    private val singleWordCommand = Regex(
+        """(?:(?:turn|switch|open|enable|disable|toggle|set)\s+(?:(?:on|off)\s+)?(?:my\s+)?)?(\S+)(?:\s+(?:my\s+)?(?:phone|device|screen))?(?:\s+(?:now|for\s+me))?"""
+    )
+
+    private class AliasPhrase(val key: String, val hint: ActionHint) {
+        val pattern = Regex("\\b" + Regex.escape(key) + "\\b")
+    }
+
+    /** Multi-word aliases, longest first, so the most specific phrase wins. */
+    private val aliasPhrases: List<AliasPhrase> = aliases.entries
+        .filter { (key, _) -> key.contains(' ') }
+        .sortedByDescending { (key, _) -> key.length }
+        .map { (key, hint) -> AliasPhrase(key, hint) }
+
+    private val questionPhrases: List<AliasPhrase> = aliasPhrases.filter { isQuestionShaped(it.key) }
+
     /**
      * Resolve user input to an ActionHint.
      * Returns null if no alias matches.
@@ -314,8 +341,17 @@ object AliasResolver {
      * Returns null if no alias matches.
      */
     fun resolve(input: String): ActionHint? {
-        val lower = input.lowercase().trim()
-        val cleaned = cleanInput(input)
+        val request = stripPoliteRequest(input)
+        val lower = request.lowercase().trim()
+        val cleaned = cleanInput(request)
+
+        // 0. Questions go to the LLM, so "how do I unlock my phone" gets answered
+        //    instead of locking the phone. Only aliases that are themselves questions
+        //    ("what's the weather") can still match.
+        if (isQuestionShaped(lower)) {
+            if (compoundIntentWords.any { word -> lower.contains(word) }) return null
+            return longestPhraseMatch(questionPhrases, lower, cleaned)
+        }
 
         // 1. Exact match (always wins)
         aliases[cleaned]?.let { return it }
@@ -360,11 +396,28 @@ object AliasResolver {
             return null
         }
 
-        // 5. Longest partial match — only for simple, single-intent inputs
-        return aliases.entries
-            .filter { (key, _) -> cleaned.contains(key) || lower.contains(key) }
-            .maxByOrNull { it.key.length }
-            ?.value
+        // 5. Longest multi-word alias, on word boundaries — only for simple, single-intent inputs
+        longestPhraseMatch(aliasPhrases, lower, cleaned)?.let { return it }
+
+        // 6. A single word is too generic to match inside a sentence ("the music is
+        //    too loud"), so it must be the whole command.
+        return singleWordCommand.matchEntire(cleaned)?.let { aliases[it.groupValues[1]] }
+    }
+
+    private fun stripPoliteRequest(input: String): String {
+        val trimmed = input.trim()
+        if (!politeRequestPrefix.containsMatchIn(trimmed)) return input
+        return trimmed.replace(politeRequestPrefix, "").removeSuffix("?")
+    }
+
+    private fun isQuestionShaped(text: String): Boolean {
+        return text.endsWith("?") || questionOpener.containsMatchIn(text)
+    }
+
+    private fun longestPhraseMatch(phrases: List<AliasPhrase>, lower: String, cleaned: String): ActionHint? {
+        return phrases
+            .firstOrNull { it.pattern.containsMatchIn(cleaned) || it.pattern.containsMatchIn(lower) }
+            ?.hint
     }
 
     // ── Alarm shortcut helpers ──────────────────────────
