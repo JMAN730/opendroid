@@ -26,6 +26,74 @@ class VoiceApprovalParserTest {
     }
 
     @Test
+    fun `negated approvals never approve and leave the plan waiting`() {
+        for (u in listOf(
+            "don't approve",
+            "do not approve that",
+            "don't go ahead",
+            "don't let it run",
+            "I don't want it to run",
+            "never run that",
+            "not yet, run it later",
+            "nope, go ahead later"
+        )) {
+            assertEquals(u, VoiceApprovalIntent.NONE, VoiceApprovalParser.parse(u))
+        }
+    }
+
+    @Test
+    fun `refusals in other languages never approve`() {
+        for (u in listOf(
+            "run mat karo",
+            "nahi, run mat karo",
+            "approve mat karo",
+            "isko execute mat karo",
+            "nahi yaar, go ahead mat karna",
+            "Não, não execute",
+            "run nako",
+            "nicht ausführen, run nicht"
+        )) {
+            assertEquals(u, VoiceApprovalIntent.NONE, VoiceApprovalParser.parse(u))
+        }
+        for (u in listOf("no gracias", "no lo ejecutes")) {
+            assertEquals(u, VoiceApprovalIntent.REJECT, VoiceApprovalParser.parse(u))
+        }
+    }
+
+    @Test
+    fun `anything beyond a bare affirmative never approves`() {
+        for (u in listOf("run it later", "do it tomorrow", "yes but wait", "go ahead with something else")) {
+            assertEquals(u, VoiceApprovalIntent.NONE, VoiceApprovalParser.parse(u))
+        }
+    }
+
+    @Test
+    fun `bare affirmatives approve with punctuation, fillers and native words`() {
+        for (u in listOf(
+            "Yes.",
+            "Go ahead!",
+            "yes, run it",
+            "ok, approve",
+            "go ahead and run it",
+            "please do it now",
+            "approve the plan",
+            "haan",
+            "sí",
+            "si",
+            "sim"
+        )) {
+            assertEquals(u, VoiceApprovalIntent.APPROVE, VoiceApprovalParser.parse(u))
+        }
+    }
+
+    @Test
+    fun `don't run still rejects with a curly or missing apostrophe`() {
+        for (u in listOf("don’t run that", "dont run that", "don’t do it", "dont execute")) {
+            assertEquals(u, VoiceApprovalIntent.REJECT, VoiceApprovalParser.parse(u))
+        }
+    }
+
+    @Test
     fun `word boundaries - substrings do not match`() {
         // "know" contains "no", "canceled culture" is contrived but "runway" contains "run"
         assertEquals(VoiceApprovalIntent.NONE, VoiceApprovalParser.parse("I don't know"))
