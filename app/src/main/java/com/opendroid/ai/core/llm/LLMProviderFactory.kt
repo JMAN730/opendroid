@@ -133,41 +133,60 @@ class LLMProviderFactory @Inject constructor(
         }
     }
 
-    private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest {
-        if (request.systemPrompt.contains("Planning Engine") || request.systemPrompt.contains("AVAILABLE ACTIONS")) {
-            val userMessageText = request.messages.lastOrNull()?.text ?: ""
-            val complexity = intentClassifier.get().classifyComplexity(userMessageText)
-            val maxSteps = when (complexity) {
-                QueryComplexity.SIMPLE -> 1
-                QueryComplexity.MEDIUM -> 3
-                QueryComplexity.COMPLEX -> 10
+    private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest =
+        PlanningRequestRewriter.rewrite(
+            request = request,
+            classifyComplexity = { intentClassifier.get().classifyComplexity(it) },
+            registeredActions = { actionDispatcher.get().getAllRegisteredActions() },
+            deviceState = { deviceStateProvider.getFullStateString() },
+            currentDateTime = {
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
             }
-
-            val memoryContext = if (request.systemPrompt.contains("Context about user and device:")) {
-                request.systemPrompt.substringAfter("Context about user and device:").trim()
-            } else {
-                ""
-            }
-
-            val currentDateTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-            val deviceState = deviceStateProvider.getFullStateString()
-            val registeredActions = actionDispatcher.get().getAllRegisteredActions()
-
-            return request.copy(
-                systemPrompt = SystemPrompts.buildMainPrompt(
-                    registeredActions = registeredActions,
-                    memoryContext = memoryContext,
-                    currentDateTime = currentDateTime,
-                    deviceState = deviceState,
-                    maxSteps = maxSteps
-                )
-            )
-        }
-        return request
-    }
+        )
 
     private companion object {
         const val TAG = "LLMProviderFactory"
+    }
+}
+
+/**
+ * Swaps a planning system prompt for [SystemPrompts.buildMainPrompt], with a step
+ * cap sized by the request's complexity. Other requests pass through unchanged.
+ */
+internal object PlanningRequestRewriter {
+
+    fun rewrite(
+        request: LLMRequest,
+        classifyComplexity: (String) -> QueryComplexity,
+        registeredActions: () -> List<String>,
+        deviceState: () -> String,
+        currentDateTime: () -> String
+    ): LLMRequest {
+        if (!request.systemPrompt.contains("Planning Engine") && !request.systemPrompt.contains("AVAILABLE ACTIONS")) {
+            return request
+        }
+        val userMessageText = request.messages.lastOrNull()?.text ?: ""
+        val maxSteps = when (classifyComplexity(userMessageText)) {
+            QueryComplexity.SIMPLE -> 1
+            QueryComplexity.MEDIUM -> 3
+            QueryComplexity.COMPLEX -> 10
+        }
+
+        val memoryContext = if (request.systemPrompt.contains("Context about user and device:")) {
+            request.systemPrompt.substringAfter("Context about user and device:").trim()
+        } else {
+            ""
+        }
+
+        return request.copy(
+            systemPrompt = SystemPrompts.buildMainPrompt(
+                registeredActions = registeredActions(),
+                memoryContext = memoryContext,
+                currentDateTime = currentDateTime(),
+                deviceState = deviceState(),
+                maxSteps = maxSteps
+            )
+        )
     }
 }
 
