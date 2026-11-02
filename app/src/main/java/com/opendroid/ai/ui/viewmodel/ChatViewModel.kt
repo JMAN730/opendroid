@@ -3,8 +3,8 @@ package com.opendroid.ai.ui.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.core.agent.ChatAgent
 import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
 import com.opendroid.ai.core.agent.ChatErrorUiState
 import com.opendroid.ai.core.agent.primaryAction
@@ -16,7 +16,6 @@ import com.opendroid.ai.data.repository.ChatSession
 import com.opendroid.ai.data.repository.ConversationRepository
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -26,7 +25,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    private val agentLoop: AgentLoop,
+    private val agentLoop: ChatAgent,
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
@@ -91,19 +90,18 @@ class ChatViewModel @Inject constructor(
                 // Re-execute the request the error actually describes, in ITS session -
                 // never re-send the visible chat's last message, and never insert a
                 // duplicate user bubble: the original message is already persisted.
-                _taskSessionId.value = error.sessionId
                 agentLoop.retryRequest(error.requestId, error.sessionId, context)
             }
             else -> agentLoop.dismissChatError()
         }
     }
 
-    // Session the most recently started task was pinned to. Set once, right when a task
-    // is kicked off (sendMessage for a genuinely new query, approvePlan, or
-    // editAndResend's resend) - mirroring AgentLoop's own "resolve the session once, at
-    // task start" rule so [agentState], which is a single field shared by every chat,
-    // can be attributed back to the chat it actually belongs to. See [visibleAgentState].
-    private val _taskSessionId = MutableStateFlow<String?>(null)
+    // The chat [state], a single field shared by every chat, belongs to. A proposal
+    // carries its own pin; anything else belongs to the task AgentLoop pinned last. Comes
+    // from AgentLoop rather than tracking our own copy, since a voice or bubble task
+    // starts without going through this ViewModel.
+    private fun sessionOf(state: AgentState, activeTaskSessionId: String?, proposedPlanSessionId: String?): String? =
+        if (state is AgentState.PlanProposed) proposedPlanSessionId ?: activeTaskSessionId else activeTaskSessionId
 
     /**
      * [agentState], but forced to [AgentState.Idle] whenever it actually describes a
@@ -116,8 +114,9 @@ class ChatViewModel @Inject constructor(
      * background chat's activity to whatever the user happens to be looking at.
      */
     val visibleAgentState: StateFlow<AgentState> = combine(
-        agentState, _taskSessionId, sessions
-    ) { state, taskSessionId, sessionList ->
+        agentState, agentLoop.activeTaskSessionId, agentLoop.proposedPlanSessionId, sessions
+    ) { state, activeTaskSessionId, proposedPlanSessionId, sessionList ->
+        val taskSessionId = sessionOf(state, activeTaskSessionId, proposedPlanSessionId)
         val current = sessionList.firstOrNull { it.isCurrent }?.id
         if (taskSessionId == null || taskSessionId == current) state else AgentState.Idle
     }.stateIn(
@@ -133,9 +132,11 @@ class ChatViewModel @Inject constructor(
      * running" indicator, which must stay visible for that chat even while the user has
      * switched away from it.
      */
-    val runningSessionId: StateFlow<String?> = combine(agentState, _taskSessionId) { state, sessionId ->
-        if (sessionId != null && (state is AgentState.Thinking || state is AgentState.ExecutingPlan)) {
-            sessionId
+    val runningSessionId: StateFlow<String?> = combine(
+        agentState, agentLoop.activeTaskSessionId, agentLoop.proposedPlanSessionId
+    ) { state, activeTaskSessionId, proposedPlanSessionId ->
+        if (state is AgentState.Thinking || state is AgentState.ExecutingPlan) {
+            sessionOf(state, activeTaskSessionId, proposedPlanSessionId)
         } else {
             null
         }
@@ -145,21 +146,13 @@ class ChatViewModel @Inject constructor(
         initialValue = null
     )
 
-    // Snapshots which chat is current right now and records it as the session the next
-    // task will be pinned to. Reads the live-collected [sessions] snapshot for the same
-    // reason [isCurrentSession] does - [sessions] is guaranteed to be actively collected
-    // by ChatScreen, [currentSessionId] is not. Returns the same id so callers can pass
-    // it straight through to AgentLoop.processQuery instead of it re-resolving "current"
-    // itself at an arbitrary later moment.
-    private fun pinTaskSessionSnapshot(): String? {
-        val sessionId = sessions.value.firstOrNull { it.isCurrent }?.id
-        _taskSessionId.value = sessionId
-        return sessionId
-    }
-
     fun sendMessage(query: String, context: Context) {
         if (query.isBlank()) return
-        val sessionId = pinTaskSessionSnapshot()
+        // Reads the live-collected [sessions] snapshot for the same reason
+        // [isCurrentSession] does - [sessions] is guaranteed to be actively collected by
+        // ChatScreen, [currentSessionId] is not. Passed straight through so AgentLoop pins
+        // this chat instead of re-resolving "current" itself at an arbitrary later moment.
+        val sessionId = sessions.value.firstOrNull { it.isCurrent }?.id
         agentLoop.processQuery(query, context, sessionId)
     }
 
@@ -176,13 +169,11 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val sessionId = conversationRepository.ensureCurrentSessionId()
             conversationRepository.deleteMessageAndAfter(sessionId, messageId)
-            _taskSessionId.value = sessionId
             agentLoop.processQuery(newText, context, sessionId)
         }
     }
 
     fun approvePlan(context: Context, planId: String, grants: Set<String> = emptySet()) {
-        pinTaskSessionSnapshot()
         agentLoop.approveProposedPlan(context, planId, grants)
     }
 
@@ -208,7 +199,8 @@ class ChatViewModel @Inject constructor(
 
     /** Clears the messages of the CURRENT chat only - other chats are untouched. */
     fun clearChat() {
-        agentLoop.cancelCurrentTask()
+        val current = sessions.value.firstOrNull { it.isCurrent }?.id
+        if (current != null) cancelTaskIn(current)
         viewModelScope.launch {
             conversationRepository.clearCurrentSession()
         }
@@ -249,17 +241,14 @@ class ChatViewModel @Inject constructor(
     }
 
     /**
-     * Deletes a chat and its messages. If it was the currently open chat, OR it is
-     * whichever chat [runningSessionId] says has a task actively writing into it right
-     * now, that task is cancelled first - deleting it out from under a still-running
-     * task would otherwise leave that task writing into a session that no longer
-     * exists. The repository guarantees another session becomes current - the user is
-     * never left with no chat selected.
+     * Deletes a chat and its messages. A task or plan proposal pinned to that chat is
+     * cancelled first - deleting it out from under a still-running task would otherwise
+     * leave that task writing into a session that no longer exists - while one pinned to
+     * any other chat keeps going. The repository guarantees another session becomes
+     * current - the user is never left with no chat selected.
      */
     fun deleteChat(sessionId: String) {
-        if (isCurrentSession(sessionId) || runningSessionId.value == sessionId) {
-            agentLoop.cancelCurrentTask()
-        }
+        cancelTaskIn(sessionId)
         agentLoop.forgetSession(sessionId)
         viewModelScope.launch {
             conversationRepository.deleteSession(sessionId)
@@ -275,6 +264,17 @@ class ChatViewModel @Inject constructor(
     // the time a user can tap switch/delete on a session row, its value is current.
     private fun isCurrentSession(sessionId: String): Boolean =
         sessions.value.any { it.id == sessionId && it.isCurrent }
+
+    private fun cancelTaskIn(sessionId: String) {
+        val owner = sessionOf(
+            agentLoop.agentState.value,
+            agentLoop.activeTaskSessionId.value,
+            agentLoop.proposedPlanSessionId.value
+        )
+        if (owner == sessionId) {
+            agentLoop.cancelCurrentTask()
+        }
+    }
 
     /**
      * Cancels whatever the agent is currently doing without touching the
