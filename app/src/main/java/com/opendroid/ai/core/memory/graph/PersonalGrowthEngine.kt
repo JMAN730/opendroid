@@ -318,8 +318,9 @@ class PersonalGrowthEngine @Inject constructor(
     suspend fun clearTier(tier: MemoryTier) {
         when (tier) {
             MemoryTier.TEMPORARY -> workingMemory.clear()
-            MemoryTier.SENSITIVE -> sensitiveMemoryStore.clearAll()
             else -> {
+                // Each secret also has a plaintext node holding its label and key; drop those too.
+                if (tier == MemoryTier.SENSITIVE) sensitiveMemoryStore.clearAll()
                 val snapshot = getSnapshot()
                 val nodesInTier = snapshot.getNodesByTier(tier)
                 for (node in nodesInTier) {
