@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -263,6 +264,65 @@ class StorageWorkspaceProviderTest {
         givenNotesFolder()
 
         val result = StorageWorkspaceProvider.copyFile(context, "notes/todo.txt", "NOTES/TODO.txt")
+
+        assertFalse(result.data, result.success)
+        assertNotesFolderIntact()
+    }
+
+    @Test
+    fun `moving a file to a name that differs only by case renames it`() {
+        val report = File(workspace, "report.txt").apply { writeText("report") }
+
+        val result = StorageWorkspaceProvider.moveResolved(report, File(workspace, "Report.txt"))
+
+        assertTrue(result.error, result.success)
+        assertTrue(workspace.list()!!.contains("Report.txt"))
+        assertFalse(workspace.list()!!.contains("report.txt"))
+        assertEquals("report", File(workspace, "Report.txt").readText())
+    }
+
+    @Test
+    fun `moving a folder to a name that differs only by case renames it and keeps its files`() {
+        val notes = givenNotesFolder()
+
+        val result = StorageWorkspaceProvider.moveResolved(notes, File(workspace, "Notes"))
+
+        assertTrue(result.error, result.success)
+        assertTrue(workspace.list()!!.contains("Notes"))
+        assertFalse(workspace.list()!!.contains("notes"))
+        assertEquals("inner", File(workspace, "Notes/mmm/inner.txt").readText())
+    }
+
+    @Test
+    fun `a failed case only rename reports failure and never falls back to a copy`() {
+        val report = File(workspace, "report.txt").apply { writeText("report") }
+
+        val result = StorageWorkspaceProvider.moveResolved(report, File(workspace, "Report.txt")) { _, _ -> false }
+
+        assertFalse(result.data, result.success)
+        assertNotNull(result.error)
+        assertEquals(listOf("report.txt"), workspace.list()!!.toList())
+        assertEquals("report", report.readText())
+    }
+
+    @Test
+    fun `moveFile renames a file when the resolved paths keep the requested case`() {
+        File(workspace, "report.txt").writeText("report")
+        // Windows folds a canonical path to the case on disk, so resolveFile hides the change there.
+        assumeTrue(File(workspace, "Report.txt").canonicalPath.endsWith("Report.txt"))
+
+        val result = StorageWorkspaceProvider.moveFile(context, "report.txt", "Report.txt")
+
+        assertTrue(result.error, result.success)
+        assertTrue(workspace.list()!!.contains("Report.txt"))
+        assertFalse(workspace.list()!!.contains("report.txt"))
+    }
+
+    @Test
+    fun `moving a folder into its own subfolder spelled in another case fails and keeps the data`() {
+        givenNotesFolder()
+
+        val result = StorageWorkspaceProvider.moveFile(context, "notes", "NOTES/backup")
 
         assertFalse(result.data, result.success)
         assertNotesFolderIntact()
