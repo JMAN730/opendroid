@@ -3,7 +3,12 @@ package com.opendroid.ai.actions
 import android.Manifest
 import android.app.Activity
 import android.app.Application
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Looper
 import android.telephony.SmsManager
 import androidx.test.core.app.ApplicationProvider
@@ -201,13 +206,57 @@ class SmsSendingTest {
         assertFalse(pending.await())
     }
 
-    private suspend fun sendAction(message: String): ActionResult {
+    @Test
+    fun `composer left open for the user is a hand-off, not a failure a fallback could act on`() = runBlocking {
+        shadowOf(context).denyPermissions(Manifest.permission.SEND_SMS)
+        installMessagingApp()
+
+        val result = sendAction("hello")
+
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertEquals("smsto", shadowOf(context).nextStartedActivity.data?.scheme)
+        assertNull(shadowSms.lastSentMultipartTextMessageParams)
+    }
+
+    @Test
+    fun `backup composer left open for the user is a hand-off too`() = runBlocking {
+        shadowOf(context).denyPermissions(Manifest.permission.SEND_SMS)
+        installMessagingApp()
+        val sendToFails = object : ContextWrapper(context) {
+            val opened = mutableListOf<Intent>()
+            override fun startActivity(intent: Intent) {
+                if (intent.action == Intent.ACTION_SENDTO) throw ActivityNotFoundException()
+                opened += intent
+            }
+        }
+
+        val result = sendAction("hello", sendToFails)
+
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertEquals("sms", sendToFails.opened.single().data?.scheme)
+    }
+
+    private suspend fun sendAction(message: String, sendContext: Context = context): ActionResult {
         val actions = CommunicationActions(
             FakeContactResolver(context).apply { contacts += Contact(name = "Sam", phoneNumber = PHONE) },
             CallFlowExecutor(NoCalls)
         )
         return actions.getActions().first { it.name == "SEND_SMS" }
-            .execute(mapOf("contact" to "Sam", "message" to message), context)
+            .execute(mapOf("contact" to "Sam", "message" to message), sendContext)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installMessagingApp() {
+        val component = ComponentName("com.example.sms", "com.example.sms.ComposeActivity")
+        val packageManager = shadowOf(context.packageManager)
+        packageManager.addActivityIfNotPresent(component)
+        packageManager.addIntentFilterForActivity(
+            component,
+            IntentFilter(Intent.ACTION_SENDTO).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+                addDataScheme("smsto")
+            }
+        )
     }
 
     private fun reportAll(resultCode: Int) {
