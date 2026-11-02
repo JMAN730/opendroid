@@ -37,7 +37,15 @@ class ReEvaluationEngine @Inject constructor(
         val speech: String,
         val decision: String, // "CONTINUE" | "MODIFY" | "ABANDON"
         val updatedPlan: Plan? = null
-    )
+    ) {
+        /** Actions this answer would add to the plan: step actions and their fallbacks. */
+        fun proposedActionNames(): List<String> {
+            if (!decision.equals("MODIFY", ignoreCase = true)) return emptyList()
+            return updatedPlan?.steps.orEmpty().flatMap { step ->
+                listOf(step.action, step.fallback).filter { it.isNotBlank() }
+            }
+        }
+    }
 
     suspend fun evaluateStepResult(
         originalGoal: String,
@@ -210,13 +218,14 @@ class ReEvaluationEngine @Inject constructor(
     /**
      * A malformed local plan is the only condition that may use a configured
      * alternate planner. Provider errors retain their existing retry/error
-     * contract and never trigger a silent vendor switch.
+     * contract and never trigger a silent vendor switch. A fallback's answer that
+     * adds high-impact actions counts as malformed, see [ProviderSelectionPolicy.acceptsOutput].
      */
-    private suspend fun <T> completeAndDecode(
+    private suspend fun completeAndDecode(
         request: LLMRequest,
         actionNames: Collection<String>,
-        decode: (String) -> T
-    ): T {
+        decode: (String) -> ReEvalResult
+    ): ReEvalResult {
         val providers = llmProviderFactory.getPlanningProviders(actionNames)
         var lastMalformed: LLMException? = null
 
@@ -237,11 +246,15 @@ class ReEvaluationEngine @Inject constructor(
 
             llmProviderFactory.recordPlanningLatency(response)
             try {
-                return decode(cleanJsonString(response.content))
+                val decoded = decode(cleanJsonString(response.content))
+                if (ProviderSelectionPolicy.acceptsOutput(index > 0, decoded.proposedActionNames())) {
+                    return decoded
+                }
             } catch (_: Exception) {
-                lastMalformed = LLMErrorMapper.malformed(provider.name, response.model)
-                if (index == providers.lastIndex) break
+                // Treated the same as an over-limit answer below.
             }
+            lastMalformed = LLMErrorMapper.malformed(provider.name, response.model)
+            if (index == providers.lastIndex) break
         }
 
         val activeProvider = providers.firstOrNull()?.name ?: "On-Device AI"
