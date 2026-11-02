@@ -209,6 +209,27 @@ class ActionSequenceExecutorTest {
         assertEquals("Completed successfully.", completedStepResult(ActionResult.Success()))
     }
 
+    @Test
+    fun `composer left open for the user never falls back to another messaging app`() = runBlocking {
+        listOf("SEND_WHATSAPP" to "SEND_SMS", "SEND_SMS" to "SEND_WHATSAPP").forEach { (primary, fallback) ->
+            val calls = mutableListOf<String>()
+            val executor = executor { action, _, _ ->
+                calls += action
+                if (action == primary) ActionResult.UserActionRequired("Chat is open with your message ready. Tap Send.")
+                else ActionResult.Success(mapOf("message" to "Text sent to Mom!"))
+            }
+            val handOffStep = step("send", order = 1, action = primary, fallback = fallback)
+
+            assertFalse(executor.shouldAttemptFallback(ActionResult.UserActionRequired("open"), handOffStep))
+
+            val result = executor.execute(listOf(handOffStep), context)
+
+            assertEquals(listOf(primary), calls)
+            assertFalse(result.success)
+            assertFalse(result.error.orEmpty().contains("Text sent"))
+        }
+    }
+
     private fun executor(
         executeAction: suspend (String, Map<String, String>, Context) -> ActionResult
     ) = ActionSequenceExecutor(executeAction, hasAction = { true })
