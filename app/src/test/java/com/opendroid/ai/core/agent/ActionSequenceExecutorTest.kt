@@ -109,6 +109,39 @@ class ActionSequenceExecutorTest {
         assertEquals(listOf("PRIMARY", "FALLBACK"), calls)
     }
 
+    @Test
+    fun `a declined step never runs its fallback`() {
+        val executor = executor { _, _, _ -> error("must not dispatch") }
+
+        assertFalse(
+            executor.shouldAttemptFallback(
+                ActionResult.Declined("Action cancelled by user response: no"),
+                step("confirm", order = 1, action = "CONFIRM_ACTION", fallback = "SEND_SMS")
+            )
+        )
+    }
+
+    @Test
+    fun `a macro stops at a declined step and reports the decline`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val declined = ActionResult.Declined("Action cancelled by user response: no")
+        val executor = executor { action, _, _ ->
+            calls += action
+            declined
+        }
+
+        val result = executor.execute(
+            steps = listOf(
+                step("confirm", order = 1, action = "CONFIRM_ACTION"),
+                step("send", order = 2, action = "SEND_SMS")
+            ),
+            context = context
+        )
+
+        assertEquals(declined, result)
+        assertEquals(listOf("CONFIRM_ACTION"), calls)
+    }
+
     private fun executor(
         executeAction: suspend (String, Map<String, String>, Context) -> ActionResult
     ) = ActionSequenceExecutor(executeAction, hasAction = { true })
