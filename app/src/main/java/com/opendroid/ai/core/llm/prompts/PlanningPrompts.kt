@@ -116,7 +116,7 @@ CORE ACTIONS:
 2. CLOCK & TASKS:
    - SET_ALARM {time: String, label: String}
    - SET_TIMER {duration: String, label: String}
-   - CREATE_CALENDAR_EVENT {title: String, startTime: String}
+   - CREATE_CALENDAR_EVENT {title: String, date: String, time: String}
    - CREATE_NOTE {title: String, content: String}
 3. COMMUNICATION:
    - SEND_WHATSAPP {contact: String, message: String}
