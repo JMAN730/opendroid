@@ -459,6 +459,7 @@ object AliasResolver {
         "wakeup alarm", "wakeup at", "morning alarm",
         "put alarm", "remind me to wake"
     )
+    private val alarmEdgeFiller = Regex("""^(?:(?:for|at|to)\s+)+|(?:\s+(?:for|at|to))+$""")
 
     /**
      * Check if input is an alarm request.
@@ -472,8 +473,8 @@ object AliasResolver {
     /**
      * Extract the time portion from an alarm request.
      * Strips alarm trigger phrases to isolate the time string.
-     * Returns null unless SET_ALARM can parse what remains, so "set alarm for
-     * saturday at 7" goes to the planner instead of failing as "saturday 7".
+     * Returns null unless SET_ALARM can parse what remains, so a request the shortcut
+     * can't carry in full ("saturday at 7", "6 am every weekday") goes to the planner.
      */
     fun extractAlarmTime(input: String): String? {
         var cleaned = input.lowercase().trim()
@@ -485,17 +486,14 @@ object AliasResolver {
         }
 
         // Remove filler words on word boundaries, so "saturday" keeps its "at".
-        // A leading "to" is filler ("set alarm to 7"); "quarter to 8" keeps its own.
         cleaned = cleaned
             .replace(Regex("""\b(?:for\s+)?(?:tomorrow|today)\b"""), " ")
-            .replace(Regex("""\b(?:for|at)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
-            .replace(Regex("""^to\b"""), "")
-            .trim()
+            // Only at the edges: "at" and "to" also belong to "at night" and "quarter to 8".
+            .replace(alarmEdgeFiller, "")
 
-        if (cleaned.isEmpty() || EventTimeParser.parseClockTime(cleaned) == null) return null
-        return cleaned
+        return cleaned.takeIf { it.isNotEmpty() && EventTimeParser.parseClockTime(it) != null }
     }
 
     /**

@@ -298,6 +298,37 @@ class AliasResolverTest {
     }
 
     @Test
+    fun `extractAlarmTime keeps the words that belong to the time`() {
+        assertEquals("quarter to 8 pm", AliasResolver.extractAlarmTime("wake me up at quarter to 8 pm"))
+        assertEquals("quarter to 8 pm", AliasResolver.extractAlarmTime("set alarm for quarter to 8 pm"))
+        assertEquals("half past 6 pm", AliasResolver.extractAlarmTime("wake me up at half past 6 pm"))
+        assertEquals("half past 9 at night", AliasResolver.extractAlarmTime("set alarm for half past 9 at night"))
+    }
+
+    @Test
+    fun `extractAlarmTime still drops the filler around the time`() {
+        assertEquals("7", AliasResolver.extractAlarmTime("set alarm for 7 tomorrow"))
+        assertEquals("7", AliasResolver.extractAlarmTime("set alarm to 7"))
+        assertEquals("7", AliasResolver.extractAlarmTime("set alarm for tomorrow at 7"))
+        assertEquals("7", AliasResolver.extractAlarmTime("set alarm at 7 for today"))
+        assertEquals("6:30", AliasResolver.extractAlarmTime("alarm at 6:30"))
+    }
+
+    @Test
+    fun `extractAlarmTime leaves a request it cannot read to the planner`() {
+        // The shortcut can't carry a schedule, so these must not become one-time alarms.
+        assertNull(AliasResolver.extractAlarmTime("set alarm for 6 am every weekday"))
+        assertNull(AliasResolver.extractAlarmTime("set alarm for half past 6 every weekday"))
+    }
+
+    @Test
+    fun `no alias intercepts an alarm request before the shortcut`() {
+        assertNull(AliasResolver.resolve("wake me up at half past 6 pm"))
+        assertNull(AliasResolver.resolve("set alarm for quarter to 8 pm"))
+        assertNull(AliasResolver.resolve("set alarm for 6 am every weekday"))
+    }
+
+    @Test
     fun `extracts timer duration from natural language`() {
         assertEquals(5, AliasResolver.extractTimerDuration("set a 5s timer"))
         assertEquals(5, AliasResolver.extractTimerDuration("set a 5 seconds timer"))

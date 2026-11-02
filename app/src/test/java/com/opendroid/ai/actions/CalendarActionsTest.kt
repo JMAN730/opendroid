@@ -4,6 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ResolveInfo
+import android.provider.AlarmClock
 import android.provider.CalendarContract
 import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.actions.base.ActionResult
@@ -12,6 +15,7 @@ import java.time.Clock
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import java.util.Calendar
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -263,6 +268,106 @@ class CalendarActionsTest {
         assertTrue(result is ActionResult.Failure)
     }
 
+    @Test
+    fun `alarm at half past 6 pm rings at 18 30 and says so`() = runBlocking {
+        installClockApp()
+
+        val result = CalendarActions.SetAlarmAction().execute(mapOf("time" to "half past 6 pm"), context)
+
+        assertTrue(result.success)
+        val intent = context.started.single()
+        assertEquals(18, intent.getIntExtra(AlarmClock.EXTRA_HOUR, -1))
+        assertEquals(30, intent.getIntExtra(AlarmClock.EXTRA_MINUTES, -1))
+        assertTrue(result.data.orEmpty(), result.data.orEmpty().contains("6:30 PM"))
+    }
+
+    @Test
+    fun `alarm on weekdays carries Monday to Friday`() = runBlocking {
+        installClockApp()
+
+        val result = CalendarActions.SetAlarmAction().execute(
+            mapOf("time" to "6 am", "repeat" to "weekdays"),
+            context
+        )
+
+        assertTrue(result.success)
+        assertEquals(WEEKDAYS, context.started.single().alarmDays())
+        assertTrue(result.data.orEmpty(), result.data.orEmpty().contains("Mon, Tue, Wed, Thu, Fri"))
+    }
+
+    @Test
+    fun `alarm repeat schedules map to days`() = runBlocking {
+        installClockApp()
+        val saturdaySunday = listOf(Calendar.SUNDAY, Calendar.SATURDAY)
+        val monWedFri = listOf(Calendar.MONDAY, Calendar.WEDNESDAY, Calendar.FRIDAY)
+        val everyDay = (WEEKDAYS + saturdaySunday).sorted()
+
+        mapOf(
+            "daily" to everyDay,
+            "Every day" to everyDay,
+            "every weekday" to WEEKDAYS,
+            "weekends" to saturdaySunday,
+            "every weekend" to saturdaySunday,
+            "wednesday" to listOf(Calendar.WEDNESDAY),
+            "every Sunday" to listOf(Calendar.SUNDAY),
+            "tuesdays" to listOf(Calendar.TUESDAY),
+            "mon, wed and fri" to monWedFri,
+            "Monday, Wednesday, Friday" to monWedFri
+        ).forEach { (repeat, days) ->
+            context.started.clear()
+            val result = CalendarActions.SetAlarmAction().execute(
+                mapOf("time" to "6 am", "repeat" to repeat),
+                context
+            )
+            assertTrue(repeat, result.success)
+            assertEquals(repeat, days, context.started.single().alarmDays())
+        }
+    }
+
+    @Test
+    fun `alarm without a repeat schedule is one-time`() = runBlocking {
+        installClockApp()
+
+        listOf(
+            mapOf("time" to "6 am"),
+            mapOf("time" to "6 am", "repeat" to "once"),
+            mapOf("time" to "6 am", "repeat" to "")
+        ).forEach { params ->
+            context.started.clear()
+            val result = CalendarActions.SetAlarmAction().execute(params, context)
+            assertTrue(result.success)
+            assertFalse(context.started.single().hasExtra(AlarmClock.EXTRA_DAYS))
+        }
+    }
+
+    @Test
+    fun `alarm with a schedule it cannot map fails and sets nothing`() = runBlocking {
+        installClockApp()
+
+        listOf("when it rains", "monthly", "weekly", "every").forEach { repeat ->
+            val result = CalendarActions.SetAlarmAction().execute(
+                mapOf("time" to "6 am", "repeat" to repeat),
+                context
+            )
+            assertTrue(repeat, result is ActionResult.Failure)
+            assertTrue(repeat, result.error.orEmpty().contains(repeat))
+            assertTrue(repeat, isUserFacingStepError(result.error.orEmpty()))
+            assertTrue(repeat, context.started.isEmpty())
+        }
+    }
+
+    private fun Intent.alarmDays() = getIntegerArrayListExtra(AlarmClock.EXTRA_DAYS)?.sorted()
+
+    private fun installClockApp() {
+        val resolveInfo = ResolveInfo().apply {
+            activityInfo = ActivityInfo().apply {
+                packageName = "com.android.deskclock"
+                name = "SetAlarmActivity"
+            }
+        }
+        shadowOf(context.packageManager).addResolveInfoForIntent(Intent(AlarmClock.ACTION_SET_ALARM), resolveInfo)
+    }
+
     private fun Intent.beginTime() = getLongExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, -1L)
     private fun Intent.endTime() = getLongExtra(CalendarContract.EXTRA_EVENT_END_TIME, -1L)
     private fun Intent.isAllDay() = getBooleanExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, false)
@@ -288,6 +393,7 @@ class CalendarActionsTest {
 
     private companion object {
         val ZONE: ZoneId = ZoneId.of("Europe/Stockholm")
+        val WEEKDAYS = listOf(Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY)
 
         // Monday 2026-11-02, 10:00 local.
         val CLOCK: Clock = Clock.fixed(

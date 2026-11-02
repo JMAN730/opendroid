@@ -18,9 +18,12 @@ import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
 import java.time.Clock
+import java.time.DayOfWeek
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import java.time.format.TextStyle
 import java.util.Calendar
+import java.util.Locale
 import com.opendroid.ai.core.memory.graph.KnowledgeCategory
 import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
@@ -149,7 +152,7 @@ class CalendarActions @Inject constructor(
         }
     }
 
-    private class SetAlarmAction : Action {
+    internal class SetAlarmAction : Action {
         override val name: String = "SET_ALARM"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val timeStr = params["time"]
@@ -164,22 +167,27 @@ class CalendarActions @Inject constructor(
 
             val (hour, minute) = parsed
 
+            val repeat = params["repeat"].orEmpty()
+            val days = EventTimeParser.parseAlarmDays(repeat)
+                ?: return ActionResult(false, null,
+                    "I couldn't read the repeat schedule '$repeat', so no alarm was set. Please use daily, weekdays, weekends, or day names.")
+
             // Try Method 1: AlarmClock Intent (most reliable)
-            val method1 = tryAlarmClockIntent(hour, minute, label, context)
+            val method1 = tryAlarmClockIntent(hour, minute, days, label, context)
             if (method1 != null) return method1
 
             // Try Method 2: Open clock app as fallback
-            val method2 = tryOpenClockApp(hour, minute, context)
+            val method2 = tryOpenClockApp(hour, minute, days, context)
             if (method2 != null) return method2
 
             // All methods failed
-            val timeFormatted = formatTime(hour, minute)
+            val timeFormatted = formatTime(hour, minute, days)
             return ActionResult(false, null,
                 "Could not set alarm for $timeFormatted. Please open Clock app manually.")
         }
 
         private fun tryAlarmClockIntent(
-            hour: Int, minute: Int, label: String, context: Context
+            hour: Int, minute: Int, days: Set<DayOfWeek>, label: String, context: Context
         ): ActionResult? {
             return try {
                 val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
@@ -187,6 +195,10 @@ class CalendarActions @Inject constructor(
                     putExtra(AlarmClock.EXTRA_MINUTES, minute)
                     putExtra(AlarmClock.EXTRA_MESSAGE, label)
                     putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    if (days.isNotEmpty()) {
+                        // EXTRA_DAYS takes Calendar day constants, where Sunday is 1.
+                        putIntegerArrayListExtra(AlarmClock.EXTRA_DAYS, ArrayList(days.map { it.value % 7 + Calendar.SUNDAY }))
+                    }
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
 
@@ -198,7 +210,7 @@ class CalendarActions @Inject constructor(
                     null // no clock app can handle it
                 } else {
                     context.startActivity(intent)
-                    val timeFormatted = formatTime(hour, minute)
+                    val timeFormatted = formatTime(hour, minute, days)
                     ActionResult(true, "Your alarm is set for $timeFormatted!", null)
                 }
             } catch (e: SecurityException) {
@@ -215,7 +227,7 @@ class CalendarActions @Inject constructor(
         }
 
         private fun tryOpenClockApp(
-            hour: Int, minute: Int, context: Context
+            hour: Int, minute: Int, days: Set<DayOfWeek>, context: Context
         ): ActionResult? {
             return try {
                 // Try Google Clock, then AOSP Clock
@@ -227,7 +239,7 @@ class CalendarActions @Inject constructor(
                 if (clockIntent != null) {
                     clockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(clockIntent)
-                    val timeFormatted = formatTime(hour, minute)
+                    val timeFormatted = formatTime(hour, minute, days)
                     ActionResult(true,
                         "I opened the Clock app — please set your alarm for $timeFormatted there.", null)
                 } else {
@@ -238,14 +250,19 @@ class CalendarActions @Inject constructor(
             }
         }
 
-        private fun formatTime(hour: Int, minute: Int): String {
+        private fun formatTime(hour: Int, minute: Int, days: Set<DayOfWeek>): String {
             val amPm = if (hour < 12) "AM" else "PM"
             val displayHour = when {
                 hour == 0 -> 12
                 hour > 12 -> hour - 12
                 else -> hour
             }
-            return "$displayHour:${minute.toString().padStart(2, '0')} $amPm"
+            val schedule = if (days.isEmpty()) {
+                ""
+            } else {
+                " every " + days.sorted().joinToString(", ") { it.getDisplayName(TextStyle.SHORT, Locale.ENGLISH) }
+            }
+            return "$displayHour:${minute.toString().padStart(2, '0')} $amPm$schedule"
         }
     }
 
