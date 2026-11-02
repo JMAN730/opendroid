@@ -222,6 +222,37 @@ class PlanModificationTest {
     }
 
     @Test
+    fun `references between renumbered steps follow them to their new ids`() {
+        val weather = step("s2", "GET_WEATHER")
+        val sms = step("s3", "SEND_SMS", params = mapOf("message" to "\$\$s2"))
+        val renumbered = listOf(
+            step("s1", "GET_WEATHER", params = mapOf("city" to "Oslo")),
+            step("s2", "SEND_SMS", params = mapOf("message" to "Weather: \$\$s1 (\$s1)")).copy(dependsOn = listOf("s1"))
+        )
+
+        val merged = PlanModification.merge(listOf(search, weather, sms), renumbered).steps
+
+        val newSms = merged.single { it.action == "SEND_SMS" }
+        assertEquals("s3", newSms.stepId)
+        assertEquals(listOf("s2"), newSms.dependsOn)
+        assertEquals("Weather: \$\$s2 (\$s2)", newSms.params["message"])
+    }
+
+    @Test
+    fun `references to a re-identified step follow it to its new id`() {
+        val renumbered = listOf(
+            step("s1", "SET_ALARM"),
+            step("s3", "SEND_SMS", params = mapOf("message" to "\$\$s1")).copy(dependsOn = listOf("s1"))
+        )
+
+        val merged = PlanModification.merge(listOf(search), renumbered).steps
+
+        val sms = merged.single { it.action == "SEND_SMS" }
+        assertEquals(listOf("s1_r1"), sms.dependsOn)
+        assertEquals("\$\$s1_r1", sms.params["message"])
+    }
+
+    @Test
     fun `renumbered revision does not undo a step the user changed during the call`() {
         val edited = queuedSms.copy(params = mapOf("contact" to "Dad", "message" to "hi"))
         val renumbered = step("s1", "SEND_SMS", params = mapOf("message" to "22C"))

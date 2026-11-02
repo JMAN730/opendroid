@@ -35,7 +35,8 @@ object PlanModification {
      * never queued again. So is a renumbered echo of another settled step. Anything else
      * takes over a pending step with the same action, since appending it next to that
      * step would send the same message twice, or runs under a new "<id>_r1" id when
-     * there is no such step. Either way it reaches [requiresApproval] as a change.
+     * there is no such step. Either way it reaches [requiresApproval] as a change, and
+     * the other revised steps' dependencies and "$$" references follow it to its new id.
      *
      * [repairing] names the step that just failed with an unknown action. A step reusing
      * its id with a different action replaces it in place, so it runs before the steps
@@ -78,14 +79,17 @@ object PlanModification {
         val usedIds = (current + incoming).map { it.stepId }.toMutableSet()
         val replacements = mutableMapOf<String, PlanStep>()
         val added = mutableListOf<PlanStep>()
+        val moved = mutableMapOf<String, String>()
 
         fun placeWithoutOwnSlot(step: PlanStep) {
             val slot = open.firstOrNull { it.action == step.action }
             if (slot != null) {
                 open -= slot
-                replacements[slot.stepId] = step.copy(stepId = slot.stepId, dependsOn = step.dependsOn - slot.stepId)
+                moved[step.stepId] = slot.stepId
+                replacements[slot.stepId] = step.copy(stepId = slot.stepId)
             } else {
                 val newId = generateSequence(1) { it + 1 }.map { "${step.stepId}_r$it" }.first(usedIds::add)
+                moved[step.stepId] = newId
                 added += step.copy(stepId = newId)
             }
         }
@@ -103,7 +107,8 @@ object PlanModification {
             }
         }
 
-        val steps = current.map { replacements[it.stepId] ?: it } + added
+        val remap = referenceRemapper(moved, usedIds)
+        val steps = current.map { replacements[it.stepId]?.let(remap) ?: it } + added.map(remap)
         return MergeResult(steps, rejected, revisionLost = rejected.isNotEmpty() && incoming.isEmpty())
     }
 
@@ -136,6 +141,26 @@ object PlanModification {
 
     private fun hasKnownActions(step: PlanStep): Boolean =
         ActionSchema.isValid(step.action) && (step.fallback.isBlank() || ActionSchema.isValid(step.fallback))
+
+    /**
+     * Rewrites a revised step's dependencies and "$id"/"$$id" references so they follow
+     * revised steps the merge placed under another id ([moved]: incoming id to final id).
+     * [knownIds] are matched longest first, as ActionSequenceExecutor.resolveParameters
+     * does, so "$s1" is never read out of "$s10". A step never ends up depending on itself.
+     */
+    private fun referenceRemapper(moved: Map<String, String>, knownIds: Set<String>): (PlanStep) -> PlanStep {
+        if (moved.isEmpty()) return { it.copy(dependsOn = it.dependsOn - it.stepId) }
+        val ids = knownIds.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        val reference = Regex("(\\$\\$?)($ids)")
+        return { step ->
+            step.copy(
+                dependsOn = step.dependsOn.map { moved[it] ?: it }.distinct() - step.stepId,
+                params = step.params.mapValues { (_, value) ->
+                    reference.replace(value) { it.groupValues[1] + (moved[it.groupValues[2]] ?: it.groupValues[2]) }
+                }
+            )
+        }
+    }
 
     /**
      * Whether [step] repeats the settled step [old]: same action and fallback, and the
