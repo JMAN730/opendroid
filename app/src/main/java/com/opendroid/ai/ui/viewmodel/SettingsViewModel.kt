@@ -390,13 +390,22 @@ class SettingsViewModel @Inject constructor(
         val pendingPicks = pendingModelSelections.toMap()
         pendingModelSelections.clear()
         pendingPicks.keys.forEach { modelSelectionJobs.remove(it)?.cancel() }
+        val pickUpdates = pendingPicks.map { (pickedFor, model) -> selectedModelUpdate(pickedFor, model) }
         viewModelScope.launch {
             try {
-                pendingPicks.forEach { (pickedFor, model) -> persistSelectedModel(pickedFor, model) }
+                // One write for the picks and the switch: a separate pick write would suspend
+                // first and let a later switch save before this one.
                 val saved = configSaver.save(
-                    revert = { stored -> copy(activeProvider = stored.activeProvider, activeModel = stored.activeModel) }
+                    revert = { stored ->
+                        copy(
+                            activeProvider = stored.activeProvider,
+                            activeModel = stored.activeModel,
+                            selectedModels = if (pickUpdates.isEmpty()) selectedModels else stored.selectedModels
+                        )
+                    }
                 ) { current ->
-                    current.withActiveProvider(provider)
+                    pickUpdates.fold(current) { config, applyPick -> applyPick(config) }
+                        .withActiveProvider(provider)
                 }
                 if (saved) refreshModels(force = false)
             } catch (e: Exception) {
@@ -429,12 +438,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     private suspend fun persistSelectedModel(provider: String, model: String) {
+        configSaver.save(
+            revert = { stored -> copy(activeModel = stored.activeModel, selectedModels = stored.selectedModels) },
+            update = selectedModelUpdate(provider, model)
+        )
+    }
+
+    /** The stored-config edit that records [model] as [provider]'s pick. */
+    private fun selectedModelUpdate(provider: String, model: String): (LLMConfig) -> LLMConfig {
         // Prefer this session's in-memory Claude/live list for the provider
         // if DataStore has not absorbed refreshModels yet.
         val memoryModels = _llmConfig.value.modelCache[provider]
-        configSaver.save(
-            revert = { stored -> copy(activeModel = stored.activeModel, selectedModels = stored.selectedModels) }
-        ) { current ->
+        return { current ->
             val config = if (!memoryModels.isNullOrEmpty()) {
                 current.copy(modelCache = current.modelCache + (provider to memoryModels))
             } else {
