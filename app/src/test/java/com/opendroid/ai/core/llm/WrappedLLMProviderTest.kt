@@ -144,6 +144,44 @@ class WrappedLLMProviderTest {
     }
 
     @Test
+    fun `Long MAX_VALUE retry-after with jitter is not retried`() = runBlocking {
+        var attempts = 0
+        val delays = mutableListOf<Long>()
+        val delegate = FakeProvider("OpenAI", completion = {
+            attempts++
+            throw LLMException(
+                error = LLMError.RateLimited,
+                provider = "OpenAI",
+                model = "gpt-4o",
+                status = 429,
+                retryable = true,
+                retryAfterMillis = Long.MAX_VALUE
+            )
+        })
+        val wrapper = WrappedLLMProvider(
+            delegate = delegate,
+            configProvider = {
+                LLMConfig(
+                    activeProvider = "OpenAI",
+                    activeModel = "gpt-4o",
+                    apiKeys = mapOf("OpenAI" to "test-key")
+                )
+            },
+            retryRuntime = RetryRuntime(
+                nowMillis = { 0L },
+                delayMillis = { delays += it },
+                jitterMillis = { 1L }
+            )
+        )
+
+        val failure = runCatching { wrapper.complete(request()) }.exceptionOrNull()
+
+        assertTrue(failure is LLMException)
+        assertEquals(1, attempts)
+        assertTrue(delays.isEmpty())
+    }
+
+    @Test
     fun `retry validates and executes the same proposed delay`() = runBlocking {
         var attempts = 0
         var jitterCalls = 0

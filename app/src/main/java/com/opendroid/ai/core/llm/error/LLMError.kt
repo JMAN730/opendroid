@@ -300,8 +300,10 @@ object LLMErrorMapper {
 
     private fun parseRetryAfter(value: String?): Long? {
         val text = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        text.toDoubleOrNull()?.takeIf { it >= 0.0 }?.let {
-            return (it * 1_000.0).roundToLong()
+        text.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }?.let { seconds ->
+            val millis = seconds * 1_000.0
+            if (!millis.isFinite() || millis > Long.MAX_VALUE.toDouble()) return null
+            return millis.roundToLong()
         }
 
         val parts = GO_DURATION_PART.findAll(text).toList()
