@@ -265,7 +265,11 @@ class LiteRTLMProvider @Inject constructor(
      * Verifies the model file exists and is valid.
      */
     private fun checkModelReady(modelPath: String, spec: OnDeviceModelSpec) {
-        OnDeviceModelRegistry.checkDeviceMemoryCompatibility(context, spec)
+        OnDeviceModelRegistry.checkDeviceMemoryCompatibility(
+            context,
+            spec,
+            alreadyLoaded = engineHost.holds(modelPath)
+        )
         verifyModelFileIntegrity(modelPath, spec)
     }
 

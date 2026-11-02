@@ -288,8 +288,10 @@ object OnDeviceModelRegistry {
     /**
      * Checks if the device has enough system RAM and available memory to load the model safely.
      * Throws IllegalStateException if the device memory is insufficient or under critical pressure.
+     * Pass [alreadyLoaded] when a cached engine already holds this model, which skips the
+     * free-memory check.
      */
-    fun checkDeviceMemoryCompatibility(context: Context, spec: OnDeviceModelSpec) {
+    fun checkDeviceMemoryCompatibility(context: Context, spec: OnDeviceModelSpec, alreadyLoaded: Boolean = false) {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         if (activityManager != null) {
             val memoryInfo = android.app.ActivityManager.MemoryInfo()
@@ -306,20 +308,27 @@ object OnDeviceModelRegistry {
                 )
             }
 
-            val requiredRamGb = when {
-                spec.expectedSize >= 4.5 * 1024 * 1024 * 1024L -> 12.0 // e.g. Gemma 3n E4B (~4.92 GB)
-                spec.expectedSize >= 3.0 * 1024 * 1024 * 1024L -> 8.0  // e.g. Gemma 4 E4B (~3.66 GB), Gemma 3n E2B (~3.65 GB)
-                spec.expectedSize >= 2.0 * 1024 * 1024 * 1024L -> 6.0  // e.g. Gemma 4 E2B (~2.58 GB)
-                spec.expectedSize >= 1.0 * 1024 * 1024 * 1024L -> 4.0
-                else -> 3.5 // Small models (e.g. Qwen 2.5 0.5B ~546 MB) still need >= 3.5 GB system RAM
+            // totalMem leaves out what the kernel and firmware reserve, so a phone sold as "8 GB"
+            // reports about 7.2-7.6 GiB. Each tier names the advertised size it is meant for and
+            // the smallest totalMem such a phone reports.
+            val (advertisedRamGb, minReportedRamGb) = when {
+                spec.expectedSize >= 4.5 * 1024 * 1024 * 1024L -> 12 to 10.5 // e.g. Gemma 3n E4B (~4.92 GB)
+                spec.expectedSize >= 3.0 * 1024 * 1024 * 1024L -> 8 to 7.0   // e.g. Gemma 4 E4B (~3.66 GB), Gemma 3n E2B (~3.65 GB)
+                spec.expectedSize >= 2.0 * 1024 * 1024 * 1024L -> 6 to 5.0   // e.g. Gemma 4 E2B (~2.58 GB)
+                spec.expectedSize >= 1.0 * 1024 * 1024 * 1024L -> 4 to 3.4
+                else -> 4 to 3.0 // Small models (e.g. Qwen 2.5 0.5B ~546 MB) still need more than a 3 GB phone
             }
-            
-            if (totalRamGb < requiredRamGb) {
+
+            if (totalRamGb < minReportedRamGb) {
                 throw IllegalStateException(
-                    "Insufficient device memory: $modelName requires at least ${String.format(java.util.Locale.US, "%.1f", requiredRamGb)} GB of system RAM, but your device only has ${String.format(java.util.Locale.US, "%.1f", totalRamGb)} GB RAM. " +
+                    "Insufficient device memory: $modelName needs a phone with at least $advertisedRamGb GB of RAM, but your device reports only ${String.format(java.util.Locale.US, "%.1f", totalRamGb)} GB usable. " +
                     "Running this model will cause the system to crash. Please use a smaller model like Qwen 2.5."
                 )
             }
+
+            // A model the engine already holds counts against availMem, so asking for its
+            // working memory again would refuse the model that is running fine.
+            if (alreadyLoaded) return
 
             // Headroom check: ensure available RAM can accommodate runtime working memory and OS LMK threshold
             val requiredWorkingMem = when {

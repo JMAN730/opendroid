@@ -245,6 +245,20 @@ class LiteRTEngineHostTest {
         stream.cancelAndJoin()
     }
 
+    @Test
+    fun `holds reports only the model the cached engine was loaded with`() = runBlocking {
+        val host = LiteRTEngineHost(FakeRuntime(tokens = 1)::open)
+        assertFalse(host.holds(PATH))
+
+        host.complete(PATH, spec, PROMPT, 500, 0.5f)
+        assertTrue(host.holds(PATH))
+        assertFalse(host.holds("other/model.litertlm"))
+
+        host.complete("other/model.litertlm", spec, PROMPT, 500, 0.5f)
+        assertFalse(host.holds(PATH))
+        assertTrue(host.holds("other/model.litertlm"))
+    }
+
     private companion object {
         const val PATH = "models/fake.litertlm"
         const val PROMPT = "Model:"
