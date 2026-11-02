@@ -3,6 +3,7 @@ package com.opendroid.ai.actions
 import android.content.Context
 import android.content.ContextWrapper
 import com.opendroid.ai.accessibility.CallFlowVerifier
+import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.Contact
 import com.opendroid.ai.core.agent.ContactResolution
@@ -76,6 +77,19 @@ class TelegramActionsTest {
         )
         val result = sendTgAction.execute(params, context)
         assertNotNull(result)
+    }
+
+    @Test
+    fun `SEND_TELEGRAM asks which contact when a one-word name matches several`() = runBlocking {
+        val ambiguous = object : ContactResolver(context) {
+            override suspend fun resolveWithDisambiguation(input: String): ContactResolution =
+                ContactResolution.Ambiguous(input, listOf(Contact("John Smith", "+15550101"), Contact("John Doe", "+15550102")))
+        }
+        val sendTgAction = CommunicationActions(ambiguous, callFlowExecutor).getActions().first { it.name == "SEND_TELEGRAM" }
+
+        val result = sendTgAction.execute(mapOf("contact" to "John", "message" to "Running late"), context)
+
+        assertEquals("contact_picker", (result as ActionResult.NeedsInput).metadata["type"])
     }
 
     @Test

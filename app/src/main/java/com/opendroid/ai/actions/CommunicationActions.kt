@@ -78,27 +78,6 @@ class CommunicationActions @Inject constructor(
         ReadEmailsAction()
     )
 
-    companion object {
-        /**
-         * Legacy static resolve for backward compat.
-         * Used by actions that don't yet support disambiguation.
-         */
-        private fun resolveContactToPhoneNumber(context: Context, contact: String): String {
-            if (contact.startsWith("$")) {
-                throw IllegalArgumentException("Unresolved contact placeholder: $contact")
-            }
-            val cleaned = contact.replace(" ", "").replace("-", "")
-            if (cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })) {
-                return cleaned
-            }
-            val result = ContactResolver.resolve(context, contact)
-            if (result is ContactResolver.ContactResult.Found) {
-                return result.phoneNumber
-            }
-            throw IllegalArgumentException("Contact '$contact' not found in your contacts")
-        }
-    }
-
     /**
      * Build a NeedsInput with contact picker metadata.
      * Metadata stores match data as JSON so it survives serialization.
@@ -186,7 +165,7 @@ class CommunicationActions @Inject constructor(
                 ?: return ActionResult(false, null, "message is missing")
 
             val trimmed = contact.trim()
-            if (trimmed.startsWith("@") || (trimmed.isNotEmpty() && !trimmed.contains(" ") && !trimmed.all { it.isDigit() })) {
+            if (trimmed.startsWith("@")) {
                 // Direct Telegram username/handle
                 return executeTelegram(trimmed.removePrefix("@"), contact, message, context, isUsername = true)
             }
@@ -537,12 +516,25 @@ class CommunicationActions @Inject constructor(
         }
     }
 
+    // ── MAKE_VIDEO_CALL with disambiguation ──────────────────
+
     private inner class MakeVideoCallAction : Action {
         override val name: String = "MAKE_VIDEO_CALL"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val contact = params["contact"] ?: return ActionResult(false, null, "contact parameter missing")
-            val phone = resolveContactToPhoneNumber(context, contact)
             val app = params["app"] ?: "whatsapp"
+
+            return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
+                is ContactResolution.Found -> executeVideoCall(resolved.contact.phoneNumber, contact, app, context)
+                is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_VIDEO_CALL")
+                is ContactResolution.NotFound -> ActionResult.NeedsInput(
+                    question = "I couldn't find '$contact'. What's their phone number?",
+                    metadata = mapOf("param" to "contact")
+                )
+            }
+        }
+
+        private fun executeVideoCall(phone: String, contact: String, app: String, context: Context): ActionResult {
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {

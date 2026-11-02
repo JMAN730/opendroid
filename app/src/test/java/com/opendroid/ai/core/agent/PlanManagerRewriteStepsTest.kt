@@ -61,7 +61,7 @@ class PlanManagerRewriteStepsTest {
         planManager = PlanManager(
             planRepository = repository,
             workingMemory = WorkingMemory(context, DeviceStateProvider(context)),
-            planValidator = Lazy { PlanValidator(unusedLazy(), unusedLazy()) }
+            planValidator = Lazy { PlanValidator(unusedLazy(), unusedLazy(), unusedLazy()) }
         )
         repository.savePlan(plan)
         planManager.loadPlan("p1")
