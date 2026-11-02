@@ -1,7 +1,7 @@
 package com.opendroid.ai.core.agent
 
-import com.opendroid.ai.core.util.AlarmTimeParser
 import com.opendroid.ai.core.util.DurationParser
+import com.opendroid.ai.core.util.EventTimeParser
 
 /**
  * Alias resolver that maps common natural language phrases
@@ -494,7 +494,7 @@ object AliasResolver {
             .replace(Regex("""^to\b"""), "")
             .trim()
 
-        if (cleaned.isEmpty() || AlarmTimeParser.parse(cleaned) == null) return null
+        if (cleaned.isEmpty() || EventTimeParser.parseClockTime(cleaned) == null) return null
         return cleaned
     }
 
