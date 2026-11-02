@@ -39,13 +39,13 @@ class ResourceCleanupTest {
     }
 
     @Test
-    fun `legacy contact resolution closes cursors when reading fails`() {
+    fun `contact resolution closes cursors when reading fails`() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val cursors = installThrowingCursorProvider()
 
-        ContactResolver.resolve(PermissionGrantedContext(context), "Ada")
+        ContactResolver(PermissionGrantedContext(context)).resolveWithDisambiguation("Ada")
 
-        assertEquals(2, cursors.size)
+        assertEquals(3, cursors.size)
         assertTrue(cursors.all { it.closeCount == 1 })
     }
 
