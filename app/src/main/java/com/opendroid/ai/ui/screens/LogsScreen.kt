@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -198,13 +200,20 @@ fun LogsScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Steps this macro will run:", fontSize = 12.sp, color = TextPrimary)
-                    recordedSteps.forEach { step ->
-                        Text(
-                            "${step.order}. ${step.action} - ${step.description}",
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            fontFamily = FontFamily.Monospace
-                        )
+                    // Bounded and scrollable so a long run cannot push the name field off-screen.
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        recordedSteps.forEach { step ->
+                            Text(
+                                "${step.order}. ${step.action} - ${step.description}",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
