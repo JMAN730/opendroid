@@ -7,6 +7,8 @@ import com.opendroid.ai.core.llm.LLMProviderFactory
 import com.opendroid.ai.core.llm.LLMRequest
 import com.opendroid.ai.core.llm.LLMResponse
 import com.opendroid.ai.core.llm.LatencyBudgetStatus
+import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.llm.PromptBudget
 import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.buildPlanningRequest
@@ -22,6 +24,7 @@ import com.opendroid.ai.data.models.StepStatus
 import com.opendroid.ai.data.models.effectiveGrantedActions
 import com.opendroid.ai.data.models.resolvedAutoMode
 import com.opendroid.ai.data.models.approvalSettings
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.ConversationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -964,7 +967,13 @@ class AgentLoop @Inject constructor(
             val isOnDevice = ProviderCatalog.isOnDevice(provider.name)
 
             val config = settingsRepository.llmConfig.first()
-            val maxTokensForPlan = if (isOnDevice) 512 else 1500
+            val maxTokensForPlan = if (isOnDevice) {
+                PromptBudget.planOutputTokens(
+                    OnDeviceModelRegistry.contextWindowFor(config.selectedModelFor(provider.name))
+                )
+            } else {
+                1500
+            }
             val plan = if (config.multiAgentModeEnabled && !isOnDevice) {
                 kotlinx.coroutines.coroutineScope {
                     val plannerDeferred = async(Dispatchers.Default) {

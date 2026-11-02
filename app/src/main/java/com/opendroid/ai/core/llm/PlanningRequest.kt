@@ -28,7 +28,9 @@ internal fun buildPlanningRequest(
         temperature = temperature,
         maxTokens = maxTokens,
         responseFormat = ResponseFormat.JSON,
-        purpose = RequestPurpose.PLANNING,
+        // The on-device prompt must reach its model as written: LiteRT would cut the main prompt
+        // inside the action list, before the JSON formats and rules (#113).
+        purpose = if (isOnDevice) RequestPurpose.GENERAL else RequestPurpose.PLANNING,
         memoryContext = if (isOnDevice) "" else relevantContext.trim()
     )
 }

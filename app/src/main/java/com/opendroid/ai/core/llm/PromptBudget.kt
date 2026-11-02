@@ -112,6 +112,13 @@ object PromptBudget {
     }
 
     /**
+     * Output tokens to request for a plan on a [contextWindow]-token model. In a 1280-token window
+     * the on-device planning prompt (520 real Qwen tokens) and a ~250-token request leave no room
+     * for the usual 512.
+     */
+    fun planOutputTokens(contextWindow: Int): Int = if (contextWindow <= 1280) 256 else 512
+
+    /**
      * Collects the deltas in [chunks], handing each to [onText], until they end or their text
      * reaches [cap] tokens, and returns that text. Reaching the cap stops the collection of
      * [chunks] but not native decoding, which the caller still has to cancel.
