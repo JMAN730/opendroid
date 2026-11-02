@@ -7,7 +7,11 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.opendroid.ai.core.agent.ActiveConversation
 import com.opendroid.ai.core.agent.AutoReplyEngine
+import com.opendroid.ai.core.agent.DISCORD_PACKAGES
 import com.opendroid.ai.core.agent.ReplyConversation
+import com.opendroid.ai.core.agent.SMS_PACKAGES
+import com.opendroid.ai.core.agent.TELEGRAM_PACKAGES
+import com.opendroid.ai.core.agent.WHATSAPP_PACKAGES
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
@@ -36,21 +40,6 @@ class OpenDroidNotificationListener : NotificationListenerService() {
         private const val TAG = "NotifListener"
         private const val OWN_PACKAGE = "com.opendroid.ai"
 
-        // Known message app packages
-        private val WHATSAPP_PACKAGES = setOf(
-            "com.whatsapp", "com.whatsapp.w4b"
-        )
-        private val TELEGRAM_PACKAGES = setOf(
-            "org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram"
-        )
-        private val DISCORD_PACKAGES = setOf(
-            "com.discord"
-        )
-        private val SMS_PACKAGES = setOf(
-            "com.google.android.apps.messaging",
-            "com.android.mms",
-            "com.samsung.android.messaging"
-        )
         private val EMAIL_PACKAGES = setOf(
             "com.google.android.gm",
             "com.microsoft.office.outlook",
