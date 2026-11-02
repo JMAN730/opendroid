@@ -145,7 +145,11 @@ class AutoReplyEngine @Inject constructor(
                     // Record the send timestamp AND reply text BEFORE marking in DB so the
                     // bounceback check is ready when the echo notification fires
                     recentlySent[contactKey] = SentReply(System.currentTimeMillis(), replyText)
-                    notificationDao.markAsAutoReplied(notification.id, replyText)
+                    // The reply is already out, so a newer message cancelling this job can't
+                    // skip the record the hourly limit and the LLM history are built from
+                    withContext(NonCancellable) {
+                        notificationDao.markAsAutoReplied(notification.id, replyText)
+                    }
                     Log.d(TAG, "Auto-reply sent to ${notification.contactName}: ${replyText.take(50)}...")
                 }
 
@@ -154,7 +158,8 @@ class AutoReplyEngine @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Auto-reply failed: ${e.message}")
             } finally {
-                pendingReplies.remove(contactKey)
+                // A cancelled send can finish long after a newer reply took over this key
+                pendingReplies.remove(contactKey, coroutineContext.job)
             }
         }
 
@@ -275,7 +280,7 @@ class AutoReplyEngine @Inject constructor(
         }
     }
 
-    private fun dispatchReply(
+    private suspend fun dispatchReply(
         notification: NotificationEntity,
         sbn: StatusBarNotification?,
         replyText: String,
