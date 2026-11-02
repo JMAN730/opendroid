@@ -142,8 +142,7 @@ class InformationActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val expression = params["expression"] ?: return ActionResult(false, null, "expression parameter is missing")
             return try {
-                val sanitized = expression.replace(" ", "")
-                val result = evaluateSimpleExpression(sanitized)
+                val result = ArithmeticParser(expression).evaluate()
                 ActionResult(true, "$expression = $result", null)
             } catch (e: Exception) {
                 // Fallback: Web search calculation
@@ -156,26 +155,93 @@ class InformationActions @Inject constructor() {
             }
         }
 
-        private fun evaluateSimpleExpression(expr: String): Double {
-            // Very basic evaluator for +, -, *, /
-            return when {
-                expr.contains("+") -> {
-                    val parts = expr.split("+")
-                    parts[0].toDouble() + parts[1].toDouble()
+        /**
+         * Recursive-descent evaluator for +, -, *, /, parentheses, unary signs and "N% of M".
+         * Throws on anything else, including leftover input and results with no finite value,
+         * so the caller falls back to search rather than reporting a wrong answer.
+         *
+         * A bare "%" is rejected on purpose: "200+10%" is 220 on a calculator and 200.1 in
+         * arithmetic, and "10%3" could be modulo. Only "N% of M" has one meaning.
+         */
+        private class ArithmeticParser(private val input: String) {
+            private var pos = 0
+            private var depth = 0
+
+            fun evaluate(): Double {
+                val result = parseSum()
+                require(peek() == null) { "Unexpected '${input[pos]}' at position $pos" }
+                require(result.isFinite()) { "Result is not a finite number" }
+                return result
+            }
+
+            private fun parseSum(): Double {
+                var value = parseProduct()
+                while (true) {
+                    when (peek()) {
+                        '+' -> { pos++; value += parseProduct() }
+                        '-' -> { pos++; value -= parseProduct() }
+                        else -> return value
+                    }
                 }
-                expr.contains("-") -> {
-                    val parts = expr.split("-")
-                    parts[0].toDouble() - parts[1].toDouble()
+            }
+
+            private fun parseProduct(): Double {
+                var value = parseFactor()
+                while (true) {
+                    when (peek()) {
+                        '*' -> { pos++; value *= parseFactor() }
+                        '/' -> { pos++; value /= parseFactor() }
+                        else -> return value
+                    }
                 }
-                expr.contains("*") -> {
-                    val parts = expr.split("*")
-                    parts[0].toDouble() * parts[1].toDouble()
+            }
+
+            private fun parseFactor(): Double {
+                // Every recursive path passes through here, so this bounds the stack.
+                require(++depth <= MAX_DEPTH) { "Expression is nested too deeply" }
+                val value = when (peek()) {
+                    '-' -> { pos++; -parseFactor() }
+                    '+' -> { pos++; parseFactor() }
+                    '(' -> {
+                        pos++
+                        val inner = parseSum()
+                        require(peek() == ')') { "Missing closing parenthesis" }
+                        pos++
+                        inner
+                    }
+                    else -> parseNumber()
                 }
-                expr.contains("/") -> {
-                    val parts = expr.split("/")
-                    parts[0].toDouble() / parts[1].toDouble()
+                val result = if (peek() == '%') {
+                    pos++
+                    require(peek() != null && input.startsWith("of", pos, ignoreCase = true)) {
+                        "'%' is only supported as 'N% of M'"
+                    }
+                    pos += 2
+                    // Multiply first: 7 * 100 / 100 is exactly 7, 0.07 * 100 is not.
+                    value * parseFactor() / 100
+                } else {
+                    value
                 }
-                else -> expr.toDouble()
+                depth--
+                return result
+            }
+
+            private fun parseNumber(): Double {
+                val match = NUMBER.matchAt(input, pos)
+                    ?: throw IllegalArgumentException("Expected a number at position $pos")
+                pos = match.range.last + 1
+                return match.value.toDouble()
+            }
+
+            /** The next non-space character, consuming the spaces before it. */
+            private fun peek(): Char? {
+                while (pos < input.length && input[pos].isWhitespace()) pos++
+                return input.getOrNull(pos)
+            }
+
+            private companion object {
+                const val MAX_DEPTH = 64
+                val NUMBER = Regex("""(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
             }
         }
     }
