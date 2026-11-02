@@ -365,7 +365,7 @@ class LiteRTLMProvider @Inject constructor(
         return PromptBudget.outputBudget(prompt, spec.contextWindow, requestedMaxTokens)
             ?: throw IllegalStateException(
                 "This conversation is too long for ${spec.displayName} " +
-                "(~${PromptBudget.estimateTokens(prompt)} tokens, limit ${spec.contextWindow}). " +
+                "(~${PromptBudget.budgetedPromptTokens(prompt)} tokens, limit ${spec.contextWindow}). " +
                 "Start a new chat, shorten the message, or switch to a larger model."
             )
     }
@@ -493,9 +493,9 @@ class LiteRTLMProvider @Inject constructor(
         val minOutput = minOf(requestedMaxTokens, 512).coerceAtLeast(PromptBudget.MIN_OUTPUT_TOKENS)
 
         val sbHeader = StringBuilder()
-        val maxSysChars = (window / 2) * 4
-        val trimmedSystemPrompt = if (systemPrompt.length > maxSysChars) {
-            systemPrompt.take(maxSysChars) + "\n...[instructions truncated for on-device context]"
+        val systemPromptHead = PromptBudget.takeFirstTokens(systemPrompt, window / 2)
+        val trimmedSystemPrompt = if (systemPromptHead.length < systemPrompt.length) {
+            systemPromptHead + "\n...[instructions truncated for on-device context]"
         } else {
             systemPrompt
         }
@@ -522,7 +522,7 @@ class LiteRTLMProvider @Inject constructor(
         }
 
         val headerText = sbHeader.toString()
-        val overheadTokens = PromptBudget.estimateTokens(headerText) + 20
+        val overheadTokens = PromptBudget.estimateTokens(headerText)
 
         val fittedMessages = PromptBudget.fitMessagesToBudget(
             messages = messages,

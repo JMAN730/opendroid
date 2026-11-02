@@ -272,9 +272,9 @@ class GemmaProvider @Inject constructor(
         val minOutput = minOf(requestedMaxTokens, 512).coerceAtLeast(PromptBudget.MIN_OUTPUT_TOKENS)
 
         val sbHeader = StringBuilder()
-        val maxSysChars = (window / 2) * 4
-        val trimmedSystemPrompt = if (systemPrompt.length > maxSysChars) {
-            systemPrompt.take(maxSysChars) + "\n...[instructions truncated for on-device context]"
+        val systemPromptHead = PromptBudget.takeFirstTokens(systemPrompt, window / 2)
+        val trimmedSystemPrompt = if (systemPromptHead.length < systemPrompt.length) {
+            systemPromptHead + "\n...[instructions truncated for on-device context]"
         } else {
             systemPrompt
         }
@@ -301,7 +301,7 @@ class GemmaProvider @Inject constructor(
         }
 
         val headerText = sbHeader.toString()
-        val overheadTokens = PromptBudget.estimateTokens(headerText) + 20
+        val overheadTokens = PromptBudget.estimateTokens(headerText)
 
         val fittedMessages = PromptBudget.fitMessagesToBudget(
             messages = messages,
