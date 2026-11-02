@@ -82,6 +82,27 @@ class LLMErrorMapperTest {
     }
 
     @Test
+    fun `retry after rejects Infinity and out-of-range doubles as malformed`() {
+        val infinity = LLMErrorMapper.fromHttpFailure(
+            provider = ProviderErrorDetail.Provider.OPENAI,
+            model = "gpt-4o",
+            httpStatus = 429,
+            headers = mapOf("Retry-After" to "Infinity"),
+            rawBody = """{"error":{"type":"rate_limit_error"}}"""
+        )
+        val huge = LLMErrorMapper.fromHttpFailure(
+            provider = ProviderErrorDetail.Provider.OPENAI,
+            model = "gpt-4o",
+            httpStatus = 429,
+            headers = mapOf("Retry-After" to "1e30"),
+            rawBody = """{"error":{"type":"rate_limit_error"}}"""
+        )
+
+        assertNull(infinity.retryAfterMillis)
+        assertNull(huge.retryAfterMillis)
+    }
+
+    @Test
     fun `malformed non-json error retains no body text or secrets`() {
         val key = "sk-secret-value-ABCD6789"
         val raw = "<html>Bearer $key at https://user:password@example.test?key=$key</html>"
