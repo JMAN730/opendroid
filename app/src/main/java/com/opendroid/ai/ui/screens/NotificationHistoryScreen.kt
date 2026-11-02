@@ -25,7 +25,6 @@ import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.dao.NotificationHistoryStats
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.ui.theme.AppTheme
-import kotlinx.coroutines.launch
 
 private const val HISTORY_LIMIT = 500
 
@@ -33,9 +32,9 @@ private const val HISTORY_LIMIT = 500
 @Composable
 fun NotificationHistoryScreen(
     notificationDao: NotificationDao,
+    onClearAll: () -> Unit,
     onBack: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
     var selectedFilter by remember { mutableStateOf("ALL") }
 
     val filteredNotifications by remember(selectedFilter) {
@@ -64,9 +63,7 @@ fun NotificationHistoryScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        scope.launch { notificationDao.clearAll() }
-                    }) {
+                    IconButton(onClick = onClearAll) {
                         Icon(Icons.Default.Delete, contentDescription = "Clear All", tint = themeColors.textSecondary)
                     }
                 },

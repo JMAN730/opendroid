@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -74,7 +75,34 @@ class DismissNotificationActionTest {
         assertEquals(listOf("com.google.android.gm"), dao.notifications.map { it.packageName })
     }
 
-    private fun actionFor(dao: NotificationDao) = DismissNotificationAction(dao)
+    @Test
+    fun `dismiss without a filter also forgets the learned patterns`() = runBlocking {
+        val dao = InMemoryNotificationDao().apply { add(notification("com.whatsapp", "WhatsApp")) }
+        var patternsCleared = false
+
+        DismissNotificationAction(dao) {
+            patternsCleared = true
+            dao.clearAll()
+        }.execute(emptyMap(), context)
+
+        assertTrue(patternsCleared)
+        assertTrue(dao.notifications.isEmpty())
+    }
+
+    @Test
+    fun `dismiss by app keeps the learned patterns`() = runBlocking {
+        val dao = InMemoryNotificationDao().apply { add(notification("com.whatsapp", "WhatsApp")) }
+        var patternsCleared = false
+
+        DismissNotificationAction(dao) {
+            patternsCleared = true
+            dao.clearAll()
+        }.execute(mapOf("app" to "WhatsApp"), context)
+
+        assertFalse(patternsCleared)
+    }
+
+    private fun actionFor(dao: NotificationDao) = DismissNotificationAction(dao) { dao.clearAll() }
 
     private fun notification(packageName: String, appName: String) = NotificationEntity(
         packageName = packageName,

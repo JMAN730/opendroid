@@ -75,10 +75,11 @@ interface NotificationDao {
     """)
     suspend fun getNotificationCountByApp(since: Long): List<AppNotificationCount>
 
+    // Only message and email rows name a sender; other apps' titles are headlines or promos.
     @Query("""
-        SELECT contactName, COUNT(*) as count 
-        FROM notifications 
-        WHERE contactName IS NOT NULL AND timestamp > :since 
+        SELECT contactName, COUNT(*) as count
+        FROM notifications
+        WHERE contactName IS NOT NULL AND category IN ('MESSAGE', 'EMAIL') AND timestamp > :since
         GROUP BY contactName 
         ORDER BY count DESC 
         LIMIT :limit

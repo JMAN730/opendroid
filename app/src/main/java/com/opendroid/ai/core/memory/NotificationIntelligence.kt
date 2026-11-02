@@ -20,7 +20,11 @@ class NotificationIntelligence @Inject constructor(
 ) {
     companion object {
         private const val TAG = "NotifIntelligence"
-        private const val PATTERN_PREFIX = "notif_pattern_"
+        internal const val PATTERN_PREFIX = "notif_pattern_"
+        private const val CONTACT_TIMES_KEY = "contact_times"
+        private const val LEGACY_CONTACT_TIME_PREFIX = "contact_time_"
+        private const val MAX_PATTERN_LINES = 10
+        private val CONTACT_CATEGORIES = setOf("MESSAGE", "EMAIL")
         private const val ANALYSIS_INTERVAL_MS = 6 * 3600 * 1000L // Re-analyze every 6 hours
     }
 
@@ -47,11 +51,13 @@ class NotificationIntelligence @Inject constructor(
 
             // 1. Most active contacts
             val topContacts = notificationDao.getMostActiveContacts(sevenDaysAgo, 5)
+                .filter { !it.contactName.isNullOrBlank() }
             if (topContacts.isNotEmpty()) {
                 val contactsSummary = topContacts
-                    .filter { !it.contactName.isNullOrBlank() }
                     .joinToString(", ") { "${it.contactName} (${it.count} messages)" }
                 storePattern("top_contacts", "Most contacted people this week: $contactsSummary")
+            } else {
+                deletePattern("top_contacts")
             }
 
             // 2. Most active apps
@@ -61,6 +67,8 @@ class NotificationIntelligence @Inject constructor(
                     .take(5)
                     .joinToString(", ") { "${it.packageName.substringAfterLast('.')} (${it.count})" }
                 storePattern("top_apps", "Most active notification apps this week: $appsSummary")
+            } else {
+                deletePattern("top_apps")
             }
 
             // 3. Communication time patterns
@@ -80,7 +88,14 @@ class NotificationIntelligence @Inject constructor(
     }
 
     private suspend fun analyzeTimePatterns(notifications: List<NotificationEntity>) {
-        if (notifications.isEmpty()) return
+        // Earlier versions kept one permanent row per sender title; contact times now share one row.
+        deletePatternsStartingWith(LEGACY_CONTACT_TIME_PREFIX)
+
+        if (notifications.isEmpty()) {
+            deletePattern("peak_activity")
+            deletePattern(CONTACT_TIMES_KEY)
+            return
+        }
 
         val hourCounts = IntArray(24)
         for (notif in notifications) {
@@ -89,35 +104,36 @@ class NotificationIntelligence @Inject constructor(
         }
 
         val peakHour = hourCounts.indices.maxByOrNull { hourCounts[it] } ?: 12
-        val peakPeriod = when (peakHour) {
-            in 6..11 -> "morning"
-            in 12..16 -> "afternoon"
-            in 17..20 -> "evening"
-            else -> "night"
-        }
-        storePattern("peak_activity", "User receives most messages in the $peakPeriod (peak hour: $peakHour:00)")
+        storePattern("peak_activity", "User receives most messages in the ${periodOf(peakHour)} (peak hour: $peakHour:00)")
 
-        // Per-contact time analysis for top contacts
+        // Per-contact time analysis for the most recent senders. Only message and email rows
+        // carry a sender; any other app's title is a headline or a promo, not a person.
         val contactGroups = notifications
-            .filter { !it.contactName.isNullOrBlank() }
+            .filter { it.category in CONTACT_CATEGORIES && !it.contactName.isNullOrBlank() }
             .groupBy { it.contactName!! }
 
-        for ((contact, notifs) in contactGroups.entries.take(5)) {
+        val contactTimes = contactGroups.entries.take(5).map { (contact, notifs) ->
             val contactHours = IntArray(24)
             for (n in notifs) {
                 val cal = java.util.Calendar.getInstance().apply { timeInMillis = n.timestamp }
                 contactHours[cal.get(java.util.Calendar.HOUR_OF_DAY)]++
             }
             val contactPeak = contactHours.indices.maxByOrNull { contactHours[it] } ?: 12
-            val contactPeriod = when (contactPeak) {
-                in 6..11 -> "morning"
-                in 12..16 -> "afternoon"
-                in 17..20 -> "evening"
-                else -> "night"
-            }
-            storePattern("contact_time_$contact",
-                "$contact usually messages in the $contactPeriod (${notifs.size} messages this week)")
+            "$contact (${periodOf(contactPeak)}, ${notifs.size} messages)"
         }
+        if (contactTimes.isNotEmpty()) {
+            storePattern(CONTACT_TIMES_KEY,
+                "When contacts usually message this week: ${contactTimes.joinToString(", ")}")
+        } else {
+            deletePattern(CONTACT_TIMES_KEY)
+        }
+    }
+
+    private fun periodOf(hour: Int): String = when (hour) {
+        in 6..11 -> "morning"
+        in 12..16 -> "afternoon"
+        in 17..20 -> "evening"
+        else -> "night"
     }
 
     /**
@@ -171,7 +187,7 @@ class NotificationIntelligence @Inject constructor(
             val patterns = memoryRepository.getMemoriesByKeyPrefix(PATTERN_PREFIX)
             if (patterns.isEmpty()) return ""
 
-            patterns.joinToString("\n") { "• ${it.value}" }
+            patterns.take(MAX_PATTERN_LINES).joinToString("\n") { "• ${it.value}" }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get learned patterns: ${e.message}")
             ""
@@ -190,6 +206,43 @@ class NotificationIntelligence @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to store pattern $key: ${e.message}")
         }
+    }
+
+    private suspend fun deletePattern(key: String) {
+        try {
+            memoryRepository.deleteMemory("$PATTERN_PREFIX$key")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete pattern $key: ${e.message}")
+        }
+    }
+
+    private suspend fun deletePatternsStartingWith(keyPrefix: String) {
+        val prefix = "$PATTERN_PREFIX$keyPrefix"
+        try {
+            // LIKE treats '_' as a wildcard, so recheck the prefix literally.
+            memoryRepository.getMemoriesByKeyPrefix(prefix)
+                .filter { it.key.startsWith(prefix) }
+                .forEach { memoryRepository.deleteMemory(it.key) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete patterns $keyPrefix*: ${e.message}")
+        }
+    }
+
+    /**
+     * Forget everything learned from notifications. Call it whenever the history it was
+     * learned from is cleared or the listener loses access.
+     */
+    suspend fun clearLearnedPatterns() {
+        deletePatternsStartingWith("")
+    }
+
+    /**
+     * Clear the captured notification history along with the patterns learned from it.
+     */
+    suspend fun clearHistory(): Int {
+        val deleted = notificationDao.clearAll()
+        clearLearnedPatterns()
+        return deleted
     }
 
     /**
