@@ -110,7 +110,9 @@ class SettingsViewModel @Inject constructor(
 
     private var connectionTestJob: Job? = null
     private val apiKeyUpdateJobs = mutableMapOf<String, Job>()
-    private var activeModelJob: Job? = null
+    private val modelSelectionJobs = mutableMapOf<String, Job>()
+    /** Model picks still inside their debounce, by provider; a provider switch writes them at once. */
+    private val pendingModelSelections = mutableMapOf<String, String>()
     private var elevenLabsApiKeyJob: Job? = null
     private var elevenLabsVoiceIdJob: Job? = null
     private var ollamaUrlJob: Job? = null
@@ -304,7 +306,7 @@ class SettingsViewModel @Inject constructor(
                 val claudeResolved = if (isClaude) config.resolveClaudeModelOrNull(config.activeModel) else null
                 val activeModel = if (isClaude) {
                     if (claudeResolved != null && claudeResolved != config.activeModel) {
-                        updateActiveModel(claudeResolved)
+                        updateActiveModel(claudeResolved, provider)
                     }
                     claudeResolved ?: config.activeModel
                 } else {
@@ -354,8 +356,10 @@ class SettingsViewModel @Inject constructor(
                                 val recommended = providerDefault
                                     ?: models.find { it.isRecommended }
                                     ?: models.firstOrNull()
+                                // The fetch may finish after a provider switch, so name
+                                // the provider it was for rather than the active one.
                                 recommended?.let {
-                                    updateActiveModel(it.id)
+                                    updateActiveModel(it.id, provider)
                                 }
                             }
                         }
@@ -382,8 +386,13 @@ class SettingsViewModel @Inject constructor(
     fun updateActiveProvider(provider: String) {
         val updated = _llmConfig.value.withActiveProvider(provider)
         _llmConfig.value = updated
+        // Only jobs still in their debounce are cancelled; one already saving is left to finish.
+        val pendingPicks = pendingModelSelections.toMap()
+        pendingModelSelections.clear()
+        pendingPicks.keys.forEach { modelSelectionJobs.remove(it)?.cancel() }
         viewModelScope.launch {
             try {
+                pendingPicks.forEach { (pickedFor, model) -> persistSelectedModel(pickedFor, model) }
                 val saved = configSaver.save(
                     revert = { stored -> copy(activeProvider = stored.activeProvider, activeModel = stored.activeModel) }
                 ) { current ->
@@ -396,32 +405,42 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateActiveModel(model: String) {
-        val provider = _llmConfig.value.activeProvider
+    /**
+     * Selects [model] for [provider], the active one unless a caller picked for another.
+     * The save is debounced, and is always written for [provider]: the user may switch
+     * provider before it runs.
+     */
+    fun updateActiveModel(model: String, provider: String = _llmConfig.value.activeProvider) {
         val updated = _llmConfig.value.withSelectedModel(provider, model)
         _llmConfig.value = updated
-        activeModelJob?.cancel()
-        activeModelJob = viewModelScope.launch {
+        modelSelectionJobs[provider]?.cancel()
+        pendingModelSelections[provider] = model
+        modelSelectionJobs[provider] = viewModelScope.launch {
             try {
                 delay(1000)
-                // Prefer this session's in-memory Claude/live list for the active
-                // provider if DataStore has not absorbed refreshModels yet.
-                val memoryModels = _llmConfig.value.modelCache[provider]
-                configSaver.save(
-                    revert = { stored -> copy(activeModel = stored.activeModel, selectedModels = stored.selectedModels) }
-                ) { current ->
-                    val config = if (!memoryModels.isNullOrEmpty()) {
-                        current.copy(modelCache = current.modelCache + (provider to memoryModels))
-                    } else {
-                        current
-                    }
-                    config.withSelectedModel(current.activeProvider, model)
-                }
+                pendingModelSelections.remove(provider)
+                persistSelectedModel(provider, model)
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
                     android.util.Log.e("SettingsViewModel", "Failed to update active model: ${e.message}", e)
                 }
             }
+        }
+    }
+
+    private suspend fun persistSelectedModel(provider: String, model: String) {
+        // Prefer this session's in-memory Claude/live list for the provider
+        // if DataStore has not absorbed refreshModels yet.
+        val memoryModels = _llmConfig.value.modelCache[provider]
+        configSaver.save(
+            revert = { stored -> copy(activeModel = stored.activeModel, selectedModels = stored.selectedModels) }
+        ) { current ->
+            val config = if (!memoryModels.isNullOrEmpty()) {
+                current.copy(modelCache = current.modelCache + (provider to memoryModels))
+            } else {
+                current
+            }
+            config.withSelectedModel(provider, model)
         }
     }
 
