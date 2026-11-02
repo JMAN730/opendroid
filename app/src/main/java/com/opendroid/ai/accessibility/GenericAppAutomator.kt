@@ -33,8 +33,14 @@ object GenericAppAutomator {
         OpenDroidAccessibilityService.getInstance()?.findAndClickById(viewId) == true
     }
 
-    suspend fun typeText(searchText: String, content: String): Boolean = retryUntilTimeout {
-        OpenDroidAccessibilityService.getInstance()?.findAndType(searchText, content) == true
+    suspend fun typeText(searchText: String, content: String): TypeOutcome {
+        var outcome = TypeOutcome.NOT_FOUND
+        retryUntilTimeout {
+            outcome = OpenDroidAccessibilityService.getInstance()?.findAndTypeOutcome(searchText, content)
+                ?: TypeOutcome.NOT_FOUND
+            outcome.typed
+        }
+        return outcome
     }
 
     suspend fun typeId(viewId: String, content: String): Boolean = retryUntilTimeout {
