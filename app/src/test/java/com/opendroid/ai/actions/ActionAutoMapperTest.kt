@@ -153,19 +153,92 @@ class ActionAutoMapperTest {
             "SEND_WHATSAPP_MESSAGE" to "SEND_WHATSAPP",
             "WHATSAPP_MOM" to "SEND_WHATSAPP",
             "SEND_MESSAGE" to "SEND_WHATSAPP",
-            "MESSAGE_ALEX" to "SEND_WHATSAPP",
             "SEND_TELEGRAM_MESSAGE" to "SEND_TELEGRAM",
-            "TELEGRAM_BOB" to "SEND_TELEGRAM",
             "EMAIL" to "SEND_EMAIL",
-            "EMAIL_THE_BOSS" to "SEND_EMAIL",
             "SEND_MAIL" to "SEND_EMAIL",
             "CALL" to "MAKE_CALL",
             "CALL_MOM" to "MAKE_CALL",
-            "CALL_BRIDGET" to "MAKE_CALL",
             "DIAL_CONTACT" to "MAKE_CALL",
             "DIAL_MOM" to "MAKE_CALL",
             "PHONE_MOM" to "MAKE_CALL",
             "SEND_SMS_TO_BRIDGET" to "SEND_SMS"
+        ).forEach { (name, expected) ->
+            assertEquals(name, expected, map(name).mappedAction)
+        }
+    }
+
+    @Test
+    fun `read requests outside the known verbs never become a send`() {
+        listOf(
+            "SUMMARIZE_SMS",
+            "UNREAD_SMS",
+            "QUERY_SMS",
+            "SMS_HISTORY",
+            "SMS_THREAD",
+            "SMS_SENT",
+            "SENT_SMS",
+            "SUMMARIZE_MESSAGES",
+            "UNREAD_MESSAGES",
+            "RECENT_MESSAGES",
+            "MESSAGE_HISTORY",
+            "SUMMARIZE_EMAILS",
+            "EMAIL_INBOX",
+            "SUMMARIZE_WHATSAPP",
+            "TELEGRAM_UNREAD",
+            "MESSAGE_HISTORY_ON_TELEGRAM",
+            "GET_SEND_TEXT_HISTORY"
+        ).forEach { name ->
+            assertNull(name, map(name).mappedAction)
+        }
+    }
+
+    @Test
+    fun `lookup and open names outside the known verbs never place a call`() {
+        listOf(
+            "phoneNumber",
+            "PHONENUMBER",
+            "callLog",
+            "CALLLOG",
+            "callHistory",
+            "CALLHISTORY",
+            "CONTACT_PHONE",
+            "RECENT_CALLS",
+            "PHONE_BOOK",
+            "CALL_RECORDS",
+            "GO_TO_DIALER",
+            "NAVIGATE_TO_DIALER",
+            "ANSWER_CALL"
+        ).forEach { name ->
+            assertNull(name, map(name).mappedAction)
+        }
+    }
+
+    @Test
+    fun `a channel led name only acts when the rest of it is the recipient`() {
+        assertEquals("MAKE_CALL", map("CALL_BRIDGET", mapOf("contact" to "Bridget")).mappedAction)
+        assertEquals("MAKE_CALL", map("callMom").mappedAction)
+        assertEquals("MAKE_CALL", map("PHONE_CALL_MOM").mappedAction)
+        assertEquals("MAKE_CALL", map("CALL_5551234", mapOf("number" to "5551234")).mappedAction)
+        assertEquals("SEND_WHATSAPP", map("MESSAGE_ALEX", mapOf("contact" to "Alex Smith")).mappedAction)
+        assertEquals("SEND_TELEGRAM", map("TELEGRAM_BOB", mapOf("username" to "bob")).mappedAction)
+        assertEquals("SEND_EMAIL", map("EMAIL_THE_BOSS", mapOf("to" to "Boss")).mappedAction)
+
+        assertNull(map("CALL_BRIDGET").mappedAction)
+        assertNull(map("CALL_MOM", emptyMap()).mappedAction)
+    }
+
+    @Test
+    fun `an explicit send or call verb still resolves to the channel it names`() {
+        mapOf(
+            "sendSms" to "SEND_SMS",
+            "sendWhatsApp" to "SEND_WHATSAPP",
+            "SEND_SMS_TO_MOM" to "SEND_SMS",
+            "COMPOSE_MESSAGE" to "SEND_WHATSAPP",
+            "REPLY_TO_EMAIL" to "SEND_EMAIL",
+            "SMS_TO_MOM" to "SEND_SMS",
+            "WHATSAPP_SEND_MOM" to "SEND_WHATSAPP",
+            "MAKE_A_CALL" to "MAKE_CALL",
+            "PLACE_CALL_TO_MOM" to "MAKE_CALL"
         ).forEach { (name, expected) ->
             assertEquals(name, expected, map(name).mappedAction)
         }

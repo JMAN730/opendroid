@@ -33,8 +33,23 @@ class ActionAutoMapper @Inject constructor() {
         private val OPEN_WORDS = setOf("OPEN", "LAUNCH", "START")
         private val NOT_A_SEND = READ_WORDS + OPEN_WORDS
 
-        /** Words that name past calls, not a call to place. */
-        private val NOT_A_CALL = NOT_A_SEND + setOf("LOG", "LOGS", "HISTORY", "MISSED")
+        /** What a name must show before a keyword match may send or call. See [namesTheAct]. */
+        private val SEND_CHANNELS = setOf("SMS", "WHATSAPP", "TELEGRAM", "EMAIL", "MAIL", "GMAIL", "MESSAGE")
+        private val SEND_ACT = NamedAct(
+            verbs = setOf("SEND", "COMPOSE", "WRITE", "REPLY", "RESPOND"),
+            channels = SEND_CHANNELS,
+            fillers = SEND_CHANNELS + setOf("TO", "THE", "MY", "SEND", "ON", "VIA")
+        )
+        private val CALL_ACT = NamedAct(
+            verbs = setOf("MAKE", "PLACE", "INITIATE"),
+            channels = setOf("CALL", "DIAL", "PHONE"),
+            fillers = setOf("TO", "THE", "MY", "CALL")
+        )
+
+        /** Params the send and call handlers read a recipient from. */
+        private val RECIPIENT_PARAMS = listOf(
+            "contact", "to", "recipient", "number", "phone", "phoneNumber", "username", "channel"
+        )
 
         /** Channels with no send action. Their sends must not fall through to another channel. */
         private val UNSUPPORTED_CHANNELS = listOf(
@@ -397,7 +412,14 @@ class ActionAutoMapper @Inject constructor() {
         val excludeKeywords: List<String> = emptyList(),
         val resolvedAction: String,
         val requiredWords: Set<String> = emptySet(),
-        val excludedWords: Set<String> = emptySet()
+        val namedAct: NamedAct? = null
+    )
+
+    /** See [namesTheAct]. */
+    private data class NamedAct(
+        val verbs: Set<String>,
+        val channels: Set<String>,
+        val fillers: Set<String>
     )
 
     private val semanticRules = listOf(
@@ -435,26 +457,26 @@ class ActionAutoMapper @Inject constructor() {
         ),
 
         // WhatsApp (before generic MESSAGE)
-        SemanticRule(listOf("WHATSAPP"), emptyList(), "SEND_WHATSAPP", excludedWords = NOT_A_SEND),
+        SemanticRule(listOf("WHATSAPP"), emptyList(), "SEND_WHATSAPP", namedAct = SEND_ACT),
 
         // Telegram (before generic MESSAGE)
         SemanticRule(listOf("OPEN", "TELEGRAM"), emptyList(), "OPEN_TELEGRAM"),
-        SemanticRule(listOf("TELEGRAM"), emptyList(), "SEND_TELEGRAM", excludedWords = NOT_A_SEND),
+        SemanticRule(listOf("TELEGRAM"), emptyList(), "SEND_TELEGRAM", namedAct = SEND_ACT),
 
         // SMS (before generic MESSAGE)
-        SemanticRule(listOf("SMS"), emptyList(), "SEND_SMS", excludedWords = NOT_A_SEND),
-        SemanticRule(listOf("SEND_TEXT"), UNSUPPORTED_CHANNELS, "SEND_SMS"),
+        SemanticRule(listOf("SMS"), emptyList(), "SEND_SMS", namedAct = SEND_ACT),
+        SemanticRule(listOf("SEND_TEXT"), UNSUPPORTED_CHANNELS, "SEND_SMS", namedAct = SEND_ACT),
 
         // Email
-        SemanticRule(listOf("EMAIL"), listOf("ADDRESS"), "SEND_EMAIL", excludedWords = NOT_A_SEND),
-        SemanticRule(listOf("MAIL"), listOf("VOICEMAIL", "ADDRESS"), "SEND_EMAIL", excludedWords = NOT_A_SEND),
+        SemanticRule(listOf("EMAIL"), listOf("ADDRESS"), "SEND_EMAIL", namedAct = SEND_ACT),
+        SemanticRule(listOf("MAIL"), listOf("VOICEMAIL", "ADDRESS"), "SEND_EMAIL", namedAct = SEND_ACT),
 
         // Generic message → WhatsApp default
         SemanticRule(
             listOf("MESSAGE"),
             UNSUPPORTED_CHANNELS + listOf("SHOW", "DISPLAY", "ERROR"),
             "SEND_WHATSAPP",
-            excludedWords = NOT_A_SEND
+            namedAct = SEND_ACT
         ),
 
         // Weather (before SEARCH)
@@ -472,9 +494,9 @@ class ActionAutoMapper @Inject constructor() {
         SemanticRule(listOf("CHROME"), emptyList(), "OPEN_BROWSER"),
 
         // Call (exclude RECALL)
-        SemanticRule(listOf("CALL"), listOf("RECALL", "VIDEO"), "MAKE_CALL", excludedWords = NOT_A_CALL),
-        SemanticRule(listOf("DIAL"), listOf("DIALOG"), "MAKE_CALL", excludedWords = NOT_A_CALL),
-        SemanticRule(listOf("PHONE"), listOf("HEADPHONE", "MICROPHONE"), "MAKE_CALL", excludedWords = NOT_A_CALL + "NUMBER"),
+        SemanticRule(listOf("CALL"), listOf("RECALL", "VIDEO"), "MAKE_CALL", namedAct = CALL_ACT),
+        SemanticRule(listOf("DIAL"), listOf("DIALOG"), "MAKE_CALL", namedAct = CALL_ACT),
+        SemanticRule(listOf("PHONE"), listOf("HEADPHONE", "MICROPHONE"), "MAKE_CALL", namedAct = CALL_ACT),
 
         // Search
         SemanticRule(listOf("SEARCH"), emptyList(), "WEB_SEARCH"),
@@ -492,7 +514,7 @@ class ActionAutoMapper @Inject constructor() {
 
         // Navigation
         SemanticRule(listOf("DIRECTION"), emptyList(), "GET_DIRECTIONS"),
-        SemanticRule(listOf("NAVIGATE"), listOf("URL", "WEB", "BROWSER"), "GET_DIRECTIONS"),
+        SemanticRule(listOf("NAVIGATE"), listOf("URL", "WEB", "BROWSER", "DIAL", "PHONE", "CALL"), "GET_DIRECTIONS"),
 
         // Routines & Briefings
         SemanticRule(listOf("BRIEFING"), emptyList(), "GET_MORNING_BRIEFING"),
@@ -566,7 +588,7 @@ class ActionAutoMapper @Inject constructor() {
         }
 
         // ── Layer 4: Semantic keyword fallback ──
-        val semanticMatch = findSemanticMatch(normalized)
+        val semanticMatch = findSemanticMatch(normalized, action, params)
         if (semanticMatch != null) {
             Log.d(TAG, "  Semantic:   $normalized → $semanticMatch")
             Log.d(TAG, "  Result:     SEMANTIC_RESOLVED → $semanticMatch")
@@ -589,18 +611,39 @@ class ActionAutoMapper @Inject constructor() {
     //  Semantic matcher
     // ════════════════════════════════════════════════════════════════
 
-    private fun findSemanticMatch(normalized: String): String? {
+    private fun findSemanticMatch(normalized: String, action: String, params: Map<String, String>): String? {
         for (rule in semanticRules) {
             val allKeywordsMatch = rule.keywords.all { normalized.contains(it) }
             val noExcludesMatch = rule.excludeKeywords.none { normalized.contains(it) }
             val requiredWordMatch = rule.requiredWords.isEmpty() || hasWord(normalized, rule.requiredWords)
-            val noExcludedWordMatch = !hasWord(normalized, rule.excludedWords)
-            if (allKeywordsMatch && noExcludesMatch && requiredWordMatch && noExcludedWordMatch) {
+            if (allKeywordsMatch && noExcludesMatch && requiredWordMatch &&
+                (rule.namedAct == null || namesTheAct(action, params, rule.namedAct))
+            ) {
                 return rule.resolvedAction
             }
         }
         return null
     }
+
+    /**
+     * A send or call needs the name to ask for it, so wording nobody listed stays unknown rather
+     * than acting. Either a verb leads ("SEND_SMS_TO_MOM"), or the channel is itself the verb and
+     * the rest of the name is the recipient: "CALL_MOM" {contact: Mom} acts, "CALL_RECORDS" doesn't.
+     */
+    private fun namesTheAct(action: String, params: Map<String, String>, act: NamedAct): Boolean {
+        val words = splitWords(action)
+        val lead = words.firstOrNull() ?: return false
+        if (lead in act.verbs) return true
+        if (lead !in act.channels) return false
+        val recipient = RECIPIENT_PARAMS.flatMap { key -> params[key]?.let(::splitWords).orEmpty() }
+        return recipient.containsAll(words.drop(1) - act.fillers)
+    }
+
+    /** Keeps camelCase word breaks, which normalizing loses: "callLog" → [CALL, LOG], not [CALLLOG]. */
+    private fun splitWords(raw: String): List<String> =
+        normalizeActionName(raw.replace(Regex("([a-z0-9])([A-Z])"), "\$1_\$2"))
+            .split("_")
+            .filter { it.isNotEmpty() }
 
     /**
      * Whole-word match, so a contact in "SEND_SMS_TO_BRIDGET" isn't read as GET. The prefix
