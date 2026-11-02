@@ -148,6 +148,74 @@ internal class ToggleBluetoothAction(
     }
 }
 
+internal interface DndController {
+    fun isPolicyAccessGranted(): Boolean
+    fun currentInterruptionFilter(): Int
+    fun setInterruptionFilter(filter: Int)
+}
+
+private class AndroidDndController(
+    private val notificationManager: NotificationManager
+) : DndController {
+    override fun isPolicyAccessGranted(): Boolean = notificationManager.isNotificationPolicyAccessGranted
+    override fun currentInterruptionFilter(): Int = notificationManager.currentInterruptionFilter
+    override fun setInterruptionFilter(filter: Int) = notificationManager.setInterruptionFilter(filter)
+}
+
+private fun dndController(context: Context): DndController =
+    AndroidDndController(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+
+internal class ToggleDndAction(
+    private val controllerProvider: (Context) -> DndController = ::dndController,
+    private val launchIntent: (Context, Intent) -> Unit = { context, intent -> context.startActivity(intent) }
+) : Action {
+    override val name: String = "TOGGLE_DND"
+    override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+        val requestedState = (params["state"] ?: params["on"] ?: "toggle")
+            .lowercase().trim()
+
+        return try {
+            val controller = controllerProvider(context)
+            if (!controller.isPolicyAccessGranted()) {
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                launchIntent(context, intent)
+                return ActionResult(false, "DND policy permission not granted. I've opened the settings — please grant access and try again.", "Permission required", true)
+            }
+
+            // Determine target state
+            val currentlyOn = controller.currentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL
+            val targetOn = when (requestedState) {
+                "on", "true", "enable", "yes"    -> true
+                "off", "false", "disable", "no"  -> false
+                "toggle"                         -> !currentlyOn
+                else                             -> !currentlyOn
+            }
+
+            // Already in desired state?
+            if (targetOn == currentlyOn) {
+                val stateWord = if (currentlyOn) "on" else "off"
+                return ActionResult(true, "Do Not Disturb is already $stateWord!", null)
+            }
+
+            // PRIORITY is the user's own DND policy, so alarms and starred/repeat callers
+            // still get through. NONE is "Total silence" and would mute alarms too.
+            val filter = if (targetOn) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL
+            controller.setInterruptionFilter(filter)
+            val stateWord = if (targetOn) "on" else "off"
+            val nowOn = controller.currentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL
+            if (nowOn != targetOn) {
+                return ActionResult(false, null, "Do Not Disturb didn't turn $stateWord.")
+            }
+            ActionResult(true, "Do Not Disturb is $stateWord.", null)
+        } catch (e: Exception) {
+            Log.e("ToggleDND", "DND failed: ${e.localizedMessage}")
+            ActionResult(false, null, "Couldn't change Do Not Disturb.")
+        }
+    }
+}
+
 @Singleton
 class SystemActions @Inject constructor(
     private val agentLoop: dagger.Lazy<AgentLoop>,
@@ -393,49 +461,6 @@ class SystemActions @Inject constructor(
                 ActionResult(success, if (success) "Power dialog opened. Action pending user touch." else "Failed to open dialog", null)
             } else {
                 ActionResult(false, null, "Accessibility Service not running to trigger power dialog.")
-            }
-        }
-    }
-
-    private class ToggleDndAction : Action {
-        override val name: String = "TOGGLE_DND"
-        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val requestedState = (params["state"] ?: params["on"] ?: "toggle")
-                .lowercase().trim()
-
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            return try {
-                if (!notificationManager.isNotificationPolicyAccessGranted) {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    return ActionResult(false, "DND policy permission not granted. I've opened the settings — please grant access and try again.", "Permission required", true)
-                }
-
-                // Determine target state
-                val currentlyOn = notificationManager.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
-                val targetOn = when (requestedState) {
-                    "on", "true", "enable", "yes"    -> true
-                    "off", "false", "disable", "no"  -> false
-                    "toggle"                         -> !currentlyOn
-                    else                             -> !currentlyOn
-                }
-
-                // Already in desired state?
-                if (targetOn == currentlyOn) {
-                    val stateWord = if (currentlyOn) "on" else "off"
-                    return ActionResult(true, "Do Not Disturb is already $stateWord!", null)
-                }
-
-                val filter = if (targetOn) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL
-                notificationManager.setInterruptionFilter(filter)
-                val stateWord = if (targetOn) "on" else "off"
-                ActionResult(true, "Do Not Disturb is $stateWord.", null)
-            } catch (e: Exception) {
-                Log.e("ToggleDND", "DND failed: ${e.localizedMessage}")
-                ActionResult(false, null, "Couldn't change Do Not Disturb.")
             }
         }
     }
