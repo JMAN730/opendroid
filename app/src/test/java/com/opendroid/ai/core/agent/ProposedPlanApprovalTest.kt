@@ -2,10 +2,13 @@ package com.opendroid.ai.core.agent
 
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ProposedPlanApprovalTest {
@@ -62,5 +65,46 @@ class ProposedPlanApprovalTest {
         PlanStatus.values().filter { it != PlanStatus.PROPOSED }.forEach { status ->
             assertFalse(status.name, isAwaitingApproval(plan(status = status), "p1"))
         }
+    }
+
+    @Test
+    fun `a failure while running an approved plan fails the plan instead of escaping`() = runBlocking {
+        val state = MutableStateFlow<AgentState>(AgentState.Thinking)
+        var planFailed = false
+
+        runApprovedPlan(state, failPlan = { planFailed = true }) {
+            throw IllegalStateException("database is closed")
+        }
+
+        assertTrue(planFailed)
+        assertEquals(AgentState.Error("database is closed"), state.value)
+    }
+
+    @Test
+    fun `the error still shows when failing the plan throws too`() = runBlocking {
+        val state = MutableStateFlow<AgentState>(AgentState.Thinking)
+
+        runApprovedPlan(state, failPlan = { error("still closed") }) {
+            throw IllegalStateException("database is closed")
+        }
+
+        assertEquals(AgentState.Error("database is closed"), state.value)
+    }
+
+    @Test
+    fun `a cancel while running an approved plan is not reported as a failure`() = runBlocking {
+        val state = MutableStateFlow<AgentState>(AgentState.Thinking)
+        var planFailed = false
+
+        try {
+            runApprovedPlan(state, failPlan = { planFailed = true }) {
+                throw CancellationException("stopped")
+            }
+            fail("CancellationException was swallowed")
+        } catch (_: CancellationException) {
+        }
+
+        assertFalse(planFailed)
+        assertEquals(AgentState.Thinking, state.value)
     }
 }

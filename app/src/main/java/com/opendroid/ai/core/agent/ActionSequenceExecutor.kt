@@ -10,6 +10,13 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /**
+ * What a completed step records as its result, which later steps read through `$sN`.
+ * Only the action's own data, never a note about how it got there.
+ */
+internal fun completedStepResult(result: ActionResult): String =
+    result.data ?: "Completed successfully."
+
+/**
  * The common ordered action-dispatch seam used by Plans and saved Macros.
  *
  * Macro execution is deliberately linear: a failed step stops the sequence.
@@ -89,6 +96,8 @@ class ActionSequenceExecutor(
         val resolvedParams = resolveParameters(step.params, completedResults)
         val primaryResult = dispatch(step.action, resolvedParams, context)
         val fallbackResult = if (shouldAttemptFallback(primaryResult, step)) {
+            // A cancel during the primary must not fire the fallback.
+            currentCoroutineContext().ensureActive()
             dispatch(step.fallback, resolvedParams, context)
         } else {
             null
@@ -142,7 +151,7 @@ class ActionSequenceExecutor(
                 )
             }
 
-            completedResults[step.stepId] = result.data ?: "Completed successfully."
+            completedResults[step.stepId] = completedStepResult(result)
         }
 
         return ActionResult.Success(
