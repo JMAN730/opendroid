@@ -764,13 +764,16 @@ fun ChatBubble(
             // Extract query from text ("Which 'dad' do you mean?" ? "dad")
             val query = Regex("Which '(.*?)'").find(message.text)?.groupValues?.getOrNull(1) ?: "contact"
 
+            // Only the picker the agent is waiting on takes taps; older cards stay visible
+            // but inert, so they cannot answer a newer picker or start a new query.
+            val pendingPickerId = viewModel?.pendingContactPickerMessageId?.collectAsState()?.value
             ContactPickerCard(
                 query = query,
                 matches = matches,
+                enabled = pendingPickerId == message.id,
                 onContactSelected = { selected ->
-                    val index = matches.indexOf(selected) + 1
                     if (viewModel != null && context != null) {
-                        viewModel.sendMessage(index.toString(), context)
+                        viewModel.selectContact(message.id, selected, context)
                     }
                 }
             )

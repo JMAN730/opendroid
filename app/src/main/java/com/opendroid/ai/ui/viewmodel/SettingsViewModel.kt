@@ -716,6 +716,11 @@ class SettingsViewModel @Inject constructor(
             if (candidateEndpoint.isNotBlank()) add(SecretRegistry.register(candidateEndpoint))
         }
         try {
+            // Flush the on-screen key and endpoint first: the provider reads the saved
+            // config, which lags typing by the save debounce.
+            settingsRepository.updateConfig { current ->
+                ConnectionTestPlanner.withCandidateConnection(current, snapshot, provider)
+            }
             val factory = llmProviderFactory.get()
             val llmProvider = factory.getProviderByName(provider)
             val request = LLMRequest(

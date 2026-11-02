@@ -493,6 +493,36 @@ class AgentLoop @Inject constructor(
     // Speak callback to be implemented by TTS service
     var onSpeakCallback: ((String) -> Unit)? = null
 
+    // Silences speech in progress; set by the TTS service and called from cancelCurrentTask.
+    var onStopSpeakingCallback: (() -> Unit)? = null
+
+    // The contact picker the running task is waiting on, if any. Only its card may answer,
+    // so a tap on an older card can never be read as an answer to this one.
+    private class ActiveContactPicker(val messageId: String) {
+        @Volatile var tapped: Map<String, String>? = null
+    }
+
+    @Volatile private var activeContactPicker: ActiveContactPicker? = null
+    private val _pendingContactPickerMessageId = MutableStateFlow<String?>(null)
+    val pendingContactPickerMessageId: StateFlow<String?> = _pendingContactPickerMessageId.asStateFlow()
+
+    /**
+     * Answers the pending contact picker with the contact tapped on its card. Returns false,
+     * and does nothing, when [pickerMessageId] is not the picker currently waiting.
+     */
+    fun answerContactPicker(
+        pickerMessageId: String,
+        contact: Map<String, String>,
+        context: Context,
+        explicitSessionId: String?
+    ): Boolean {
+        val picker = activeContactPicker
+        if (picker == null || picker.messageId != pickerMessageId) return false
+        picker.tapped = contact
+        processQuery(contact["name"].orEmpty().ifBlank { "Contact" }, context, explicitSessionId)
+        return true
+    }
+
     /**
      * @param explicitSessionId The session this message actually belongs to (whatever chat
      * the caller was looking at when the user hit send), if the caller can determine it.
@@ -1220,6 +1250,7 @@ class AgentLoop @Inject constructor(
      * read, not suspending, so this capture is safe to do here.
      */
     override fun cancelCurrentTask() {
+        onStopSpeakingCallback?.invoke()
         val jobToCancel = currentJob
         currentJob = null
         waitingSessionId = null
@@ -1769,18 +1800,28 @@ class AgentLoop @Inject constructor(
 
         // Show picker question to user via chat
         val optionsText = pickerResult.options.joinToString("\n")
+        val picker = ActiveContactPicker(UUID.randomUUID().toString())
         val pickerMsg = ChatMessage(
-            id = UUID.randomUUID().toString(),
+            id = picker.messageId,
             text = "${pickerResult.question}\n\n$optionsText",
             sender = ChatMessage.Sender.AGENT,
             modelBadge = "System",
             contactPickerData = matchesJson
         )
-        conversationRepository.insertMessage(sessionId, pickerMsg)
-        onSpeakCallback?.invoke(pickerResult.question)
+        activeContactPicker = picker
+        _pendingContactPickerMessageId.value = picker.messageId
+        val userSelection = try {
+            conversationRepository.insertMessage(sessionId, pickerMsg)
+            onSpeakCallback?.invoke(pickerResult.question)
 
-        // Wait for user response
-        val userSelection = awaitUserResponse(sessionId)
+            // Wait for user response
+            awaitUserResponse(sessionId)
+        } finally {
+            if (activeContactPicker === picker) {
+                activeContactPicker = null
+                _pendingContactPickerMessageId.value = null
+            }
+        }
 
         // Save user's response as a chat message
         val userPickMsg = ChatMessage(
@@ -1790,11 +1831,11 @@ class AgentLoop @Inject constructor(
         )
         conversationRepository.insertMessage(sessionId, userPickMsg)
 
-        // Resolve user selection to a contact
-        val selectedContact = selectContact(userSelection, matches.map { it["name"].orEmpty() })
-            ?.let { matches[it] }
+        // Resolve user selection to a contact. A tap on this picker's card carries the
+        // contact itself; typed answers are matched against this picker's own list.
+        val selectedContact = ContactPickerSelection.resolve(userSelection, matches, picker.tapped)
 
-        if (selectedContact == null && isContactPickerRefusal(userSelection)) {
+        if (selectedContact == null && picker.tapped == null && isContactPickerRefusal(userSelection)) {
             return NeedsInputRetry(
                 ActionResult.Declined("Action cancelled by user response: $userSelection"),
                 originalParams
