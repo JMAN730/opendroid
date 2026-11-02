@@ -24,6 +24,22 @@ class ActionAutoMapper @Inject constructor() {
         private const val TAG = "ActionResolver"
         /** Sentinel: remove this step from the plan entirely */
         const val SKIP = "SKIP"
+
+        /** Words that ask for data. A name with one of these must not run as a send or a call. */
+        private val READ_WORDS = setOf(
+            "READ", "GET", "CHECK", "LIST", "FIND", "SHOW", "LOOKUP", "LOOK",
+            "SEARCH", "VIEW", "FETCH", "RETRIEVE", "DISPLAY"
+        )
+        private val OPEN_WORDS = setOf("OPEN", "LAUNCH", "START")
+        private val NOT_A_SEND = READ_WORDS + OPEN_WORDS
+
+        /** Words that name past calls, not a call to place. */
+        private val NOT_A_CALL = NOT_A_SEND + setOf("LOG", "LOGS", "HISTORY", "MISSED")
+
+        /** Channels with no send action. Their sends must not fall through to another channel. */
+        private val UNSUPPORTED_CHANNELS = listOf(
+            "SIGNAL", "DISCORD", "SLACK", "MESSENGER", "VIBER", "WECHAT", "SNAPCHAT", "INSTAGRAM", "FACEBOOK", "TEAMS"
+        )
     }
 
     data class MappingResult(
@@ -125,16 +141,16 @@ class ActionAutoMapper @Inject constructor() {
         "PHONE"                   to "MAKE_CALL",
         "RING_CONTACT"            to "MAKE_CALL",
         "DIAL_CONTACT"            to "MAKE_CALL",
-        "OPEN_DIALER"             to "MAKE_CALL",
-        "OPEN_PHONE"              to "MAKE_CALL",
+        "OPEN_DIALER"             to "OPEN_APP",
+        "OPEN_PHONE"              to "OPEN_APP",
 
         // ── WhatsApp variants ───────────────────────────────────────
-        "OPEN_WHATSAPP"           to "SEND_WHATSAPP",
-        "OPEN_WHATSAPP_CHAT"      to "SEND_WHATSAPP",
+        "OPEN_WHATSAPP"           to "OPEN_APP",
+        "OPEN_WHATSAPP_CHAT"      to "OPEN_APP",
         "WHATSAPP_MESSAGE"        to "SEND_WHATSAPP",
         "WHATSAPP_SEND"           to "SEND_WHATSAPP",
         "SEND_WHATSAPP_MESSAGE"   to "SEND_WHATSAPP",
-        "LAUNCH_WHATSAPP"         to "SEND_WHATSAPP",
+        "LAUNCH_WHATSAPP"         to "OPEN_APP",
         "MESSAGE_WHATSAPP"        to "SEND_WHATSAPP",
         "TEXT_WHATSAPP"            to "SEND_WHATSAPP",
         "WHATSAPP"                to "SEND_WHATSAPP",
@@ -153,8 +169,8 @@ class ActionAutoMapper @Inject constructor() {
         "TELEGRAM"                to "SEND_TELEGRAM",
 
         // ── SMS variants ────────────────────────────────────────────
-        "OPEN_MESSAGES"           to "SEND_SMS",
-        "OPEN_SMS"                to "SEND_SMS",
+        "OPEN_MESSAGES"           to "OPEN_APP",
+        "OPEN_SMS"                to "OPEN_APP",
         "SMS_SEND"                to "SEND_SMS",
         "TEXT_MESSAGE"            to "SEND_SMS",
         "TEXT"                    to "SEND_SMS",
@@ -162,6 +178,8 @@ class ActionAutoMapper @Inject constructor() {
         "TEXT_CONTACT"            to "SEND_SMS",
         "SEND_TEXT_MESSAGE"       to "SEND_SMS",
         "SMS"                     to "SEND_SMS",
+        "READ_TEXTS"              to "READ_MESSAGES",
+        "SHOW_MESSAGES"           to "READ_MESSAGES",
 
         // ── Generic message (default → WhatsApp) ────────────────────
         "SEND_MESSAGE"            to "SEND_WHATSAPP",
@@ -377,7 +395,9 @@ class ActionAutoMapper @Inject constructor() {
     private data class SemanticRule(
         val keywords: List<String>,
         val excludeKeywords: List<String> = emptyList(),
-        val resolvedAction: String
+        val resolvedAction: String,
+        val requiredWords: Set<String> = emptySet(),
+        val excludedWords: Set<String> = emptySet()
     )
 
     private val semanticRules = listOf(
@@ -401,22 +421,41 @@ class ActionAutoMapper @Inject constructor() {
         SemanticRule(listOf("SCREENSHOT"), emptyList(), "TAKE_SCREENSHOT"),
         SemanticRule(listOf("SCREEN", "CAPTURE"), emptyList(), "TAKE_SCREENSHOT"),
 
+        // Reads (before the send rules)
+        SemanticRule(listOf("WHATSAPP"), emptyList(), "READ_MESSAGES", requiredWords = READ_WORDS),
+        SemanticRule(listOf("TELEGRAM"), emptyList(), "READ_MESSAGES", requiredWords = READ_WORDS),
+        SemanticRule(listOf("SMS"), emptyList(), "READ_MESSAGES", requiredWords = READ_WORDS),
+        SemanticRule(listOf("EMAIL"), listOf("ADDRESS"), "READ_EMAILS", requiredWords = NOT_A_SEND),
+        SemanticRule(listOf("MAIL"), listOf("VOICEMAIL", "ADDRESS"), "READ_EMAILS", requiredWords = NOT_A_SEND),
+        SemanticRule(
+            listOf("MESSAGE"),
+            UNSUPPORTED_CHANNELS + listOf("SHOW", "DISPLAY", "ERROR"),
+            "READ_MESSAGES",
+            requiredWords = READ_WORDS
+        ),
+
         // WhatsApp (before generic MESSAGE)
-        SemanticRule(listOf("WHATSAPP"), emptyList(), "SEND_WHATSAPP"),
+        SemanticRule(listOf("WHATSAPP"), emptyList(), "SEND_WHATSAPP", excludedWords = NOT_A_SEND),
 
         // Telegram (before generic MESSAGE)
         SemanticRule(listOf("OPEN", "TELEGRAM"), emptyList(), "OPEN_TELEGRAM"),
-        SemanticRule(listOf("TELEGRAM"), emptyList(), "SEND_TELEGRAM"),
+        SemanticRule(listOf("TELEGRAM"), emptyList(), "SEND_TELEGRAM", excludedWords = NOT_A_SEND),
 
         // SMS (before generic MESSAGE)
-        SemanticRule(listOf("SMS"), emptyList(), "SEND_SMS"),
+        SemanticRule(listOf("SMS"), emptyList(), "SEND_SMS", excludedWords = NOT_A_SEND),
+        SemanticRule(listOf("SEND_TEXT"), UNSUPPORTED_CHANNELS, "SEND_SMS"),
 
         // Email
-        SemanticRule(listOf("EMAIL"), emptyList(), "SEND_EMAIL"),
-        SemanticRule(listOf("MAIL"), listOf("VOICEMAIL"), "SEND_EMAIL"),
+        SemanticRule(listOf("EMAIL"), listOf("ADDRESS"), "SEND_EMAIL", excludedWords = NOT_A_SEND),
+        SemanticRule(listOf("MAIL"), listOf("VOICEMAIL", "ADDRESS"), "SEND_EMAIL", excludedWords = NOT_A_SEND),
 
         // Generic message → WhatsApp default
-        SemanticRule(listOf("MESSAGE"), listOf("SHOW", "DISPLAY", "ERROR"), "SEND_WHATSAPP"),
+        SemanticRule(
+            listOf("MESSAGE"),
+            UNSUPPORTED_CHANNELS + listOf("SHOW", "DISPLAY", "ERROR"),
+            "SEND_WHATSAPP",
+            excludedWords = NOT_A_SEND
+        ),
 
         // Weather (before SEARCH)
         SemanticRule(listOf("WEATHER"), emptyList(), "GET_WEATHER"),
@@ -433,9 +472,9 @@ class ActionAutoMapper @Inject constructor() {
         SemanticRule(listOf("CHROME"), emptyList(), "OPEN_BROWSER"),
 
         // Call (exclude RECALL)
-        SemanticRule(listOf("CALL"), listOf("RECALL", "VIDEO"), "MAKE_CALL"),
-        SemanticRule(listOf("DIAL"), emptyList(), "MAKE_CALL"),
-        SemanticRule(listOf("PHONE"), listOf("HEADPHONE"), "MAKE_CALL"),
+        SemanticRule(listOf("CALL"), listOf("RECALL", "VIDEO"), "MAKE_CALL", excludedWords = NOT_A_CALL),
+        SemanticRule(listOf("DIAL"), listOf("DIALOG"), "MAKE_CALL", excludedWords = NOT_A_CALL),
+        SemanticRule(listOf("PHONE"), listOf("HEADPHONE", "MICROPHONE"), "MAKE_CALL", excludedWords = NOT_A_CALL + "NUMBER"),
 
         // Search
         SemanticRule(listOf("SEARCH"), emptyList(), "WEB_SEARCH"),
@@ -443,7 +482,7 @@ class ActionAutoMapper @Inject constructor() {
         // Music/Media
         SemanticRule(listOf("YOUTUBE"), emptyList(), "PLAY_YOUTUBE"),
         SemanticRule(listOf("MUSIC"), listOf("STOP", "PAUSE", "VOLUME"), "PLAY_MUSIC"),
-        SemanticRule(listOf("PLAY"), listOf("STORE"), "PLAY_MUSIC"),
+        SemanticRule(listOf("PLAY"), listOf("STORE", "DISPLAY"), "PLAY_MUSIC"),
 
         // Alarm/Timer
         SemanticRule(listOf("ALARM"), emptyList(), "SET_ALARM"),
@@ -480,11 +519,8 @@ class ActionAutoMapper @Inject constructor() {
         SemanticRule(listOf("LAUNCH_"), emptyList(), "OPEN_APP"),
         SemanticRule(listOf("START_"), emptyList(), "OPEN_APP"),
 
-        // SEND_* generic → SEND_SMS (safe default)
-        SemanticRule(listOf("SEND_"), emptyList(), "SEND_SMS"),
-
-        // CHECK_* (but NOT weather/stock)
-        SemanticRule(listOf("CHECK_"), listOf("WEATHER", "STOCK", "BALANCE"), SKIP)
+        // CHECK_* (but NOT weather/stock, or calls: those stay unknown rather than a silent skip)
+        SemanticRule(listOf("CHECK_"), listOf("WEATHER", "STOCK", "BALANCE", "CALL", "PHONE"), SKIP)
     )
 
     // ════════════════════════════════════════════════════════════════
@@ -557,11 +593,22 @@ class ActionAutoMapper @Inject constructor() {
         for (rule in semanticRules) {
             val allKeywordsMatch = rule.keywords.all { normalized.contains(it) }
             val noExcludesMatch = rule.excludeKeywords.none { normalized.contains(it) }
-            if (allKeywordsMatch && noExcludesMatch) {
+            val requiredWordMatch = rule.requiredWords.isEmpty() || hasWord(normalized, rule.requiredWords)
+            val noExcludedWordMatch = !hasWord(normalized, rule.excludedWords)
+            if (allKeywordsMatch && noExcludesMatch && requiredWordMatch && noExcludedWordMatch) {
                 return rule.resolvedAction
             }
         }
         return null
+    }
+
+    /**
+     * Whole-word match, so a contact in "SEND_SMS_TO_BRIDGET" isn't read as GET. The prefix
+     * check catches names with no separators, like "getPhoneNumber" → "GETPHONENUMBER".
+     */
+    private fun hasWord(normalized: String, words: Set<String>): Boolean {
+        val tokens = normalized.split("_")
+        return words.any { it in tokens || normalized.startsWith(it) }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -636,9 +683,20 @@ class ActionAutoMapper @Inject constructor() {
                 mapOf("question" to question)
             }
 
+            "READ_MESSAGES" -> {
+                val normalized = normalizeActionName(originalAction)
+                val app = originalParams["app"] ?: when {
+                    normalized.contains("WHATSAPP") -> "whatsapp"
+                    normalized.contains("TELEGRAM") -> "telegram"
+                    else -> "sms"
+                }
+                originalParams + ("app" to app)
+            }
+
             "OPEN_APP" -> {
                 val appName = originalParams["appName"]
                     ?: originalParams["app"]
+                    ?: communicationAppName(originalAction)
                     ?: originalParams["name"]
                     ?: originalParams["packageName"]
                     ?: "the requested app"
@@ -695,6 +753,19 @@ class ActionAutoMapper @Inject constructor() {
             }
 
             else -> originalParams
+        }
+    }
+
+    /** The app behind an "open" name such as OPEN_DIALER, which never carries an app param. */
+    private fun communicationAppName(originalAction: String): String? {
+        val normalized = normalizeActionName(originalAction)
+        val tokens = normalized.split("_")
+        return when {
+            normalized.contains("WHATSAPP") -> "WhatsApp"
+            normalized.contains("TELEGRAM") -> "Telegram"
+            tokens.any { it in setOf("SMS", "MESSAGE", "MESSAGES") } -> "Messages"
+            tokens.any { it in setOf("PHONE", "DIALER", "DIAL", "CALL", "CALLS") } -> "Phone"
+            else -> null
         }
     }
 }
