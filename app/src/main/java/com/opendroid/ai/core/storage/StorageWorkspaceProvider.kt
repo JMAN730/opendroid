@@ -447,16 +447,28 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
-            overlapError(src, dest)?.let { return ActionResult(false, null, it) }
-            dest.parentFile?.mkdirs()
-            val renamed = src.renameTo(dest)
-            if (renamed) {
-                ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
-            } else {
-                moveByCopy(src, dest)
-            }
+            moveResolved(src, dest)
         } catch (e: Exception) {
             ActionResult(false, null, "Couldn't move file: ${e.localizedMessage}")
+        }
+    }
+
+    /** Moves between paths already resolved by [resolveFile]. */
+    internal fun moveResolved(
+        src: File,
+        dest: File,
+        rename: (File, File) -> Boolean = File::renameTo,
+    ): ActionResult {
+        // A rename is safe here, but on case-insensitive storage a copy would write the file onto itself.
+        val caseOnly = src.path != dest.path && src.path.equals(dest.path, ignoreCase = true)
+        if (!caseOnly) {
+            overlapError(src, dest)?.let { return ActionResult(false, null, it) }
+        }
+        dest.parentFile?.mkdirs()
+        return when {
+            rename(src, dest) -> ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
+            caseOnly -> ActionResult(false, null, "Couldn't rename ${src.absolutePath} to ${dest.absolutePath}")
+            else -> moveByCopy(src, dest)
         }
     }
 
