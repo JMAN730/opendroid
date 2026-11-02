@@ -74,7 +74,8 @@ data class SocialComment(
     val replyTimestamp: Long? = null,
     val sentiment: Sentiment = Sentiment.NEUTRAL,
     val category: InteractionCategory = InteractionCategory.GENERAL,
-    val priority: InteractionPriority = InteractionPriority.NORMAL
+    val priority: InteractionPriority = InteractionPriority.NORMAL,
+    val accountId: String? = null // null for comments saved before the column existed
 )
 
 data class SocialInteraction(

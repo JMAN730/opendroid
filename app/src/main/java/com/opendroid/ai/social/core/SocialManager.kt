@@ -291,6 +291,7 @@ class SocialManager @Inject constructor(
         if (account.status != AccountStatus.CONNECTED) {
             return@withContext Result.failure(IllegalStateException("Account for ${post.platform.displayName} is ${account.status}"))
         }
+        account.missingPermission(SocialPermission.PUBLISH_POSTS)?.let { return@withContext Result.failure(it) }
 
         val credentials = credentialStore.getCredentials(account.id, post.platform)
             ?: return@withContext Result.failure(IllegalStateException("No stored credentials found for ${post.platform.displayName}"))
@@ -401,6 +402,14 @@ class SocialManager @Inject constructor(
     private fun PostStatus.isSentOrSending(): Boolean =
         this == PostStatus.PUBLISHING || this == PostStatus.PUBLISHED
 
+    // The user can untick send permissions when connecting; they hold for every send path.
+    private fun SocialAccount.missingPermission(permission: SocialPermission): Exception? =
+        if (permission in permissions) {
+            null
+        } else {
+            IllegalStateException("@$username doesn't have the ${permission.title} permission. Reconnect the account to turn it on.")
+        }
+
     // ── SYNCING & COMMENTS ───────────────────────────────────────────────────
 
     suspend fun syncAccount(accountId: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -426,7 +435,8 @@ class SocialManager @Inject constructor(
         if (commentsResult.isSuccess) {
             val comments = commentsResult.getOrThrow()
             if (comments.isNotEmpty()) {
-                socialRepository.saveComments(comments)
+                // Replies must go out through the account that received the comment.
+                socialRepository.saveComments(comments.map { it.copy(accountId = account.id) })
             }
         }
 
@@ -465,8 +475,17 @@ class SocialManager @Inject constructor(
         val target = unanswered.find { it.id == commentId || it.platformCommentId == commentId }
             ?: return@withContext Result.failure(IllegalArgumentException("Comment not found"))
 
-        val account = socialRepository.getAccountByPlatform(target.platform)
-            ?: return@withContext Result.failure(IllegalStateException("No account connected for ${target.platform}"))
+        // A comment synced before accounts were stored on comments has no owner, so it falls back
+        // to the newest connected account. One with an owner never moves to another account.
+        val account = if (target.accountId != null) {
+            socialRepository.getAccountById(target.accountId)
+                ?.takeIf { it.status == AccountStatus.CONNECTED }
+                ?: return@withContext Result.failure(IllegalStateException("The ${target.platform.displayName} account this comment came from is no longer connected"))
+        } else {
+            socialRepository.getAccountByPlatform(target.platform)
+                ?: return@withContext Result.failure(IllegalStateException("No account connected for ${target.platform}"))
+        }
+        account.missingPermission(SocialPermission.REPLY_TO_COMMENTS)?.let { return@withContext Result.failure(it) }
 
         val credentials = credentialStore.getCredentials(account.id, target.platform)
             ?: return@withContext Result.failure(IllegalStateException("No credentials for ${target.platform}"))
