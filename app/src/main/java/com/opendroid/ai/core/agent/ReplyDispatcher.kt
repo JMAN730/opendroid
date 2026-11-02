@@ -11,6 +11,8 @@ import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.net.toUri
 import com.opendroid.ai.core.util.DeviceCapabilities
+import com.opendroid.ai.core.util.SmsSendOutcome
+import com.opendroid.ai.core.util.SmsSender
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,9 +68,9 @@ class ReplyDispatcher @Inject constructor(
     }
 
     /**
-     * Send an SMS reply directly using SmsManager.
+     * Send an SMS reply directly using SmsManager. True only once the radio confirms it.
      */
-    fun replyViaSms(phoneNumber: String, replyText: String, context: Context): Boolean {
+    suspend fun replyViaSms(phoneNumber: String, replyText: String, context: Context): Boolean {
         if (!DeviceCapabilities.canSendSms(context)) {
             Log.w(TAG, "SMS reply skipped: device has no SMS-capable telephony hardware")
             return false
@@ -76,9 +78,9 @@ class ReplyDispatcher @Inject constructor(
         return try {
             val smsManager = context.getSystemService(SmsManager::class.java)
             if (smsManager != null) {
-                smsManager.sendTextMessage(phoneNumber, null, replyText, null, null)
-                Log.d(TAG, "SMS reply sent to $phoneNumber")
-                true
+                val outcome = SmsSender.send(context, smsManager, phoneNumber, replyText)
+                Log.d(TAG, "SMS reply to $phoneNumber: $outcome")
+                outcome == SmsSendOutcome.SENT
             } else {
                 Log.e(TAG, "SmsManager not available")
                 false
