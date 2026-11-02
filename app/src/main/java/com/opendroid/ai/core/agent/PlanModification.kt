@@ -13,13 +13,31 @@ import com.opendroid.ai.data.models.StepStatus
  */
 object PlanModification {
 
-    data class MergeResult(val steps: List<PlanStep>, val rejected: List<PlanStep>)
+    /**
+     * [revisionLost] means the answer asked for changes and every one was rejected, so
+     * the plan left in [steps] is not what the model wanted to run.
+     */
+    data class MergeResult(
+        val steps: List<PlanStep>,
+        val rejected: List<PlanStep>,
+        val revisionLost: Boolean = false
+    )
 
     /**
      * Pending steps are replaced by stepId and new ones appended. Pending steps the
      * answer omits stay queued, and settled steps are never touched. Steps naming an
      * action outside [ActionSchema] are returned in [MergeResult.rejected]. Status,
      * result and error are execution state, so the model cannot set them.
+     *
+     * A step reusing a settled stepId is not dropped, because the model often renumbers
+     * the remainder from "s1". An unchanged echo of the settled step is ignored. Anything
+     * else takes over a pending step with the same action, since appending it next to
+     * that step would send the same message twice, or runs under a new "<id>_r1" id when
+     * there is no such step. Either way it reaches [requiresApproval] as a change.
+     *
+     * [repairing] names the step that just failed with an unknown action. A step reusing
+     * its id with a different action replaces it in place, so it runs before the steps
+     * that follow it. Keeping the action cannot fix an unknown action, so that is ignored.
      *
      * [asked] is the plan the model was shown. The answer can only be stale about a
      * pending step the user edited or deleted since then, so what it says about that
@@ -29,25 +47,62 @@ object PlanModification {
     fun merge(
         current: List<PlanStep>,
         updated: List<PlanStep>,
-        asked: List<PlanStep> = current
+        asked: List<PlanStep> = current,
+        repairing: String? = null
     ): MergeResult {
-        val pendingIds = current.filter { it.status == StepStatus.PENDING }.map { it.stepId }.toSet()
-        val settledIds = current.map { it.stepId }.toSet() - pendingIds
-        val userChangedIds = asked
-            .filter { it.status == StepStatus.PENDING && it !in current }
-            .map { it.stepId }
-            .toSet()
+        val settled = current.filter { it.status != StepStatus.PENDING }.associateBy { it.stepId }
+        val repairable = settled[repairing]?.takeIf { it.status == StepStatus.FAILED }
+        val userChanged = asked.filter { it.status == StepStatus.PENDING && it !in current }
+        val userChangedIds = userChanged.map { it.stepId }.toSet()
+        val userChangedActions = userChanged.map { it.action }.toSet()
         val (valid, rejected) = updated
             .distinctBy { it.stepId }
-            .filter { it.stepId !in settledIds && it.stepId !in userChangedIds }
+            .filter { it.stepId !in userChangedIds }
             .partition(::hasKnownActions)
-        val incoming = valid.map { it.copy(status = StepStatus.PENDING, result = null, error = null) }
-        val replacements = incoming.associateBy { it.stepId }
+        val incoming = valid
+            .filter { step ->
+                val old = settled[step.stepId]
+                when {
+                    old == null -> true
+                    old === repairable -> step.action != old.action
+                    else -> old.action != step.action || old.fallback != step.fallback || old.params != step.params
+                }
+            }
+            .map { it.copy(status = StepStatus.PENDING, result = null, error = null) }
 
-        val steps = current.map { step ->
-            if (step.status == StepStatus.PENDING) replacements[step.stepId] ?: step else step
-        } + incoming.filter { it.stepId !in pendingIds }
-        return MergeResult(steps, rejected)
+        val open = current
+            .filter { it.status == StepStatus.PENDING && it.stepId !in userChangedIds }
+            .toMutableList()
+        val usedIds = (current + incoming).map { it.stepId }.toMutableSet()
+        val replacements = mutableMapOf<String, PlanStep>()
+        val added = mutableListOf<PlanStep>()
+
+        fun placeWithoutOwnSlot(step: PlanStep) {
+            val slot = open.firstOrNull { it.action == step.action }
+            if (slot != null) {
+                open -= slot
+                replacements[slot.stepId] = step.copy(stepId = slot.stepId, dependsOn = step.dependsOn - slot.stepId)
+            } else {
+                val newId = generateSequence(1) { it + 1 }.map { "${step.stepId}_r$it" }.first(usedIds::add)
+                added += step.copy(stepId = newId)
+            }
+        }
+
+        // Collisions go first so a renumbered list claims steps in order: a later step
+        // whose own id was just claimed moves on to the next match instead of overwriting it.
+        val (collided, others) = incoming.partition { it.stepId in settled && settled[it.stepId] !== repairable }
+        collided.filter { it.action !in userChangedActions }.forEach(::placeWithoutOwnSlot)
+        others.forEach { step ->
+            when {
+                step.stepId == repairable?.stepId -> replacements[step.stepId] = step
+                current.none { it.stepId == step.stepId } -> added += step
+                open.removeAll { it.stepId == step.stepId } -> replacements[step.stepId] = step
+                else -> placeWithoutOwnSlot(step)
+            }
+        }
+
+        val steps = current.map { replacements[it.stepId] ?: it } + added
+        return MergeResult(steps, rejected, revisionLost = rejected.isNotEmpty() && incoming.isEmpty())
     }
 
     /**
