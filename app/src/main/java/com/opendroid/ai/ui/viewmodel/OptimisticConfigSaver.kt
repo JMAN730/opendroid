@@ -29,6 +29,7 @@ internal class OptimisticConfigSaver(
         revert: LLMConfig.(stored: LLMConfig) -> LLMConfig,
         update: (LLMConfig) -> LLMConfig
     ): Boolean {
+        val shown = uiConfig.value
         if (persist(update) == ProviderCredentialPersistenceState.Ready) return true
         val stored = try {
             readStored()
@@ -37,7 +38,10 @@ internal class OptimisticConfigSaver(
         } catch (_: SecurityException) {
             return false
         }
-        uiConfig.value = uiConfig.value.revert(stored)
+        val current = uiConfig.value
+        // A newer edit of these fields owns them now; reverting would undo it.
+        if (current.revert(shown) != current) return false
+        uiConfig.value = current.revert(stored)
         return false
     }
 }
