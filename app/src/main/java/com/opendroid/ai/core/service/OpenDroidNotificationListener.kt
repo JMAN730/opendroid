@@ -22,6 +22,7 @@ import com.opendroid.ai.data.db.entities.NotificationEntity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -66,6 +67,12 @@ class OpenDroidNotificationListener : NotificationListenerService() {
         super.onListenerDisconnected()
         instance = null
         Log.d(TAG, "Notification listener disconnected")
+        // The system unbinds the listener when access is revoked, so stop feeding the prompt
+        // patterns learned while it was granted. A rebind relearns them from the stored history.
+        // NonCancellable: onDestroy cancels serviceScope right after this.
+        serviceScope.launch(NonCancellable) {
+            notificationIntelligence.clearLearnedPatterns()
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {

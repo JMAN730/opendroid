@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.memory.NotificationHistoryCleaner
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -21,13 +22,14 @@ import javax.inject.Singleton
 @Singleton
 class NotificationActions @Inject constructor(
     private val notificationDao: NotificationDao,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val notificationHistoryCleaner: NotificationHistoryCleaner
 ) {
 
     fun getActions(): List<Action> = listOf(
         ReadNotificationsAction(notificationDao),
         AutoReplyToggleAction(settingsRepository),
-        DismissNotificationAction(notificationDao)
+        DismissNotificationAction(notificationDao, notificationHistoryCleaner::clearHistory)
     )
 }
 
@@ -160,7 +162,9 @@ internal fun notificationPackageForApp(app: String): String =
  * of clearing the records OpenDroid captured.
  */
 internal class DismissNotificationAction(
-    private val notificationDao: NotificationDao
+    private val notificationDao: NotificationDao,
+    /** Clears every record and whatever was learned from them; used when no filter is given. */
+    private val clearHistory: suspend () -> Int
 ) : Action {
     override val name: String = "DISMISS_NOTIFICATION"
 
@@ -180,7 +184,7 @@ internal class DismissNotificationAction(
                     notificationDao.deleteNotificationById(notificationId)
                 }
                 app != null -> notificationDao.deleteNotificationsByApp(notificationPackageForApp(app))
-                else -> notificationDao.clearAll()
+                else -> clearHistory()
             }
 
             if (deleted == 0) {
