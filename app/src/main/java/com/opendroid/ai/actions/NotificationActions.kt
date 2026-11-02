@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
-import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.models.AutoReplyConfig
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -22,52 +21,51 @@ import javax.inject.Singleton
 @Singleton
 class NotificationActions @Inject constructor(
     private val notificationDao: NotificationDao,
-    private val notificationIntelligence: NotificationIntelligence,
     private val settingsRepository: SettingsRepository
 ) {
 
     fun getActions(): List<Action> = listOf(
-        ReadNotificationsAction(),
+        ReadNotificationsAction(notificationDao),
         AutoReplyToggleAction(settingsRepository),
         DismissNotificationAction(notificationDao)
     )
+}
 
-    private inner class ReadNotificationsAction : Action {
-        override val name: String = "READ_NOTIFICATIONS"
+internal class ReadNotificationsAction(
+    private val notificationDao: NotificationDao
+) : Action {
+    override val name: String = "READ_NOTIFICATIONS"
 
-        override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            return try {
-                val app = params["app"]
-                val count = params["count"]?.toIntOrNull() ?: 10
+    override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
+        return try {
+            val app = params["app"]
+            val count = params["count"]?.toIntOrNull() ?: 10
 
-                val notifications = if (!app.isNullOrBlank()) {
-                    // Map friendly app name to package
-                    val packageFilter = notificationPackageForApp(app)
-                    notificationDao.getNotificationsByApp(packageFilter, count)
-                } else {
-                    notificationDao.getRecentNotifications(count)
-                }
-
-                if (notifications.isEmpty()) {
-                    return ActionResult(true, "No notifications found.", null)
-                }
-
-                val dateFormat = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault())
-                val formatted = notifications.joinToString("\n\n") { notif ->
-                    val time = dateFormat.format(java.util.Date(notif.timestamp))
-                    val replied = if (notif.isAutoReplied) "\n  ↳ Auto-replied: ${notif.autoReplyText?.take(50)}" else ""
-                    "📱 ${notif.appName} • $time\n  From: ${notif.contactName ?: notif.title}\n  ${notif.text.take(120)}$replied"
-                }
-
-                // Also include learned patterns
-                val patterns = notificationIntelligence.getLearnedPatterns()
-                val patternsSection = if (patterns.isNotBlank()) "\n\n📊 What I've learned:\n$patterns" else ""
-
-                ActionResult(true, "Here are your recent notifications:\n\n$formatted$patternsSection", null)
-            } catch (e: Exception) {
-                Log.e("NotificationActions", "Failed to read notifications: ${e.message}")
-                ActionResult(false, null, "Couldn't read notifications right now.")
+            val notifications = if (!app.isNullOrBlank()) {
+                // Map friendly app name to package
+                val packageFilter = notificationPackageForApp(app)
+                notificationDao.getNotificationsByApp(packageFilter, count)
+            } else {
+                notificationDao.getRecentNotifications(count)
             }
+
+            if (notifications.isEmpty()) {
+                return ActionResult(true, "No notifications found.", null)
+            }
+
+            val dateFormat = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.getDefault())
+            val formatted = notifications.joinToString("\n\n") { notif ->
+                val time = dateFormat.format(java.util.Date(notif.timestamp))
+                val replied = if (notif.isAutoReplied) "\n  ↳ Auto-replied: ${notif.autoReplyText?.take(50)}" else ""
+                "📱 ${notif.appName} • $time\n  From: ${notif.contactName ?: notif.title}\n  ${notif.text.take(120)}$replied"
+            }
+
+            // A later step can send this text to someone ($$sN), so it holds the notifications and
+            // nothing else. The learned patterns reach the model through MemoryManager instead.
+            ActionResult(true, "Here are your recent notifications:\n\n$formatted", null)
+        } catch (e: Exception) {
+            Log.e("NotificationActions", "Failed to read notifications: ${e.message}")
+            ActionResult(false, null, "Couldn't read notifications right now.")
         }
     }
 }
