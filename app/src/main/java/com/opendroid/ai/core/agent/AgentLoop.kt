@@ -456,7 +456,7 @@ class AgentLoop @Inject constructor(
     private data class PendingUserInput(
         val sessionId: String,
         val requestId: String,
-        val deferred: CompletableDeferred<String>
+        val deferred: CompletableDeferred<UserReply>
     )
 
     @Volatile private var pendingUserInput: PendingUserInput? = null
@@ -478,7 +478,11 @@ class AgentLoop @Inject constructor(
      * happens from within that task's own execution. Pass a session explicitly only if
      * that assumption doesn't hold.
      */
-    suspend fun awaitUserResponse(sessionId: String = _activeTaskSessionId.value.orEmpty()): String {
+    suspend fun awaitUserResponse(sessionId: String = _activeTaskSessionId.value.orEmpty()): String =
+        awaitUserReply(sessionId).text
+
+    /** Like [awaitUserResponse], but also returns the contact tapped on a picker card, if any. */
+    private suspend fun awaitUserReply(sessionId: String): UserReply {
         val request = PendingUserInput(sessionId, UUID.randomUUID().toString(), CompletableDeferred())
         waitingSessionId = sessionId
         pendingUserInput = request
@@ -509,9 +513,7 @@ class AgentLoop @Inject constructor(
 
     // The contact picker the running task is waiting on, if any. Only its card may answer,
     // so a tap on an older card can never be read as an answer to this one.
-    private class ActiveContactPicker(val messageId: String) {
-        @Volatile var tapped: Map<String, String>? = null
-    }
+    private class ActiveContactPicker(val messageId: String)
 
     @Volatile private var activeContactPicker: ActiveContactPicker? = null
     private val _pendingContactPickerMessageId = MutableStateFlow<String?>(null)
@@ -529,8 +531,9 @@ class AgentLoop @Inject constructor(
     ): Boolean {
         val picker = activeContactPicker
         if (picker == null || picker.messageId != pickerMessageId) return false
-        picker.tapped = contact
-        processQuery(contact["name"].orEmpty().ifBlank { "Contact" }, context, explicitSessionId)
+        // The contact rides with its own reply, so if several taps race, the one whose reply
+        // completes the prompt is also the one whose contact is acted on.
+        submitQuery(contact["name"].orEmpty().ifBlank { "Contact" }, context, explicitSessionId, contact)
         return true
     }
 
@@ -544,7 +547,16 @@ class AgentLoop @Inject constructor(
      * pre-multi-session behavior: a null session is always assumed to answer whatever
      * prompt is currently pending, and otherwise falls back to resolving "current".
      */
-    override fun processQuery(query: String, context: Context, explicitSessionId: String?) {
+    override fun processQuery(query: String, context: Context, explicitSessionId: String?) =
+        submitQuery(query, context, explicitSessionId, tappedContact = null)
+
+    /** [processQuery], carrying [tappedContact] when the reply is a tap on a picker card. */
+    private fun submitQuery(
+        query: String,
+        context: Context,
+        explicitSessionId: String?,
+        tappedContact: Map<String, String>?
+    ) {
         // processQuery is also the delivery path for a reply to a pending
         // awaitUserResponse() prompt (see below). That's ONLY true when this message comes
         // from the SAME session the waiting task is pinned to (waitingSessionId) - a
@@ -630,7 +642,7 @@ class AgentLoop @Inject constructor(
                     // is nothing to buffer it for; just drop it.
                     val pending = pendingUserInput
                     if (pending != null && pending.requestId == pendingAtScheduleTime?.requestId) {
-                        pending.deferred.complete(query)
+                        pending.deferred.complete(UserReply(query, tappedContact))
                     }
                     return@launch
                 }
@@ -1821,18 +1833,19 @@ class AgentLoop @Inject constructor(
         )
         activeContactPicker = picker
         _pendingContactPickerMessageId.value = picker.messageId
-        val userSelection = try {
+        val reply = try {
             conversationRepository.insertMessage(sessionId, pickerMsg)
             onSpeakCallback?.invoke(pickerResult.question)
 
             // Wait for user response
-            awaitUserResponse(sessionId)
+            awaitUserReply(sessionId)
         } finally {
             if (activeContactPicker === picker) {
                 activeContactPicker = null
                 _pendingContactPickerMessageId.value = null
             }
         }
+        val userSelection = reply.text
 
         // Save user's response as a chat message
         val userPickMsg = ChatMessage(
@@ -1844,9 +1857,9 @@ class AgentLoop @Inject constructor(
 
         // Resolve user selection to a contact. A tap on this picker's card carries the
         // contact itself; typed answers are matched against this picker's own list.
-        val selectedContact = ContactPickerSelection.resolve(userSelection, matches, picker.tapped)
+        val selectedContact = ContactPickerSelection.resolve(reply, matches)
 
-        if (selectedContact == null && picker.tapped == null && isContactPickerRefusal(userSelection)) {
+        if (selectedContact == null && reply.contact == null && isContactPickerRefusal(userSelection)) {
             return NeedsInputRetry(
                 ActionResult.Declined("Action cancelled by user response: $userSelection"),
                 originalParams

@@ -1,6 +1,8 @@
 package com.opendroid.ai.core.agent
 
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -39,5 +41,23 @@ class ContactPickerSelectionTest {
         assertEquals(alice, ContactPickerSelection.resolve("the first one", matches))
         assertEquals(bob, ContactPickerSelection.resolve("bob jones", matches))
         assertNull(ContactPickerSelection.resolve("7", matches))
+    }
+
+    @Test
+    fun `the tapped contact travels with the reply that answers the picker`() {
+        // Two taps race to answer one prompt. Only the reply that completes it may decide
+        // the contact, so the recorded answer and the contact acted on always agree.
+        val prompt = CompletableDeferred<UserReply>()
+        prompt.complete(UserReply("Alice Smith", contact = alice))
+        assertFalse(prompt.complete(UserReply("Bob Jones", contact = bob)))
+
+        val reply = prompt.getCompleted()
+        assertEquals("Alice Smith", reply.text)
+        assertEquals(alice, ContactPickerSelection.resolve(reply, listOf(alice, bob)))
+    }
+
+    @Test
+    fun `a typed reply carries no contact and resolves by its text`() {
+        assertEquals(bob, ContactPickerSelection.resolve(UserReply("2"), listOf(alice, bob)))
     }
 }
