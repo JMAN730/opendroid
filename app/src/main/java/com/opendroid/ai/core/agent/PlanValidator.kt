@@ -119,7 +119,6 @@ class PlanValidator internal constructor(
         var currentOrder = 1
         val steps = withoutOrphanedAsks(plan.steps)
         val takenIds = steps.mapTo(mutableSetOf()) { it.stepId }
-        val existingIds = takenIds.toSet()
 
         for (step in steps) {
             // Re-plans re-validate the steps that already ran. Fixing or re-resolving
@@ -184,16 +183,22 @@ class PlanValidator internal constructor(
                         // For Telegram, a contact name could also be a Telegram username directly
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else {
+                        val question = "I couldn't find a contact named '$contactName'. What is their phone number?"
                         val baseAskId = "${updatedStep.stepId}_ask"
-                        val askStepId = if (baseAskId in existingIds) baseAskId
+                        // A second step under the same id would be asked twice and crash the Plan tab,
+                        // so an existing ask is reused, but only if it asked about this contact:
+                        // otherwise its answer is someone else's number.
+                        val reusable = steps.any {
+                            it.stepId == baseAskId && it.action == "ASK_USER" && it.params["question"] == question
+                        }
+                        val askStepId = if (reusable) baseAskId
                             else askStepIdFor(updatedStep.stepId, takenIds).also { takenIds += it }
-                        // A second step under the same id would be asked twice and crash the Plan tab.
-                        if (askStepId !in existingIds) {
+                        if (!reusable) {
                             val askStep = PlanStep(
                                 stepId = askStepId, order = currentOrder++,
                                 description = "Ask user for contact number of '$contactName'",
                                 action = "ASK_USER",
-                                params = mapOf("question" to "I couldn't find a contact named '$contactName'. What is their phone number?"),
+                                params = mapOf("question" to question),
                                 fallback = ""
                             )
                             finalSteps.add(askStep)
