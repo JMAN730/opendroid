@@ -224,6 +224,39 @@ class OpenDroidDatabaseMigrationTest {
     }
 
     @Test
+    fun `migration 10 to 11 keeps analytics and inbox rows and matches the exported 11 schema`() {
+        helper.createDatabase(databasePath, 10).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO social_analytics_snapshots (`id`, `accountId`, `platform`, `timestamp`, `followersCount`, `followingCount`, `postsCount`, `totalLikes`, `totalComments`, `totalShares`, `totalViews`, `reach`, `impressions`, `engagementRate`, `subscribersCount`, `profileVisits`, `linkClicks`, `periodLabel`)
+                VALUES ('snap-1', 'acct', 'telegram', 1000, 1420, 0, 45, 0, 320, 0, 18400, 0, 0, 4.2, 0, 0, 0, 'SNAPSHOT_DAILY')
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO social_interactions (`id`, `platform`, `accountId`, `authorName`, `type`, `category`, `priority`, `content`, `timestamp`, `status`)
+                VALUES ('tg_upd_1', 'telegram', 'acct', 'someone', 'DIRECT_MESSAGE', 'GENERAL', 'NORMAL', 'hi', 1000, 'RESOLVED')
+                """.trimIndent()
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(databasePath, 11, true, OpenDroidDatabase.MIGRATION_10_11)
+
+        migrated.query("SELECT `followersCount`, `totalViews`, `engagementRate` FROM social_analytics_snapshots WHERE `id` = 'snap-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1420, cursor.getInt(0))
+            assertEquals(18400, cursor.getInt(1))
+            assertEquals(4.2f, cursor.getFloat(2), 0.001f)
+        }
+        migrated.execSQL("INSERT INTO social_analytics_snapshots (`id`, `accountId`, `platform`, `timestamp`, `periodLabel`) VALUES ('snap-2', 'acct', 'telegram', 2000, 'SNAPSHOT_DAILY')")
+        migrated.query("SELECT `status`, `replyTargetId` FROM social_interactions WHERE `id` = 'tg_upd_1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("RESOLVED", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+    }
+
+    @Test
     fun `the app's database builder upgrades a version 1 database without losing data`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         createVersion1Database(APP_DATABASE)
@@ -234,7 +267,7 @@ class OpenDroidDatabaseMigrationTest {
         val database = DatabaseModule.provideDatabase(context)
         try {
             val db = database.openHelper.writableDatabase
-            assertEquals(10, db.version)
+            assertEquals(11, db.version)
             db.query("SELECT `text`, `sessionId` FROM conversations WHERE `id` = 'msg-1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("hello", cursor.getString(0))

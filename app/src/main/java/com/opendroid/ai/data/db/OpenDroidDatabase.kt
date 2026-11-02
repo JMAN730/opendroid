@@ -69,7 +69,7 @@ import androidx.room.TypeConverters
         SocialAutomationRuleEntity::class,
         SocialAuditLogEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -267,6 +267,45 @@ abstract class OpenDroidDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE social_comments ADD COLUMN accountId TEXT")
+            }
+        }
+
+        // Inbox items learn what a reply goes to, and analytics metrics become nullable so a
+        // metric the platform doesn't report is stored as unknown instead of 0. SQLite can't
+        // drop NOT NULL in place, so the snapshots table is rebuilt. Existing snapshots keep
+        // their values: an old 0 can't be told apart from a real one.
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE social_interactions ADD COLUMN replyTargetId TEXT")
+
+                database.execSQL("""
+                    CREATE TABLE social_analytics_snapshots_new (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        accountId TEXT NOT NULL,
+                        platform TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        followersCount INTEGER,
+                        followingCount INTEGER,
+                        postsCount INTEGER,
+                        totalLikes INTEGER,
+                        totalComments INTEGER,
+                        totalShares INTEGER,
+                        totalViews INTEGER,
+                        reach INTEGER,
+                        impressions INTEGER,
+                        engagementRate REAL,
+                        subscribersCount INTEGER,
+                        profileVisits INTEGER,
+                        linkClicks INTEGER,
+                        periodLabel TEXT NOT NULL
+                    )
+                """)
+                database.execSQL("INSERT INTO social_analytics_snapshots_new SELECT id, accountId, platform, timestamp, followersCount, followingCount, postsCount, totalLikes, totalComments, totalShares, totalViews, reach, impressions, engagementRate, subscribersCount, profileVisits, linkClicks, periodLabel FROM social_analytics_snapshots")
+                database.execSQL("DROP TABLE social_analytics_snapshots")
+                database.execSQL("ALTER TABLE social_analytics_snapshots_new RENAME TO social_analytics_snapshots")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_accountId ON social_analytics_snapshots(accountId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_platform ON social_analytics_snapshots(platform)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_social_analytics_snapshots_timestamp ON social_analytics_snapshots(timestamp)")
             }
         }
 

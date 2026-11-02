@@ -141,7 +141,8 @@ class XAdapter @Inject constructor(
                             category = InteractionCategory.GENERAL,
                             priority = InteractionPriority.NORMAL,
                             content = tweet.getString("text"),
-                            timestamp = System.currentTimeMillis()
+                            timestamp = System.currentTimeMillis(),
+                            replyTargetId = tweet.getString("id")
                         )
                     )
                 }
@@ -206,6 +207,17 @@ class XAdapter @Inject constructor(
                 platformReplyId = data.getString("id")
             )
         }
+    }
+
+    // A mention is a tweet, so it's answered like a comment. Mentions synced before
+    // replyTargetId existed still carry the tweet id in their own id.
+    override suspend fun replyToInteraction(
+        credentials: SocialCredentials,
+        interaction: SocialInteraction,
+        text: String
+    ): Result<ReplyCommentResult> {
+        val tweetId = interaction.replyTargetId ?: interaction.id.removePrefix("x_mention_")
+        return replyToComment(credentials, tweetId, text)
     }
 
     override suspend fun fetchAnalytics(credentials: SocialCredentials): Result<SocialAnalytics> {
