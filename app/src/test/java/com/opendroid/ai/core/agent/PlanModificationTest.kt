@@ -49,12 +49,13 @@ class PlanModificationTest {
         updated: List<PlanStep>,
         granted: Set<String> = AutoMode.DEFAULT_GRANTS,
         before: List<PlanStep> = current,
-        autoApproved: Boolean = true
+        autoApproved: Boolean = true,
+        asked: List<PlanStep> = before
     ): Boolean = PlanModification.requiresApproval(
         mode = mode,
         granted = granted,
         before = before,
-        after = planOf(PlanModification.merge(before, updated).steps),
+        after = planOf(PlanModification.merge(before, updated, asked).steps),
         autoApproved = autoApproved
     )
 
@@ -126,6 +127,80 @@ class PlanModificationTest {
         val merged = PlanModification.merge(current, listOf(first, second)).steps
 
         assertEquals(1, merged.count { it.stepId == "s3" })
+    }
+
+    // --- Plan-tab changes made while the re-evaluation call was in flight ---
+
+    private val sms = step("s2", "SEND_SMS", params = mapOf("contact" to "+15550100", "message" to "hi"))
+    private val cleanup = step("s3", "DELETE_FILE", params = mapOf("path" to "a.txt"))
+    private val asked = listOf(done, sms, cleanup)
+
+    @Test
+    fun `step deleted during the call does not come back when the answer echoes it`() {
+        val live = listOf(done, cleanup)
+
+        val merged = PlanModification.merge(live, listOf(sms, cleanup), asked).steps
+
+        assertEquals(listOf("s1", "s3"), merged.map { it.stepId })
+    }
+
+    @Test
+    fun `step deleted during the call does not come back when the answer changes it`() {
+        val live = listOf(done, cleanup)
+        val rewritten = sms.copy(params = mapOf("contact" to "+15550199"))
+
+        val merged = PlanModification.merge(live, listOf(rewritten), asked).steps
+
+        assertEquals(listOf("s1", "s3"), merged.map { it.stepId })
+    }
+
+    @Test
+    fun `edit made during the call survives an answer that echoes the old step`() {
+        val edited = sms.copy(params = mapOf("contact" to "+15550199", "message" to "hi"))
+        val live = listOf(done, edited, cleanup)
+
+        val merged = PlanModification.merge(live, listOf(sms, cleanup), asked).steps
+
+        assertEquals(edited, merged[1])
+    }
+
+    @Test
+    fun `description edit made during the call survives too`() {
+        val edited = sms.copy(description = "text Ada")
+        val live = listOf(done, edited, cleanup)
+
+        val merged = PlanModification.merge(live, listOf(sms), asked).steps
+
+        assertEquals("text Ada", merged[1].description)
+    }
+
+    @Test
+    fun `steps the user left alone can still be changed by the answer`() {
+        val live = listOf(done, cleanup)
+        val moved = cleanup.copy(params = mapOf("path" to "b.txt"))
+
+        val merged = PlanModification.merge(live, listOf(moved), asked).steps
+
+        assertEquals(mapOf("path" to "b.txt"), merged.last().params)
+    }
+
+    @Test
+    fun `the user's own change during the call does not count as an unapproved one`() {
+        val edited = sms.copy(params = mapOf("contact" to "+15550199", "message" to "hi"))
+        val echo = listOf(sms, cleanup)
+
+        for (live in listOf(listOf(done, cleanup), listOf(done, edited, cleanup))) {
+            assertFalse(needsApproval(AutoMode.OFF, echo, before = live, autoApproved = false, asked = asked))
+            assertFalse(needsApproval(AutoMode.AUTO, echo, before = live, autoApproved = false, asked = asked))
+        }
+    }
+
+    @Test
+    fun `an addition still needs approval after the user changed the plan during the call`() {
+        val live = listOf(done, cleanup)
+        val added = step("x1", "SEND_SMS")
+
+        assertTrue(needsApproval(AutoMode.OFF, listOf(sms, added), before = live, autoApproved = false, asked = asked))
     }
 
     // --- AUTO ---
