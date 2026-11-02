@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.agent.ChatAgent
 import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
@@ -204,6 +205,41 @@ class ChatViewModelTaskAttributionTest {
         assertEquals(chatB, viewModel.sessions.value.single { it.isCurrent }.id)
     }
 
+    @Test
+    fun `retry on a mid-plan error card resumes the plan instead of re-sending the request`() {
+        // s1 sent an SMS, then the re-evaluation call got a 503 before s2 ran.
+        agent.chatError.value = serverError(chatA, requestId = "plan-1", resumePlanId = "plan-1")
+
+        viewModel.retryAfterChatError(context)
+
+        assertEquals(listOf("plan-1" to chatA), agent.resumed)
+        assertEquals(emptyList<Pair<String, String>>(), agent.retried)
+        // Dismissing would fail the plan before it could resume.
+        assertEquals(0, agent.dismissCalls)
+    }
+
+    @Test
+    fun `retry on any other error card re-sends the request it describes`() {
+        agent.chatError.value = serverError(chatA, requestId = "msg-1", resumePlanId = null)
+
+        viewModel.retryAfterChatError(context)
+
+        assertEquals(listOf("msg-1" to chatA), agent.retried)
+        assertEquals(emptyList<Pair<String, String>>(), agent.resumed)
+    }
+
+    private fun serverError(sessionId: String, requestId: String, resumePlanId: String?) = ChatErrorUiState(
+        sessionId = sessionId,
+        requestId = requestId,
+        runId = "run",
+        category = LLMError.ServerError,
+        provider = "OpenAI",
+        model = "gpt-4o",
+        httpStatus = 503,
+        retryable = true,
+        resumePlanId = resumePlanId
+    )
+
     private fun typeMessageIn(sessionId: String) {
         switchTo(sessionId)
         viewModel.sendMessage("hello", context)
@@ -288,8 +324,21 @@ class ChatViewModelTaskAttributionTest {
             agentState.value = AgentState.Idle
         }
 
-        override fun retryRequest(requestId: String, sessionId: String, context: Context) = Unit
-        override fun dismissChatError() = Unit
+        val retried = mutableListOf<Pair<String, String>>()
+        val resumed = mutableListOf<Pair<String, String>>()
+        var dismissCalls = 0
+
+        override fun retryRequest(requestId: String, sessionId: String, context: Context) {
+            retried += requestId to sessionId
+        }
+
+        override fun resumePlan(planId: String, sessionId: String, context: Context) {
+            resumed += planId to sessionId
+        }
+
+        override fun dismissChatError() {
+            dismissCalls++
+        }
         override fun rejectProposedPlan() = Unit
         override fun forgetSession(sessionId: String) = Unit
 

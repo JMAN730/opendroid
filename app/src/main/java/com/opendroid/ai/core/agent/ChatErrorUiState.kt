@@ -7,6 +7,10 @@ import com.opendroid.ai.core.llm.error.RedactedDetail
 /**
  * Inline recovery card state. Never a ChatMessage / conversation entity /
  * memory item / TTS or prompt input.
+ *
+ * [resumePlanId] is set when the model failed partway through a plan. Retry then
+ * carries on with that plan's remaining steps: planning the request again would re-run
+ * the steps that already happened, such as a sent SMS.
  */
 data class ChatErrorUiState(
     val sessionId: String,
@@ -20,7 +24,8 @@ data class ChatErrorUiState(
     val retryAfterMillis: Long? = null,
     val redactedDetail: RedactedDetail? = null,
     val phase: Phase = Phase.Final,
-    val partialMessageId: String? = null
+    val partialMessageId: String? = null,
+    val resumePlanId: String? = null
 ) {
     sealed class Phase {
         data object Final : Phase()
@@ -35,6 +40,7 @@ data class ChatErrorUiState(
             runId: String,
             failure: LLMException,
             partialMessageId: String? = null,
+            resumePlanId: String? = null,
             nowMillis: Long = System.currentTimeMillis()
         ): ChatErrorUiState {
             val waiting = failure.retryAfterMillis?.takeIf { it > 0 }?.let { nowMillis + it }
@@ -50,7 +56,8 @@ data class ChatErrorUiState(
                 retryAfterMillis = failure.retryAfterMillis,
                 redactedDetail = failure.detail,
                 phase = if (waiting != null) Phase.WaitingUntil(waiting) else Phase.Final,
-                partialMessageId = partialMessageId
+                partialMessageId = partialMessageId,
+                resumePlanId = resumePlanId
             )
         }
     }
