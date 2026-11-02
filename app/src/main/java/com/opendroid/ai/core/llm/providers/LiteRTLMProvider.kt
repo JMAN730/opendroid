@@ -47,7 +47,11 @@ class LiteRTLMProvider @Inject constructor(
 
     private var cachedEngine: Engine? = null
     private var cachedModelPath: String? = null
-    private val inferenceMutex = Mutex()
+    /**
+     * Held by every request from engine lookup to the end of decoding, so a request for another
+     * model cannot close the engine while a conversation is still decoding on it.
+     */
+    private val engineMutex = Mutex()
     private val artifactVerifier = ModelArtifactVerifier(
         hashVerifier = CachingFileHashVerifier()
     )
@@ -172,21 +176,24 @@ class LiteRTLMProvider @Inject constructor(
             )
 
             val maxAllowedTokens = checkPromptFits(prompt, spec, request.maxTokens)
-            val engine = getOrInitializeEngine(modelPath, spec)
+            // Held across decoding so no other request can replace the engine this stream decodes on.
+            engineMutex.withLock {
+                val engine = getOrInitializeEngine(modelPath, spec)
 
-            val samplerConfig = SamplerConfig(
-                topK = 40,
-                topP = 0.95,
-                temperature = request.temperature.toDouble(),
-                seed = 0
-            )
-            val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
-            val conversation = engine.createConversation(conversationConfig)
+                val samplerConfig = SamplerConfig(
+                    topK = 40,
+                    topP = 0.95,
+                    temperature = request.temperature.toDouble(),
+                    seed = 0
+                )
+                val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
+                val conversation = engine.createConversation(conversationConfig)
 
-            try {
-                PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) { emit(it) }
-            } finally {
-                conversation.cancelAndClose()
+                try {
+                    PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) { emit(it) }
+                } finally {
+                    conversation.cancelAndClose()
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -395,7 +402,7 @@ class LiteRTLMProvider @Inject constructor(
         prompt: String,
         maxTokens: Int,
         temperature: Float
-    ): String = inferenceMutex.withLock {
+    ): String = engineMutex.withLock {
         runLiteRTInference(modelPath, spec, prompt, maxTokens, temperature)
     }
 
