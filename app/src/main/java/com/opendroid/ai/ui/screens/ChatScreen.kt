@@ -960,13 +960,21 @@ fun ProposedPlanPrompt(
                 color = TextSecondary
             )
             Spacer(modifier = Modifier.height(4.dp))
-            stepLines.forEachIndexed { i, line ->
-                Text(
-                    text = "${i + 1}. $line",
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = TextPrimary
-                )
+            // Bounded and scrollable: the card sits outside the messages list, so an
+            // unbounded list of a long plan would push Reject/Approve off screen.
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 160.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                stepLines.forEachIndexed { i, line ->
+                    Text(
+                        text = "${i + 1}. $line",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = TextPrimary
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
