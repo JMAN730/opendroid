@@ -2,11 +2,10 @@ package com.opendroid.ai.actions
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
-import androidx.core.net.toUri
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
-import java.net.URLEncoder
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,30 +22,58 @@ class FinanceActions @Inject constructor() {
     private class PayUpiAction : Action {
         override val name: String = "PAY_UPI"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val to = params["to"] ?: return ActionResult(false, null, "to UPI ID parameter is missing")
-            val amount = params["amount"] ?: return ActionResult(false, null, "amount parameter is missing")
+            val to = params["to"]?.trim() ?: return ActionResult(false, null, "to UPI ID parameter is missing")
+            val amount = params["amount"]?.trim() ?: return ActionResult(false, null, "amount parameter is missing")
             val note = params["note"] ?: "Sent via OpenDroid"
-            val app = params["app"] ?: "gpay"
-            
+            val selectedApp = paymentApp(params["app"] ?: "gpay")
+
+            if (!VPA_PATTERN.matches(to)) {
+                val question = if (CONTACT_NAME_PATTERN.matches(to)) {
+                    "What's $to's UPI ID?"
+                } else {
+                    "What's the recipient's UPI ID? It looks like name@bank."
+                }
+                return ActionResult.NeedsInput(question, metadata = mapOf("param" to "to"))
+            }
+            if (!AMOUNT_PATTERN.matches(amount)) {
+                return ActionResult.NeedsInput(
+                    "How much should I send to $to? Use a number like 500 or 500.50.",
+                    metadata = mapOf("param" to "amount")
+                )
+            }
+
             return try {
-                val encNote = URLEncoder.encode(note, "UTF-8")
-                val upiUri = "upi://pay?pa=$to&pn=Recipient&tn=$encNote&am=$amount&cu=INR".toUri()
+                val upiUri = Uri.Builder()
+                    .scheme("upi")
+                    .authority("pay")
+                    .appendQueryParameter("pa", to)
+                    .appendQueryParameter("pn", "Recipient")
+                    .appendQueryParameter("tn", note)
+                    .appendQueryParameter("am", amount)
+                    .appendQueryParameter("cu", "INR")
+                    .build()
                 val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 
-                intent.setPackage(paymentApp(app).packageName)
+                intent.setPackage(selectedApp.packageName)
                 
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
-                    ActionResult(true, "Sending ₹$amount to $to!", null)
+                    // Started from a non-Activity context, so the UPI response can't be read.
+                    ActionResult.UserActionRequired(
+                        "I opened ${selectedApp.displayName} with ₹$amount to $to. $PAYMENT_HAND_OFF"
+                    )
                 } else {
                     // Try without setting package to allow chooser
                     val chooserIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(chooserIntent)
-                    ActionResult(true, "$app isn't installed, so I opened the default payment app.", null, true)
+                    ActionResult.UserActionRequired(
+                        "${selectedApp.displayName} isn't installed, so I opened your default payment app " +
+                            "with ₹$amount to $to. $PAYMENT_HAND_OFF"
+                    )
                 }
             } catch (e: Exception) {
                 Log.e("PayUPI", "UPI failed: ${e.localizedMessage}")
@@ -128,6 +155,13 @@ class FinanceActions @Inject constructor() {
         }
     }
 }
+
+private const val PAYMENT_HAND_OFF = "Confirm and enter your UPI PIN there; I can't see whether it went through."
+
+// [0-9], not \d: \d also matches non-ASCII digits on Android, and payment apps can't read those.
+private val VPA_PATTERN = Regex("""[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}""")
+private val AMOUNT_PATTERN = Regex("""[0-9]+(\.[0-9]{1,2})?""")
+private val CONTACT_NAME_PATTERN = Regex("""\p{L}[\p{L} .'-]{0,49}""")
 
 private data class PaymentApp(
     val packageName: String,
