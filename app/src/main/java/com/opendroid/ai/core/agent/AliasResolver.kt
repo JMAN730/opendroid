@@ -1,5 +1,6 @@
 package com.opendroid.ai.core.agent
 
+import com.opendroid.ai.core.util.AlarmTimeParser
 import com.opendroid.ai.core.util.DurationParser
 
 /**
@@ -252,6 +253,12 @@ object AliasResolver {
         "enable it", "start it", "turn this on"
     )
 
+    /** "no, turn it off" and "ok turn it off" are still the bare command. */
+    private val contextualLeadIn = Regex("""^(?:(?:no|please|ok|okay)\s+)+""")
+    private val contextualTrailer = Regex("""(?:\s+(?:please|now))+$""")
+    private val contextualNegation = Regex("""\b(?:don't|dont|do not|never|not)\b""")
+    private val contextualQuestionOpener = Regex("""^(?:should|did|why|how|can i|is)\b""")
+
     private val toggleActions = setOf(
         "TOGGLE_FLASHLIGHT", "TOGGLE_WIFI", "TOGGLE_BLUETOOTH", "TOGGLE_DND",
         "TOGGLE_HOTSPOT", "TOGGLE_MOBILE_DATA"
@@ -373,6 +380,10 @@ object AliasResolver {
         aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
 
+        // 1a. "remember this: my locker code is 4512" dictates a fact; it is not a
+        //     request to read the screen. The planner saves it as given.
+        if (carriesFactPayload(cleaned)) return null
+
         // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
         //    This runs BEFORE compound-intent guard so the LLM doesn't need to handle it.
         if (lower.contains("brightness")) {
@@ -461,6 +472,8 @@ object AliasResolver {
     /**
      * Extract the time portion from an alarm request.
      * Strips alarm trigger phrases to isolate the time string.
+     * Returns null unless SET_ALARM can parse what remains, so "set alarm for
+     * saturday at 7" goes to the planner instead of failing as "saturday 7".
      */
     fun extractAlarmTime(input: String): String? {
         var cleaned = input.lowercase().trim()
@@ -468,20 +481,21 @@ object AliasResolver {
         // Remove alarm trigger phrases (longest first to avoid partial removal)
         val sortedPhrases = alarmPhrases.sortedByDescending { it.length }
         for (phrase in sortedPhrases) {
-            cleaned = cleaned.replace(phrase, "")
+            cleaned = cleaned.replace(Regex("\\b" + Regex.escape(phrase) + "\\b"), " ")
         }
 
-        // Remove filler words
+        // Remove filler words on word boundaries, so "saturday" keeps its "at".
+        // A leading "to" is filler ("set alarm to 7"); "quarter to 8" keeps its own.
         cleaned = cleaned
-            .replace("for tomorrow", "")
-            .replace("tomorrow", "")
-            .replace("today", "")
-            .replace("for", "")
-            .replace("at", "")
-            .replace("to", "")
+            .replace(Regex("""\b(?:for\s+)?(?:tomorrow|today)\b"""), " ")
+            .replace(Regex("""\b(?:for|at)\b"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .replace(Regex("""^to\b"""), "")
             .trim()
 
-        return if (cleaned.isNotEmpty()) cleaned else null
+        if (cleaned.isEmpty() || AlarmTimeParser.parse(cleaned) == null) return null
+        return cleaned
     }
 
     /**
@@ -489,9 +503,19 @@ object AliasResolver {
      */
     fun resolveContextual(input: String, lastAction: String?, lastParams: Map<String, String>?): ActionHint? {
         if (lastAction.isNullOrBlank()) return null
-        val lower = input.lowercase().trim()
-        val wantsOff = contextualOffPhrases.any { lower == it || lower.contains(it) }
-        val wantsOn = contextualOnPhrases.any { lower == it || lower.contains(it) }
+        val lower = input.lowercase().replace('’', '\'').trim()
+        // "should I turn it off?" and "why did you turn it on" ask, they don't command.
+        if (lower.endsWith("?")) return null
+        val normalized = lower
+            .replace(Regex("""[^\w\s']"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .replace(contextualLeadIn, "")
+            .replace(contextualTrailer, "")
+        // "don't turn it off" must never turn it off.
+        if (contextualNegation.containsMatchIn(normalized) || contextualQuestionOpener.containsMatchIn(normalized)) return null
+        val wantsOff = normalized in contextualOffPhrases
+        val wantsOn = normalized in contextualOnPhrases
         if (!wantsOff && !wantsOn) return null
 
         val state = if (wantsOff) "off" else "on"
@@ -550,8 +574,25 @@ object AliasResolver {
         "read this message and save"
     )
 
+    /**
+     * "remember this", "save this information", "add this to my notes" and friends
+     * mean "read the screen" only when nothing but screen words follow them.
+     */
+    private val screenSavePhrase =
+        """(?:remember this|save this info(?:rmation)?|(?:add|save) this to (?:my )?notes|save to (?:my )?notes)"""
+    private val screenSavePhraseAnywhere = Regex("""\b$screenSavePhrase\b""")
+    private val bareScreenSavePhrase = Regex(
+        """$screenSavePhrase(?: (?:screen|page))?(?: (?:to|in) (?:my )?notes)?(?: for me)?"""
+    )
+
+    /** True when a screen-save phrase is followed by something else: a fact, or a second task. */
+    private fun carriesFactPayload(cleaned: String): Boolean {
+        return screenSavePhraseAnywhere.containsMatchIn(cleaned) && !bareScreenSavePhrase.matches(cleaned)
+    }
+
     fun isReadAndRememberRequest(input: String): Boolean {
         val lower = input.lowercase().trim()
+        if (carriesFactPayload(cleanInput(input))) return false
         return readAndRememberPhrases.any { lower.contains(it) } ||
                (lower.contains("screen") && (lower.contains("save") || lower.contains("remember") || lower.contains("notes"))) ||
                (lower.contains("read") && (lower.contains("save") || lower.contains("remember")) && (lower.contains("screen") || lower.contains("message") || lower.contains("notes") || lower.contains("details")))

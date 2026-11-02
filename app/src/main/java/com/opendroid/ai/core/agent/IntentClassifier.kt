@@ -101,8 +101,8 @@ class IntentClassifier @Inject constructor(
             return QueryComplexity.SIMPLE
         }
 
-        // ── Fast-path: Read & Remember screen and Recall memory queries
-        if (AliasResolver.isReadAndRememberRequest(lowercaseQuery) || AliasResolver.isRecallMemoryRequest(lowercaseQuery)) {
+        // ── Fast-path: Recall memory queries
+        if (AliasResolver.isRecallMemoryRequest(lowercaseQuery)) {
             return QueryComplexity.SIMPLE
         }
 
@@ -127,6 +127,12 @@ class IntentClassifier @Inject constructor(
             // Check if it's complex (3+ actions)
             val compoundCount = compoundIndicators.count { lowercaseQuery.contains(it) }
             return if (compoundCount >= 2) QueryComplexity.COMPLEX else QueryComplexity.MEDIUM
+        }
+
+        // ── Fast-path: Read & Remember screen. Checked after the compound check so
+        //    "remember this and then text mom" keeps its second half.
+        if (AliasResolver.isReadAndRememberRequest(lowercaseQuery)) {
+            return QueryComplexity.SIMPLE
         }
 
         // ── Fast-path: known single-intent patterns that happen to contain

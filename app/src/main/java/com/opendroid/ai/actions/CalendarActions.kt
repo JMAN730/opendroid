@@ -1,5 +1,6 @@
 package com.opendroid.ai.actions
 
+import com.opendroid.ai.core.util.AlarmTimeParser
 import com.opendroid.ai.core.util.DurationParser
 
 import android.content.ContentUris
@@ -92,7 +93,7 @@ class CalendarActions @Inject constructor(
             val label = params["label"]?.trim() ?: "OpenDroid Alarm"
 
             // Parse time string to hour + minute
-            val parsed = parseTimeString(timeStr)
+            val parsed = AlarmTimeParser.parse(timeStr)
                 ?: return ActionResult(false, null,
                     "Could not understand time '$timeStr'. Try formats like '5 am', '7:30', or '14:00'")
 
@@ -170,88 +171,6 @@ class CalendarActions @Inject constructor(
             } catch (e: Exception) {
                 null
             }
-        }
-
-        /**
-         * Robust time parser — handles all common formats:
-         * "5 am", "5am", "5:30 pm", "17:00", "noon", "midnight",
-         * "half past 6", "quarter to 8", just "7", etc.
-         */
-        private fun parseTimeString(input: String): Pair<Int, Int>? {
-            val clean = input.lowercase().trim()
-                .replace("o'clock", "").replace("hours", "").trim()
-
-            // Natural language times
-            val naturalMap = mapOf(
-                "midnight" to Pair(0, 0),
-                "noon" to Pair(12, 0),
-                "midday" to Pair(12, 0),
-                "morning" to Pair(8, 0),
-                "afternoon" to Pair(14, 0),
-                "evening" to Pair(18, 0),
-                "night" to Pair(21, 0)
-            )
-            naturalMap[clean]?.let { return it }
-
-            // "5 am", "5am", "11 pm", "11pm"
-            val amPmSimple = Regex("""^(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)$""")
-            amPmSimple.find(clean)?.let { match ->
-                var hour = match.groupValues[1].toInt()
-                val amPm = match.groupValues[2]
-                val isPm = amPm.startsWith("p")
-                if (isPm && hour != 12) hour += 12
-                if (!isPm && hour == 12) hour = 0
-                if (hour > 23) return null
-                return Pair(hour, 0)
-            }
-
-            // "5:30 am", "5:30am", "11:45 pm"
-            val amPmWithMin = Regex("""^(\d{1,2})[:\.](\d{2})\s*(am|pm|a\.m\.|p\.m\.)$""")
-            amPmWithMin.find(clean)?.let { match ->
-                var hour = match.groupValues[1].toInt()
-                val minute = match.groupValues[2].toInt()
-                val amPm = match.groupValues[3]
-                val isPm = amPm.startsWith("p")
-                if (isPm && hour != 12) hour += 12
-                if (!isPm && hour == 12) hour = 0
-                if (hour > 23 || minute > 59) return null
-                return Pair(hour, minute)
-            }
-
-            // "17:30", "05:00", "9:45"
-            val military = Regex("""^(\d{1,2})[:\.](\d{2})$""")
-            military.find(clean)?.let { match ->
-                val hour = match.groupValues[1].toInt()
-                val minute = match.groupValues[2].toInt()
-                if (hour > 23 || minute > 59) return null
-                return Pair(hour, minute)
-            }
-
-            // Just a number: "5", "7", "22"
-            clean.toIntOrNull()?.let { hour ->
-                if (hour in 0..23) return Pair(hour, 0)
-            }
-
-            // "half past 5" → 5:30
-            Regex("""half past (\d{1,2})""").find(clean)?.let { match ->
-                val hour = match.groupValues[1].toInt()
-                if (hour in 0..23) return Pair(hour, 30)
-            }
-
-            // "quarter past 5" → 5:15
-            Regex("""quarter past (\d{1,2})""").find(clean)?.let { match ->
-                val hour = match.groupValues[1].toInt()
-                if (hour in 0..23) return Pair(hour, 15)
-            }
-
-            // "quarter to 6" → 5:45
-            Regex("""quarter to (\d{1,2})""").find(clean)?.let { match ->
-                var hour = match.groupValues[1].toInt() - 1
-                if (hour < 0) hour = 23
-                return Pair(hour, 45)
-            }
-
-            return null
         }
 
         private fun formatTime(hour: Int, minute: Int): String {
