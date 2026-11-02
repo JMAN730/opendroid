@@ -10,6 +10,7 @@ import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
+import com.opendroid.ai.data.models.StepStatus
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,6 +41,37 @@ class PlanValidator @Inject constructor(
         internal fun needsContactResolution(contact: String): Boolean =
             contact.isNotEmpty() && !isPhoneNumber(contact) && !contact.startsWith("@") && !contact.startsWith("$")
 
+        private val ASK_STEP_ID = Regex("^(.+)_ask\\d*$")
+
+        /**
+         * Drops pending ask steps this validator queued for a step whose params no
+         * longer read the answer, as when re-evaluation points that step at another
+         * contact. Left in place, the user is asked for a number nothing uses, and its
+         * id collides with the ask queued for the new contact.
+         */
+        internal fun withoutOrphanedAsks(steps: List<PlanStep>): List<PlanStep> {
+            val ids = steps.map { it.stepId }.toSet()
+            return steps.filterNot { step ->
+                val owner = ASK_STEP_ID.matchEntire(step.stepId)?.groupValues?.get(1)
+                step.status == StepStatus.PENDING &&
+                    step.action.equals("ASK_USER", ignoreCase = true) &&
+                    owner != null && owner in ids &&
+                    steps.none { other -> other.params.values.any { readsResultOf(it, step.stepId) } }
+            }
+        }
+
+        /** The id for an ask step queued for [ownerId], unique among [takenIds]. */
+        internal fun askStepIdFor(ownerId: String, takenIds: Set<String>): String {
+            val base = "${ownerId}_ask"
+            if (base !in takenIds) return base
+            return generateSequence(2) { it + 1 }.map { "$base$it" }.first { it !in takenIds }
+        }
+
+        // Mirrors ActionSequenceExecutor.resolveParameters, which substitutes "$id"
+        // anywhere in a value; the lookahead keeps "$s2_ask2" from counting as "$s2_ask".
+        private fun readsResultOf(value: String, stepId: String): Boolean =
+            Regex("\\$" + Regex.escape(stepId) + "(?![A-Za-z0-9_])").containsMatchIn(value)
+
         private fun isPhoneNumber(contact: String): Boolean {
             val cleaned = contact.replace(" ", "").replace("-", "")
             return cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })
@@ -65,8 +97,10 @@ class PlanValidator @Inject constructor(
     suspend fun validateAndFix(plan: Plan, context: Context): Plan {
         val finalSteps = mutableListOf<PlanStep>()
         var currentOrder = 1
+        val steps = withoutOrphanedAsks(plan.steps)
+        val takenIds = steps.mapTo(mutableSetOf()) { it.stepId }
 
-        for (step in plan.steps) {
+        for (step in steps) {
             var updatedStep = step
             val isReg = actionDispatcher.get().isRegistered(step.action)
 
@@ -119,7 +153,7 @@ class PlanValidator @Inject constructor(
                         // For Telegram, a contact name could also be a Telegram username directly
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else {
-                        val askStepId = "${updatedStep.stepId}_ask"
+                        val askStepId = askStepIdFor(updatedStep.stepId, takenIds).also { takenIds += it }
                         val askStep = PlanStep(
                             stepId = askStepId, order = currentOrder++,
                             description = "Ask user for contact number of '$contactName'",
