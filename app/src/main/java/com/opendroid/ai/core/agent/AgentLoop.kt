@@ -108,6 +108,21 @@ internal fun stripMarkdownFences(raw: String): String {
     return content.trim()
 }
 
+/**
+ * Takes the approval gate for [planId], or returns false and changes nothing when that
+ * plan is not what the gate is showing. Compare-and-set, so of two approvals racing for
+ * one proposal exactly one wins, and the loser must not touch the winner's job.
+ */
+internal fun claimProposedPlan(state: MutableStateFlow<AgentState>, planId: String): Boolean {
+    val proposed = state.value as? AgentState.PlanProposed ?: return false
+    if (proposed.plan.planId != planId) return false
+    return state.compareAndSet(proposed, AgentState.Thinking)
+}
+
+/** True while [plan] is the [planId] proposal and nothing has moved it out of PROPOSED. */
+internal fun isAwaitingApproval(plan: Plan?, planId: String): Boolean =
+    plan?.planId == planId && plan.status == PlanStatus.PROPOSED
+
 sealed interface AgentState {
     object Idle : AgentState
     object Listening : AgentState
@@ -833,33 +848,44 @@ class AgentLoop @Inject constructor(
         executeSimpleQuery(userMsg, sessionId)
     }
 
-    fun approveProposedPlan(context: Context, grantActions: Set<String> = emptySet()) {
+    /**
+     * Runs the proposal [planId], if it is still the one waiting at the gate. A stale
+     * approval - a spoken "yes" landing after Stop, say - returns before anything
+     * happens: no job cancelled, no grant persisted, no step run.
+     */
+    fun approveProposedPlan(context: Context, planId: String, grantActions: Set<String> = emptySet()) {
+        if (!claimProposedPlan(_agentState, planId)) return
         currentJob?.cancel()
         val job = scope.launch {
-            // "Always allow" checkboxes from the approval modal: persist BEFORE
-            // executing so a crash mid-plan can't lose an explicit user grant.
-            // Filter through isGrantable - neverAutoApprove actions can never
-            // enter the allowlist no matter what the UI sends.
-            val toGrant = grantActions.filter { AutoApprovalPolicy.isGrantable(it) }
-            if (toGrant.isNotEmpty()) {
-                val grantedAt = System.currentTimeMillis()
-                settingsRepository.updateConfig { current ->
-                    current.copy(
-                        grantedActions = current.effectiveGrantedActions() + toGrant.associateWith { grantedAt }
-                    )
-                }
-            }
-            // Approving a proposed plan starts a new task in its own right (the plan may
-            // have been proposed in an earlier, now-idle turn), so pin its session here too -
-            // same rationale as processQuery, see activeTaskSessionId. Executes in the
-            // session the plan was actually PROPOSED for, never wherever the user happens
-            // to be looking right now - falls back to "current" only if somehow nothing
-            // was pinned (there is no proposal to misattribute in that case anyway).
-            val sessionId = (proposedPlanSessionId ?: conversationRepository.ensureCurrentSessionId())
-                .also { activeTaskSessionId = it }
-            proposedPlanSessionId = null
             queryMutex.withLock {
-                val plan = planManager.currentPlan.value ?: return@withLock
+                val plan = planManager.currentPlan.value
+                if (plan == null || !isAwaitingApproval(plan, planId)) {
+                    proposedPlanSessionId = null
+                    _agentState.compareAndSet(AgentState.Thinking, AgentState.Idle)
+                    return@withLock
+                }
+                // "Always allow" checkboxes from the approval modal: persist BEFORE
+                // executing so a crash mid-plan can't lose an explicit user grant.
+                // Filter through isGrantable - neverAutoApprove actions can never
+                // enter the allowlist no matter what the UI sends.
+                val toGrant = grantActions.filter { AutoApprovalPolicy.isGrantable(it) }
+                if (toGrant.isNotEmpty()) {
+                    val grantedAt = System.currentTimeMillis()
+                    settingsRepository.updateConfig { current ->
+                        current.copy(
+                            grantedActions = current.effectiveGrantedActions() + toGrant.associateWith { grantedAt }
+                        )
+                    }
+                }
+                // Approving a proposed plan starts a new task in its own right (the plan may
+                // have been proposed in an earlier, now-idle turn), so pin its session here too -
+                // same rationale as processQuery, see activeTaskSessionId. Executes in the
+                // session the plan was actually PROPOSED for, never wherever the user happens
+                // to be looking right now - falls back to "current" only if somehow nothing
+                // was pinned (there is no proposal to misattribute in that case anyway).
+                val sessionId = (proposedPlanSessionId ?: conversationRepository.ensureCurrentSessionId())
+                    .also { activeTaskSessionId = it }
+                proposedPlanSessionId = null
                 executePlanLoop(plan, context, sessionId)
             }
         }
@@ -1005,6 +1031,8 @@ class AgentLoop @Inject constructor(
     private suspend fun executePlanLoop(plan: Plan, context: Context, sessionId: String, autoApproved: Boolean = false) {
         planManager.updatePlanStatus(PlanStatus.RUNNING)
         var currentPlanState = planManager.currentPlan.value ?: return
+        // A terminal plan refuses RUNNING. Falling through would report it COMPLETED.
+        if (currentPlanState.status != PlanStatus.RUNNING) return
 
         while (true) {
             // Cooperative cancellation checkpoint: ensures a cancelCurrentTask() call

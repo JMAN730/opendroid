@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.OpenDroidAccessibilityService
 import com.opendroid.ai.accessibility.WhatsAppAutomator
+import com.opendroid.ai.accessibility.resolveTargetPackage
 import com.opendroid.ai.accessibility.TelegramAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
 import com.opendroid.ai.actions.base.Action
@@ -19,6 +20,7 @@ import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.maskPhone
 import com.opendroid.ai.core.util.DeviceCapabilities
 import android.provider.ContactsContract
+import android.provider.Telephony
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.net.URLEncoder
@@ -395,7 +397,10 @@ class CommunicationActions @Inject constructor(
 
             val service = OpenDroidAccessibilityService.getInstance()
             if (service != null) {
-                val autoSent = TelegramAutomator.automateSend(message)
+                // Null when only the t.me web fallback ran: nothing in front can be Telegram.
+                val targetPackage = installedTgPkg
+                    ?: resolveTargetPackage(intent.resolveActivity(pm)?.packageName, null)
+                val autoSent = TelegramAutomator.automateSend(message, targetPackage)
                 if (autoSent) {
                     return ActionResult(true, "Message sent to $contactLabel on Telegram!", null)
                 }
@@ -436,7 +441,11 @@ class CommunicationActions @Inject constructor(
 
             val service = OpenDroidAccessibilityService.getInstance()
             if (service != null) {
-                val autoSent = SmsAutomator.automateSend()
+                val targetPackage = resolveTargetPackage(
+                    intent.resolveActivity(context.packageManager)?.packageName,
+                    Telephony.Sms.getDefaultSmsPackage(context)
+                )
+                val autoSent = SmsAutomator.automateSend(targetPackage)
                 if (autoSent) {
                     return ActionResult(true, "Sent SMS to $contactLabel!", null)
                 }
@@ -455,7 +464,11 @@ class CommunicationActions @Inject constructor(
 
                 val service = OpenDroidAccessibilityService.getInstance()
                 if (service != null) {
-                    val autoSent = SmsAutomator.automateSend()
+                    val targetPackage = resolveTargetPackage(
+                        fallbackIntent.resolveActivity(context.packageManager)?.packageName,
+                        Telephony.Sms.getDefaultSmsPackage(context)
+                    )
+                    val autoSent = SmsAutomator.automateSend(targetPackage)
                     if (autoSent) {
                         return ActionResult(true, "Sent SMS to $contactLabel!", null)
                     }
