@@ -271,9 +271,15 @@ object AliasResolver {
     /** "can you take a screenshot?" is a command, not a question about the device. */
     private val politeRequestPrefix = Regex("""^(?:can|could|would|will)\s+you\s+""", RegexOption.IGNORE_CASE)
 
+    private val activationVerb = Regex("""(?:turn|switch|open|enable|disable|toggle|set|change)\b""")
+
+    /** "do not disturb" is the one command that opens like a question. "do not turn on X" stays a question. */
     private val questionOpener = Regex(
-        """^(?:what|whats|how|hows|why|is|are|can|could|should|would|will|does|do|did|when|whens|where|wheres|who|whos|which|explain|tell\s+me)\b"""
+        """^(?:what|whats|how|hows|why|is|are|can|could|should|would|will|does|do(?!\s+not\s+disturb\b)|did|when|whens|where|wheres|who|whos|which|explain|tell\s+me)\b"""
     )
+
+    /** "check if silent mode is on" asks, and "turn on wifi if i am home" needs a condition no alias can honor. */
+    private val conditionalClause = Regex("""\b(?:if|whether)\b""")
 
     /**
      * A whole cleaned input built around one word: "lock", "lock my phone", "toggle wifi",
@@ -347,10 +353,10 @@ object AliasResolver {
 
         // 0. Questions go to the LLM, so "how do I unlock my phone" gets answered
         //    instead of locking the phone. Only aliases that are themselves questions
-        //    ("what's the weather") can still match.
+        //    ("what's the weather") can still match, and only by opening the input.
         if (isQuestionShaped(lower)) {
             if (compoundIntentWords.any { word -> lower.contains(word) }) return null
-            return longestPhraseMatch(questionPhrases, lower, cleaned)
+            return questionPhrases.firstOrNull { it.pattern.matchesAt(lower, 0) }?.hint
         }
 
         // 1. Exact match (always wins)
@@ -404,14 +410,25 @@ object AliasResolver {
         return singleWordCommand.matchEntire(cleaned)?.let { aliases[it.groupValues[1]] }
     }
 
+    /** Only a command loses its "can you": "can you verify silent mode is on?" stays a question. */
     private fun stripPoliteRequest(input: String): String {
         val trimmed = input.trim()
         if (!politeRequestPrefix.containsMatchIn(trimmed)) return input
-        return trimmed.replace(politeRequestPrefix, "").removeSuffix("?")
+        val request = trimmed.replace(politeRequestPrefix, "").removeSuffix("?")
+        return if (startsWithCommand(request)) request else input
+    }
+
+    private fun startsWithCommand(request: String): Boolean {
+        val lower = request.lowercase().trim()
+        val cleaned = cleanInput(request)
+        return activationVerb.matchesAt(lower, 0) ||
+            aliasPhrases.any { it.pattern.matchesAt(cleaned, 0) } ||
+            singleWordCommand.matchEntire(cleaned)?.let { aliases[it.groupValues[1]] } != null ||
+            extractYoutubeQuery(request) != null
     }
 
     private fun isQuestionShaped(text: String): Boolean {
-        return text.endsWith("?") || questionOpener.containsMatchIn(text)
+        return text.endsWith("?") || questionOpener.containsMatchIn(text) || conditionalClause.containsMatchIn(text)
     }
 
     private fun longestPhraseMatch(phrases: List<AliasPhrase>, lower: String, cleaned: String): ActionHint? {

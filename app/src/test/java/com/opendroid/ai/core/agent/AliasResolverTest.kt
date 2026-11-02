@@ -184,6 +184,78 @@ class AliasResolverTest {
     }
 
     @Test
+    fun `questions about do not disturb do not toggle it`() {
+        listOf(
+            "how do i turn on do not disturb",
+            "what is do not disturb",
+            "is do not disturb on?",
+            "do not disturb?"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `do not disturb still resolves as a command`() {
+        listOf(
+            "do not disturb",
+            "do not disturb mode",
+            "turn on do not disturb",
+            "can you turn on do not disturb?"
+        ).forEach { query ->
+            assertEquals("\"$query\" is a command", "TOGGLE_DND", AliasResolver.resolve(query)?.action)
+        }
+    }
+
+    @Test
+    fun `negated commands do not run the action they name`() {
+        assertNull(AliasResolver.resolve("do not turn on the flashlight"))
+    }
+
+    @Test
+    fun `a question alias must open the question`() {
+        listOf(
+            "how do i see what's in clipboard",
+            "is what's on my screen private"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `polite requests that are not commands stay questions`() {
+        listOf(
+            "can you check if silent mode is on?",
+            "could you see if do not disturb is on?",
+            "can you verify silent mode is on?",
+            "can you describe silent mode?",
+            "would you check silent mode"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `input with an if or whether clause never runs an alias`() {
+        listOf(
+            "check if silent mode is on",
+            "check whether do not disturb is on",
+            "let me know if silent mode is on",
+            "turn on wifi if i am home"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `polite commands reach the dynamic and partial steps`() {
+        assertEquals("40", AliasResolver.resolve("can you set volume to 40?")?.baseParams?.get("level"))
+        assertEquals("CLEAR_BROWSER_DATA", AliasResolver.resolve("can you clear the cache for me")?.action)
+        assertEquals("on", AliasResolver.resolve("can you turn the flashlight on?")?.baseParams?.get("state"))
+        assertEquals("cats", AliasResolver.resolve("could you play cats on youtube")?.baseParams?.get("query"))
+    }
+
+    @Test
     fun `multi-word aliases match on word boundaries`() {
         assertEquals("CLEAR_BROWSER_DATA", AliasResolver.resolve("clear cache for me")?.action)
         assertNull(AliasResolver.resolve("nuclear cachet"))
