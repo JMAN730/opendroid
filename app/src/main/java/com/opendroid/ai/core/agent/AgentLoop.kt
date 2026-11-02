@@ -1103,8 +1103,11 @@ class AgentLoop @Inject constructor(
             memoryManager.logTaskExecution(
                 stepId = "plan-gen",
                 planId = "n/a",
-                description = userMsg.text,
-                actionType = "PLAN_GENERATION",
+                description = ExecutionHistoryPrivacy.sanitizeDescription(
+                    ExecutionHistoryPrivacy.PLAN_GENERATION,
+                    userMsg.text
+                ),
+                actionType = ExecutionHistoryPrivacy.PLAN_GENERATION,
                 params = emptyMap(),
                 success = false,
                 resultData = null,
@@ -1398,7 +1401,10 @@ class AgentLoop @Inject constructor(
             }
 
             if (actionResult.success) {
-                lastExecutedActionsBySession[sessionId] = LastExecutedAction(stepToExecute.action, resolvedParams)
+                lastExecutedActionsBySession[sessionId] = LastExecutedAction(
+                    stepToExecute.action,
+                    PlanPrivacy.redactParams(stepToExecute.action, resolvedParams)
+                )
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
                     StepStatus.COMPLETED,
