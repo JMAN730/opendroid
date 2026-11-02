@@ -255,5 +255,6 @@ private fun connectionFailureLabel(error: LLMError): String = when (error) {
     LLMError.ServerError -> "Server error"
     LLMError.MalformedResponse -> "Malformed response"
     LLMError.SafeFallbackUnavailable -> "No safe fallback"
+    LLMError.ProviderUnrecognized -> "Provider not recognized"
     LLMError.Unknown -> "Failed"
 }

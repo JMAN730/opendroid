@@ -145,19 +145,19 @@ class LLMProviderFactory @Inject constructor(
 }
 
 /**
- * Stands in for a saved provider name this build doesn't know. Every call fails as a
- * configuration error before any network access, so no prompt reaches a vendor the
- * user didn't choose. Not wrapped: [WrappedLLMProvider] resolves the provider's
- * default model, which an unknown name doesn't have.
+ * Stands in for a saved provider name this build doesn't know. Every call fails with
+ * LLMError.ProviderUnrecognized before any network access, so no prompt reaches a
+ * vendor the user didn't choose. Not wrapped: [WrappedLLMProvider] resolves the
+ * provider's default model, which an unknown name doesn't have.
  */
 private class UnknownProvider(override val name: String) : LLMProvider {
     override val availableModels: List<String> = emptyList()
 
     override suspend fun complete(request: LLMRequest): LLMResponse =
-        throw LLMErrorMapper.requestInvalid(name, request.model.orEmpty())
+        throw LLMErrorMapper.providerUnrecognized(name, request.model.orEmpty())
 
     override fun streamComplete(request: LLMRequest): Flow<String> = flow {
-        throw LLMErrorMapper.requestInvalid(name, request.model.orEmpty())
+        throw LLMErrorMapper.providerUnrecognized(name, request.model.orEmpty())
     }
 
     override suspend fun isAvailable(): Boolean = false
