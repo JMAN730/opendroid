@@ -64,6 +64,20 @@ class ActionSchemaTest {
     }
 
     @Test
+    fun `a JSON steps array for a macro is a value, not a bracket placeholder`() {
+        listOf(
+            """[{"action":"OPEN_APP","params":{"appName":"Spotify"}}]""",
+            """[{"action":"SEND_SMS","params":{"contact":"Mom","message":"${'$'}${'$'}s1"}}]"""
+        ).forEach { steps ->
+            val (result, enriched) = ActionSchema.validateParams(
+                "CREATE_MACRO", mapOf("name" to "Morning", "steps" to steps)
+            )
+            assertEquals(steps, ActionSchema.ValidationResult.Valid, result)
+            assertEquals(steps, enriched["steps"])
+        }
+    }
+
+    @Test
     fun `missing required param is reported`() {
         val (result, _) = ActionSchema.validateParams("OPEN_APP", emptyMap())
         assertTrue(result is ActionSchema.ValidationResult.MissingParams)
