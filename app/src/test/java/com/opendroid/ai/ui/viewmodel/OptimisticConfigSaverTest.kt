@@ -4,8 +4,12 @@ import com.opendroid.ai.data.models.AutoMode
 import com.opendroid.ai.data.models.LLMConfig
 import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -88,6 +92,32 @@ class OptimisticConfigSaverTest {
         assertTrue(saved)
         assertEquals(AutoMode.OFF, applied?.autoMode)
         assertEquals(AutoMode.OFF, ui.value.autoMode)
+    }
+
+    @Test
+    fun `saves reach the store in the order they were started`() = runBlocking {
+        val ui = MutableStateFlow(LLMConfig(activeProvider = "OpenAI"))
+        val firstWriteMayLand = CompletableDeferred<Unit>()
+        val written = mutableListOf<String>()
+        val saver = OptimisticConfigSaver(
+            uiConfig = ui,
+            persist = { update ->
+                val provider = update(LLMConfig()).activeProvider
+                // The first save's write is slow, as a DataStore edit on the IO dispatcher can be.
+                if (provider == "Groq") firstWriteMayLand.await()
+                written += provider
+                ProviderCredentialPersistenceState.Ready
+            },
+            readStored = { throw AssertionError("store must not be re-read after a successful save") }
+        )
+
+        val first = launch { saver.save(revert = { this }) { it.copy(activeProvider = "Groq") } }
+        val second = launch { saver.save(revert = { this }) { it.copy(activeProvider = "Google Gemini") } }
+        yield()
+        firstWriteMayLand.complete(Unit)
+        joinAll(first, second)
+
+        assertEquals(listOf("Groq", "Google Gemini"), written)
     }
 
     @Test
