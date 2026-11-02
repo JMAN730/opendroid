@@ -18,8 +18,11 @@ class TelegramAdapter @Inject constructor(
     override val platform: SocialPlatform = SocialPlatform.TELEGRAM
     override val displayName: String = "Telegram"
 
-    // Per bot token: the update_id after the newest update already fetched.
+    // Per bot token: the update_id after the newest update already saved. Sending it confirms
+    // everything before it to Telegram, so it only moves up once the batch is persisted.
     private val nextUpdateOffset = ConcurrentHashMap<String, Long>()
+    // Per bot token: the offset the last fetched batch would move to, once acknowledged.
+    private val fetchedUpdateOffset = ConcurrentHashMap<String, Long>()
     override val supportedPermissions: List<SocialPermission> = listOf(
         SocialPermission.READ_PROFILE,
         SocialPermission.READ_POSTS,
@@ -145,7 +148,7 @@ class TelegramAdapter @Inject constructor(
                 val item = updates.getJSONObject(i)
                 val updateId = item.optLong("update_id", -1L)
                 if (updateId >= 0) {
-                    nextUpdateOffset.merge(token, updateId + 1) { old, new -> maxOf(old, new) }
+                    fetchedUpdateOffset.merge(token, updateId + 1) { old, new -> maxOf(old, new) }
                 }
                 val msg = item.optJSONObject("message") ?: continue
                 val chatId = msg.optJSONObject("chat")?.optLong("id")
@@ -232,6 +235,13 @@ class TelegramAdapter @Inject constructor(
                 success = true,
                 platformReplyId = result.getLong("message_id").toString()
             )
+        }
+    }
+
+    override fun acknowledgeInbox(credentials: SocialCredentials) {
+        val token = credentials.botToken ?: credentials.accessToken
+        fetchedUpdateOffset[token]?.let { fetched ->
+            nextUpdateOffset.merge(token, fetched) { old, new -> maxOf(old, new) }
         }
     }
 
