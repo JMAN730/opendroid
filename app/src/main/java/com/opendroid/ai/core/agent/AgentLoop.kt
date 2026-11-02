@@ -648,12 +648,12 @@ class AgentLoop @Inject constructor(
             // Build a single-step plan from the alias
             val plan = buildSingleStepPlan(originalQuery, alias.action, alias.baseParams)
 
-            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
+            val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             val approval = settingsRepository.llmConfig.first().approvalSettings()
-            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
-                executePlanLoop(plan, context, sessionId, autoApproved = true)
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated)) {
+                executePlanLoop(validated, context, sessionId, autoApproved = true)
             } else {
-                proposePlan(plan, sessionId)
+                proposePlan(validated, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
@@ -922,16 +922,18 @@ class AgentLoop @Inject constructor(
                 parsePlanFromLlmResponse(response.content, userMsg.text)
             }
 
-            planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
+            // The validated copy is what runs, so it is what gets approved and shown:
+            // validation can add steps the model's own goal and count don't mention.
+            val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             // Re-read after LLM work: user may have flipped mode or revoked grants
             // while planning was in flight; stale pre-LLM config must not auto-run.
             val liveConfig = settingsRepository.llmConfig.first()
             val approval = liveConfig.approvalSettings()
-            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, plan)) {
-                recordAutoApprovedTrace(plan, approval.mode, sessionId)
-                executePlanLoop(plan, context, sessionId, autoApproved = true)
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated)) {
+                recordAutoApprovedTrace(validated, approval.mode, sessionId)
+                executePlanLoop(validated, context, sessionId, autoApproved = true)
             } else {
-                proposePlan(plan, sessionId)
+                proposePlan(validated, sessionId)
             }
         } catch (e: CancellationException) {
             throw e
