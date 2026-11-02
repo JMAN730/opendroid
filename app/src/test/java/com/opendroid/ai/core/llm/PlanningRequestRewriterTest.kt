@@ -102,7 +102,7 @@ class PlanningRequestRewriterTest {
     }
 
     @Test
-    fun `the on-device planning call is still rewritten with no memory context`() {
+    fun `the on-device planning call keeps its own prompt and context`() {
         val prompt = recordedPrompt(
             buildPlanningRequest(
                 userMsg = userMessage("open youtube"),
@@ -113,8 +113,9 @@ class PlanningRequestRewriterTest {
             )
         )
 
-        assertTrue(prompt.contains("SECTION A: IDENTITY & ROLE"))
-        assertFalse(prompt.contains("likes tea"))
+        assertTrue(prompt.startsWith(PlanningPrompts.buildOnDevicePlanningPrompt()))
+        assertFalse(prompt.contains("SECTION A: IDENTITY & ROLE"))
+        assertTrue(prompt.contains("likes tea"))
     }
 
     @Test
