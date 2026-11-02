@@ -109,8 +109,6 @@ class DismissNotificationActionTest {
             notifications.take(limit)
         override suspend fun getNotificationsByApp(packageName: String, limit: Int): List<NotificationEntity> =
             notifications.filter { it.packageName == packageName }.take(limit)
-        override suspend fun getNotificationsForContact(contactName: String, limit: Int): List<NotificationEntity> =
-            notifications.filter { it.contactName == contactName }.take(limit)
         override suspend fun getNotificationsForContactInApp(
             packageName: String,
             contactName: String,
@@ -123,7 +121,7 @@ class DismissNotificationActionTest {
             notifications.filter { it.timestamp > since && it.category == "MESSAGE" }
         override suspend fun markAsRead(id: Long) = Unit
         override suspend fun markAsAutoReplied(id: Long, replyText: String) = Unit
-        override suspend fun getAutoReplyCountForContact(contactName: String, since: Long): Int = 0
+        override suspend fun getAutoReplyCountForContact(packageName: String, contactName: String, since: Long): Int = 0
         override suspend fun getNotificationCountByApp(since: Long): List<AppNotificationCount> = emptyList()
         override suspend fun getMostActiveContacts(since: Long, limit: Int): List<ContactNotificationCount> = emptyList()
         override suspend fun deleteOldNotifications(olderThan: Long) = Unit

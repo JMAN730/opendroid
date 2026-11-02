@@ -128,6 +128,7 @@ class AutoReplyEngine @Inject constructor(
                 // Check rate limit
                 val oneHourAgo = System.currentTimeMillis() - 3_600_000
                 val recentReplyCount = notificationDao.getAutoReplyCountForContact(
+                    notification.packageName,
                     notification.contactName ?: notification.title,
                     oneHourAgo
                 )

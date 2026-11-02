@@ -66,7 +66,7 @@ class NotificationRetentionTest {
 
         assertEquals(
             listOf("second", "first"),
-            dao.getNotificationsForContact("Sam").map { it.title }
+            dao.getNotificationsForContactInApp("com.example.app", "Sam").map { it.title }
         )
     }
 
