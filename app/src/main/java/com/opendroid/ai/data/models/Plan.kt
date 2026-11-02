@@ -4,7 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class Plan(
-    val planId: String,
+    // Left out of model output: normalizePlan mints the id for every parsed plan.
+    val planId: String = "",
     val goal: String,
     val estimatedDuration: String,
     val estimatedSteps: Int,
