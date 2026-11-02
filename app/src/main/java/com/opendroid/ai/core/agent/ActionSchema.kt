@@ -1,5 +1,9 @@
 package com.opendroid.ai.core.agent
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+
 data class ActionDefinition(
     val name: String,
     val description: String,
@@ -1556,13 +1560,27 @@ object ActionSchema {
     /**
      * Whether [value] is filler rather than a real value: blank, "null", "...", a bare
      * "<message>" or "[s1.result]", or a step reference that resolution left in place.
+     * A JSON array or object, such as CREATE_MACRO's steps, is structured data and never
+     * a placeholder, even when it contains step references meant for a later run.
      */
     internal fun isPlaceholderValue(value: String): Boolean {
         val trimmed = value.trim()
+        if (isJsonStructure(trimmed)) return false
         return trimmed.isEmpty() ||
             trimmed.lowercase() in PLACEHOLDER_LITERALS ||
             BARE_PLACEHOLDER.matches(trimmed) ||
             UNRESOLVED_REFERENCE.containsMatchIn(trimmed)
+    }
+
+    // An object, or a non-empty array of objects. The parser reads an unquoted "[s1.result]"
+    // as an array of one literal, so a bare array of primitives stays a placeholder.
+    private fun isJsonStructure(value: String): Boolean {
+        if (!(value.startsWith("[") || value.startsWith("{"))) return false
+        return when (val element = runCatching { Json.parseToJsonElement(value) }.getOrNull()) {
+            is JsonObject -> true
+            is JsonArray -> element.isNotEmpty() && element.all { it is JsonObject }
+            else -> false
+        }
     }
 
     /** Fix minor enum value variations */
