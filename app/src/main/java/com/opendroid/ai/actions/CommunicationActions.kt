@@ -183,7 +183,7 @@ class CommunicationActions internal constructor(
             is ActionResult.Failure -> copy(errorMsg = notice + errorMsg)
             is ActionResult.PendingUserAction -> copy(message = notice + message)
             is ActionResult.UserActionRequired -> copy(message = notice + message)
-            is ActionResult.NeedsInput, is ActionResult.UnknownAction -> this
+            is ActionResult.NeedsInput, is ActionResult.UnknownAction, is ActionResult.Declined -> this
         }
     }
 
