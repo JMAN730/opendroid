@@ -55,7 +55,7 @@ class SmartHomeActions @Inject constructor() {
         override val name: String = "TOGGLE_LIGHT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val room = params["room"] ?: "room"
-            val on = params["on"]?.toBoolean() ?: true
+            val on = SystemActions.resolveToggleState(params)
             val brightness = params["brightness"] ?: ""
             val color = params["color"] ?: ""
             return try {
