@@ -18,8 +18,14 @@ internal enum class SmsSendOutcome {
     /** The radio returned RESULT_OK for every part. */
     SENT,
 
-    /** The radio reported an error for at least one part. */
+    /** The radio reported an error for a single-part message, so nothing went out. */
     FAILED,
+
+    /**
+     * The radio reported an error for at least one part of a multipart message.
+     * Other parts may still have reached the recipient, so a blind resend can duplicate them.
+     */
+    PARTLY_FAILED,
 
     /** The radio didn't answer in time, so the message may or may not go out later. */
     UNCONFIRMED
@@ -66,7 +72,9 @@ internal object SmsSender {
 
             override fun onReceive(receiverContext: Context, intent: Intent) {
                 if (resultCode != Activity.RESULT_OK) {
-                    outcome.complete(SmsSendOutcome.FAILED)
+                    outcome.complete(
+                        if (parts.size > 1) SmsSendOutcome.PARTLY_FAILED else SmsSendOutcome.FAILED
+                    )
                 } else if (--partsLeft == 0) {
                     outcome.complete(SmsSendOutcome.SENT)
                 }
