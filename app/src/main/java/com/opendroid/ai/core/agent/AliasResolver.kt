@@ -351,7 +351,17 @@ object AliasResolver {
         val lower = request.lowercase().trim()
         val cleaned = cleanInput(request)
 
-        // 0. Questions go to the LLM, so "how do I unlock my phone" gets answered
+        // 0a. YouTube search/play/watch extraction — routes straight to the working
+        //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
+        //     below (which would otherwise swallow this because it contains "search"
+        //     or "play") or the LLM planner's broken OPEN_APP + CLICK_TEXT/TYPE_TEXT plan.
+        //     Its patterns open with the command itself, so a question word or an
+        //     "if" here is part of the search query ("play what if on youtube").
+        extractYoutubeQuery(request)?.let { query ->
+            return ActionHint("PLAY_YOUTUBE", mapOf("query" to query))
+        }
+
+        // 0b. Questions go to the LLM, so "how do I unlock my phone" gets answered
         //    instead of locking the phone. Only aliases that are themselves questions
         //    ("what's the weather") can still match, and only by opening the input.
         if (isQuestionShaped(lower)) {
@@ -362,14 +372,6 @@ object AliasResolver {
         // 1. Exact match (always wins)
         aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
-
-        // 1b. YouTube search/play/watch extraction — routes straight to the working
-        //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
-        //     below (which would otherwise swallow this because it contains "search"
-        //     or "play") or the LLM planner's broken OPEN_APP + CLICK_TEXT/TYPE_TEXT plan.
-        extractYoutubeQuery(input)?.let { query ->
-            return ActionHint("PLAY_YOUTUBE", mapOf("query" to query))
-        }
 
         // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
         //    This runs BEFORE compound-intent guard so the LLM doesn't need to handle it.

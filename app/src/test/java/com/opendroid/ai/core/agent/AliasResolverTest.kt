@@ -248,6 +248,19 @@ class AliasResolverTest {
     }
 
     @Test
+    fun `question words inside a youtube query do not block the youtube shortcut`() {
+        listOf(
+            "play what if on youtube" to "what if",
+            "youtube search whether to buy tesla" to "whether to buy tesla",
+            "open youtube and watch why we sleep" to "why we sleep"
+        ).forEach { (input, query) ->
+            val hint = AliasResolver.resolve(input)
+            assertEquals("\"$input\" is a youtube command", "PLAY_YOUTUBE", hint?.action)
+            assertEquals(query, hint?.baseParams?.get("query"))
+        }
+    }
+
+    @Test
     fun `polite commands reach the dynamic and partial steps`() {
         assertEquals("40", AliasResolver.resolve("can you set volume to 40?")?.baseParams?.get("level"))
         assertEquals("CLEAR_BROWSER_DATA", AliasResolver.resolve("can you clear the cache for me")?.action)
