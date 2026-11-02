@@ -37,6 +37,16 @@ class IntentClassifierComplexityTest {
     }
 
     @Test
+    fun `conditional with several punctuated actions stays complex`() {
+        assertEquals(
+            QueryComplexity.COMPLEX,
+            classifier.classifyComplexity(
+                "If my battery is below 15%, open settings; set brightness to 10; turn off wifi; mute phone"
+            )
+        )
+    }
+
+    @Test
     fun `words that merely contain a conditional marker stay simple`() {
         assertEquals(QueryComplexity.SIMPLE, classifier.classifyComplexity("open spotify"))
         assertEquals(QueryComplexity.SIMPLE, classifier.classifyComplexity("call the gift shop"))
