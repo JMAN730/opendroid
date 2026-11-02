@@ -47,6 +47,28 @@ class OptimisticConfigSaverTest {
     }
 
     @Test
+    fun `failed save does not revert fields a newer edit changed while it was failing`() = runBlocking {
+        val ui = MutableStateFlow(LLMConfig(autoMode = AutoMode.OFF, autoConfirmPlans = false))
+        val saver = OptimisticConfigSaver(
+            uiConfig = ui,
+            persist = { ProviderCredentialPersistenceState.StorageUnavailable },
+            readStored = {
+                // A newer edit (and its successful save) lands while this failed save reads the store.
+                ui.value = ui.value.copy(autoMode = AutoMode.YOLO, autoConfirmPlans = true)
+                LLMConfig(autoMode = AutoMode.OFF, autoConfirmPlans = false)
+            }
+        )
+
+        val saved = saver.save(
+            revert = { stored -> copy(autoMode = stored.autoMode, autoConfirmPlans = stored.autoConfirmPlans) }
+        ) { it.copy(autoMode = AutoMode.OFF) }
+
+        assertFalse(saved)
+        assertEquals(AutoMode.YOLO, ui.value.autoMode)
+        assertTrue(ui.value.autoConfirmPlans)
+    }
+
+    @Test
     fun `successful save keeps the optimistic value without reading the store`() = runBlocking {
         val ui = MutableStateFlow(LLMConfig(autoMode = AutoMode.OFF))
         var applied: LLMConfig? = null
