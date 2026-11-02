@@ -140,6 +140,13 @@ class AliasResolverTest {
     }
 
     @Test
+    fun `extracts decimal timer durations from natural language`() {
+        assertEquals(5400, AliasResolver.extractTimerDuration("set a timer for 1.5 hours"))
+        assertEquals(30, AliasResolver.extractTimerDuration("set a 0.5 min timer"))
+        assertEquals(180, AliasResolver.extractTimerDuration("start a timer for 2m59.56s"))
+    }
+
+    @Test
     fun `resolves contextual turn it off after flashlight`() {
         val hint = AliasResolver.resolveContextual(
             "turn it off",
