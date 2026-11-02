@@ -8,14 +8,15 @@ object WhatsAppAutomator {
 
     /**
      * An empty EditText reports its hint as the node text, and WhatsApp's hint is
-     * localized ("Mensaje", "Nachricht"…), so emptiness is judged against the
-     * node's own hint rather than English placeholder literals.
+     * localized ("Mensaje", "Nachricht"…), so emptiness is judged by the node's
+     * own hint-showing flag rather than English placeholder literals. Text equal
+     * to the hint is not proof of emptiness: the user may have typed it.
      */
-    internal fun isInputEmpty(text: String, hintText: String?, showingHint: Boolean): Boolean =
-        showingHint || text.isBlank() || (!hintText.isNullOrEmpty() && text == hintText)
+    internal fun isInputEmpty(text: String, showingHint: Boolean): Boolean =
+        showingHint || text.isBlank()
 
     internal fun isInputEmpty(node: AccessibilityNodeInfo): Boolean =
-        isInputEmpty(node.text?.toString() ?: "", node.hintText?.toString(), node.isShowingHintText)
+        isInputEmpty(node.text?.toString() ?: "", node.isShowingHintText)
 
     suspend fun automateSend(message: String): Boolean {
         val service = OpenDroidAccessibilityService.getInstance() ?: return false
