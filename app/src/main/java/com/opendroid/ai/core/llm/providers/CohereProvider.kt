@@ -1,7 +1,6 @@
 package com.opendroid.ai.core.llm.providers
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
@@ -67,17 +66,11 @@ class CohereProvider @Inject constructor(
             }
             val responseBody = response.body.string()
             if (responseBody.isBlank()) throw IOException("Empty response body from Cohere")
-            val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
-            val messageObj = jsonResponse.getAsJsonObject("message")
-            val contentArray = messageObj.getAsJsonArray("content")
-            val content = contentArray[0].asJsonObject.get("text").asString
-
-            val usage = jsonResponse.getAsJsonObject("usage")
-            val tokensUsed = usage?.getAsJsonObject("tokens")?.get("total_tokens")?.asInt ?: 0
+            val completion = ProviderResponseParser.cohereMessage(responseBody, name, selectedModel)
 
             LLMResponse(
-                content = content,
-                tokensUsed = tokensUsed,
+                content = completion.content,
+                tokensUsed = completion.tokensUsed,
                 model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
