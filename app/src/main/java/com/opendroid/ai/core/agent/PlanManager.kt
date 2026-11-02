@@ -52,17 +52,22 @@ class PlanManager @Inject constructor(
      */
     private val scope = CoroutineScope(Dispatchers.Default)
 
+    /**
+     * Validates [plan], makes it the current plan and returns the stored copy. Show and
+     * approve that copy, not [plan]: validation can add steps and change the count.
+     */
     suspend fun startNewPlan(
         plan: Plan,
         context: Context,
         initialStatus: PlanStatus = PlanStatus.RUNNING
-    ) {
+    ): Plan {
         val validatedPlan = planValidator.get().validateAndFix(plan, context)
         mutex.withLock {
             val initialPlan = validatedPlan.copy(status = initialStatus)
             _currentPlan.value = initialPlan
             workingMemory.activePlan = initialPlan
             saveCurrentPlanLocked()
+            return initialPlan
         }
     }
 
