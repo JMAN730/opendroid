@@ -274,7 +274,9 @@ class WrappedLLMProvider(
         attempt: Int
     ): Long {
         failure.retryAfterMillis?.let { retryAfter ->
-            return retryAfter + retryRuntime.jitterMillis(250L).coerceIn(0L, 250L)
+            val jitter = retryRuntime.jitterMillis(250L).coerceIn(0L, 250L)
+            // Saturate: a wrapped negative delay would pass the retry window and retry at once.
+            return if (retryAfter > Long.MAX_VALUE - jitter) Long.MAX_VALUE else retryAfter + jitter
         }
         val exponentialCap = min(500L shl (attempt - 1), 4_000L)
         return 250L + retryRuntime.jitterMillis(exponentialCap).coerceIn(0L, exponentialCap)
