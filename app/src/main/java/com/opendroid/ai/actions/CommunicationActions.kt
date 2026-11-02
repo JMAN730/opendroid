@@ -493,6 +493,7 @@ class CommunicationActions internal constructor(
                         return when (SmsSender.send(context, smsManager, phone, message)) {
                             SmsSendOutcome.SENT -> ActionResult(true, "Text sent to $contactLabel!", null)
                             SmsSendOutcome.FAILED -> ActionResult(false, null, "The text to $contactLabel didn't send. Check that the phone has service and try again.")
+                            SmsSendOutcome.PARTLY_FAILED -> ActionResult(false, null, "Part of the text to $contactLabel failed, so some of it may already have gone through. Check your messages before sending it again.")
                             SmsSendOutcome.UNCONFIRMED -> ActionResult(false, null, "I couldn't confirm the text to $contactLabel went through. Check your messages before sending it again.")
                         }
                     }

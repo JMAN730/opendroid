@@ -132,6 +132,42 @@ class SmsSendingTest {
     }
 
     @Test
+    fun `a failed part of a long text warns that some of it may have gone out`() = runBlocking {
+        val pending = async(start = CoroutineStart.UNDISPATCHED) { sendAction("a".repeat(200)) }
+        val intents = shadowSms.lastSentMultipartTextMessageParams.sentIntents
+
+        intents.first().send(context, Activity.RESULT_OK, null)
+        intents.last().send(context, SmsManager.RESULT_ERROR_RADIO_OFF, null)
+        idleMainLooper()
+
+        val error = pending.await().error.orEmpty()
+        assertTrue(error, error.contains("Check your messages before sending it again"))
+        assertFalse(error, error.contains("didn't send"))
+    }
+
+    @Test
+    fun `a failed part of a multipart send is reported as partly failed`() = runBlocking {
+        val pending = async(start = CoroutineStart.UNDISPATCHED) {
+            SmsSender.send(context, smsManager, PHONE, "a".repeat(200))
+        }
+
+        reportAll(SmsManager.RESULT_ERROR_GENERIC_FAILURE)
+
+        assertEquals(SmsSendOutcome.PARTLY_FAILED, pending.await())
+    }
+
+    @Test
+    fun `a failed single part send is reported as failed`() = runBlocking {
+        val pending = async(start = CoroutineStart.UNDISPATCHED) {
+            SmsSender.send(context, smsManager, PHONE, "hello")
+        }
+
+        reportAll(SmsManager.RESULT_ERROR_GENERIC_FAILURE)
+
+        assertEquals(SmsSendOutcome.FAILED, pending.await())
+    }
+
+    @Test
     fun `no answer from the radio is unconfirmed rather than sent`() = runBlocking {
         val outcome = SmsSender.send(context, smsManager, PHONE, "hello", timeoutMs = 50L)
 
