@@ -1275,9 +1275,9 @@ object ActionSchema {
             description = "Enables or disables auto-reply for messages",
             params = listOf(
                 ParamDefinition("state", ParamType.ENUM, false, "Turn on or off", listOf("on", "off"), defaultValue = "on"),
-                ParamDefinition("app", ParamType.STRING, false, "Specific app (whatsapp, sms, email) or all", defaultValue = "")
+                ParamDefinition("app", ParamType.STRING, false, "Specific app (whatsapp, telegram, discord, sms, email), or all for the global switch. Leave out for the global switch")
             ),
-            examples = listOf("turn on auto reply", "disable auto reply for whatsapp", "enable auto reply"),
+            examples = listOf("turn on auto reply", "disable auto reply for whatsapp", "stop auto replying on telegram", "turn off auto reply for everything"),
             category = ActionCategory.NOTIFICATION
         ),
         ActionDefinition(
