@@ -1285,30 +1285,35 @@ class AgentLoop @Inject constructor(
      * runnable until the gate has passed, and a process death in between leaves it
      * waiting for approval. The gate reads the validated plan because that is what
      * would execute: PlanValidator can rewrite params and insert steps of its own.
+     *
+     * [asked] is the snapshot the model answered about. The Plan tab can edit or delete
+     * pending steps during that LLM call, so the merge and the gate both start from the
+     * live plan, and a user's change is neither undone nor mistaken for the model's.
      */
     private suspend fun parkedForApproval(
-        current: Plan,
+        asked: Plan,
         updated: Plan,
         context: Context,
         sessionId: String,
         autoApproved: Boolean
     ): Boolean {
-        val merge = PlanModification.merge(current.steps, updated.steps)
-        if (merge.rejected.isNotEmpty()) {
-            android.util.Log.w("AgentLoop", "Re-evaluation named unknown actions: ${merge.rejected.map { it.action }}")
-        }
-        planManager.startNewPlan(current.copy(steps = merge.steps), context, PlanStatus.PROPOSED)
+        val rewrite = planManager.rewriteSteps(asked.planId, PlanStatus.PROPOSED, context) { live ->
+            val merge = PlanModification.merge(live, updated.steps, asked.steps)
+            if (merge.rejected.isNotEmpty()) {
+                android.util.Log.w("AgentLoop", "Re-evaluation named unknown actions: ${merge.rejected.map { it.action }}")
+            }
+            merge.steps
+        } ?: return true
         // Re-read after LLM work: the user may have flipped mode or revoked grants.
         val approval = settingsRepository.llmConfig.first().approvalSettings()
-        val mergedPlan = planManager.currentPlan.value ?: return true
         if (PlanModification.requiresApproval(
                 approval.mode,
                 approval.grantedActions,
-                current.steps,
-                mergedPlan,
+                rewrite.before.steps,
+                rewrite.after,
                 autoApproved
             )) {
-            proposePlan(mergedPlan, sessionId)
+            proposePlan(rewrite.after, sessionId)
             return true
         }
         planManager.updatePlanStatus(PlanStatus.RUNNING)

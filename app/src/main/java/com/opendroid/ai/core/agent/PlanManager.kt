@@ -66,6 +66,35 @@ class PlanManager @Inject constructor(
         }
     }
 
+    data class StepRewrite(val before: Plan, val after: Plan)
+
+    /**
+     * Replaces the live plan's steps with what [transform] derives from them, then
+     * re-validates. Unlike [startNewPlan], validation runs inside [mutex], so a Plan-tab
+     * edit cannot land between the read and the write and be discarded. PlanValidator
+     * never calls back into this class, so holding the lock across it cannot deadlock.
+     *
+     * Returns null and changes nothing when the current plan is no longer
+     * [expectedPlanId] or has reached a terminal status.
+     */
+    suspend fun rewriteSteps(
+        expectedPlanId: String,
+        status: PlanStatus,
+        context: Context,
+        transform: (List<PlanStep>) -> List<PlanStep>
+    ): StepRewrite? {
+        mutex.withLock {
+            val before = _currentPlan.value ?: return null
+            if (before.planId != expectedPlanId || before.status.isTerminal()) return null
+            val validatedPlan = planValidator.get().validateAndFix(before.copy(steps = transform(before.steps)), context)
+            val after = validatedPlan.copy(status = status)
+            _currentPlan.value = after
+            workingMemory.activePlan = after
+            saveCurrentPlanLocked()
+            return StepRewrite(before, after)
+        }
+    }
+
     suspend fun updateStepStatus(stepId: String, status: StepStatus, result: String? = null, error: String? = null) {
         mutex.withLock {
             val plan = _currentPlan.value ?: return@withLock

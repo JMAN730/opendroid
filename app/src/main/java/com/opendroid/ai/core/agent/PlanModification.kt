@@ -20,13 +20,26 @@ object PlanModification {
      * answer omits stay queued, and settled steps are never touched. Steps naming an
      * action outside [ActionSchema] are returned in [MergeResult.rejected]. Status,
      * result and error are execution state, so the model cannot set them.
+     *
+     * [asked] is the plan the model was shown. The answer can only be stale about a
+     * pending step the user edited or deleted since then, so what it says about that
+     * step is dropped and the user's version stands: a deleted step must not come back
+     * as a "new" one, and an echo must not undo an edit.
      */
-    fun merge(current: List<PlanStep>, updated: List<PlanStep>): MergeResult {
+    fun merge(
+        current: List<PlanStep>,
+        updated: List<PlanStep>,
+        asked: List<PlanStep> = current
+    ): MergeResult {
         val pendingIds = current.filter { it.status == StepStatus.PENDING }.map { it.stepId }.toSet()
         val settledIds = current.map { it.stepId }.toSet() - pendingIds
+        val userChangedIds = asked
+            .filter { it.status == StepStatus.PENDING && it !in current }
+            .map { it.stepId }
+            .toSet()
         val (valid, rejected) = updated
             .distinctBy { it.stepId }
-            .filter { it.stepId !in settledIds }
+            .filter { it.stepId !in settledIds && it.stepId !in userChangedIds }
             .partition(::hasKnownActions)
         val incoming = valid.map { it.copy(status = StepStatus.PENDING, result = null, error = null) }
         val replacements = incoming.associateBy { it.stepId }
