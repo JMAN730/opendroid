@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.telephony.PhoneNumberUtils
 import android.telephony.SmsManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -24,6 +26,7 @@ import android.provider.Telephony
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.net.URLEncoder
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -59,11 +62,22 @@ private class AndroidEmailComposer : EmailComposer {
     }
 }
 
+internal fun interface TelegramAutoSender {
+    suspend fun send(message: String, targetPackage: String?): Boolean
+}
+
 @Singleton
-class CommunicationActions @Inject constructor(
+class CommunicationActions internal constructor(
     private val contactResolver: ContactResolver,
-    private val callFlowExecutor: CallFlowExecutor
+    private val callFlowExecutor: CallFlowExecutor,
+    private val telegramAutoSender: TelegramAutoSender
 ) {
+
+    @Inject
+    constructor(
+        contactResolver: ContactResolver,
+        callFlowExecutor: CallFlowExecutor
+    ) : this(contactResolver, callFlowExecutor, TelegramAutoSender(TelegramAutomator::automateSend))
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -79,6 +93,39 @@ class CommunicationActions @Inject constructor(
         ReadMessagesAction(),
         ReadEmailsAction()
     )
+
+    companion object {
+        private val TELEGRAM_HANDLE = Regex("@[A-Za-z0-9_]+")
+        private val PHONE_NUMBER = Regex("\\+?[0-9\\s().\\-]+")
+        private const val MIN_PHONE_DIGITS = 7
+
+        private fun isTelegramPhoneNumber(input: String): Boolean =
+            PHONE_NUMBER.matches(input) && input.count { it in '0'..'9' } >= MIN_PHONE_DIGITS
+
+        /**
+         * The bare digits Telegram's phone links expect, or null if the country code isn't known.
+         * The links read the digits as country code plus number, so a national number has to be
+         * converted first: "(479) 555-0142" sent as is would be +47 95550142 in Norway.
+         * The leading "+" is dropped because it would decode as a space in a query.
+         */
+        private fun telegramPhoneDigits(number: String, context: Context): String? {
+            val international = if (number.startsWith("+")) {
+                number
+            } else {
+                val region = deviceRegion(context) ?: return null
+                PhoneNumberUtils.formatNumberToE164(number, region) ?: return null
+            }
+            return international.filter { it in '0'..'9' }
+        }
+
+        private fun deviceRegion(context: Context): String? {
+            val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                ?: return null
+            return listOf(telephony.simCountryIso, telephony.networkCountryIso)
+                .firstOrNull { !it.isNullOrBlank() }
+                ?.uppercase(Locale.ROOT)
+        }
+    }
 
     /**
      * Build a NeedsInput with contact picker metadata.
@@ -167,26 +214,32 @@ class CommunicationActions @Inject constructor(
                 ?: return ActionResult(false, null, "message is missing")
 
             val trimmed = contact.trim()
-            if (trimmed.startsWith("@")) {
-                // Direct Telegram username/handle
+            if (isTelegramPhoneNumber(trimmed)) {
+                return sendTelegramToNumber(trimmed, contact, message, context)
+            }
+
+            // Only an explicit @handle is a username: a bare word may be a contact,
+            // and guessing it as a public handle can message a stranger.
+            if (TELEGRAM_HANDLE.matches(trimmed)) {
                 return executeTelegram(trimmed.removePrefix("@"), contact, message, context, isUsername = true)
             }
 
-            if (trimmed.startsWith("+") || (trimmed.isNotEmpty() && trimmed.all { it.isDigit() })) {
-                // Direct phone number
-                return executeTelegram(trimmed, contact, message, context, isUsername = false)
-            }
-
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
-                is ContactResolution.Found -> executeTelegram(resolved.contact.phoneNumber, contact, message, context, isUsername = false)
+                is ContactResolution.Found -> {
+                    val number = resolved.contact.phoneNumber
+                    if (!isTelegramPhoneNumber(number)) {
+                        return ActionResult(false, null, "The number saved for '$contact' can't be used on Telegram.")
+                    }
+                    sendTelegramToNumber(number, contact, message, context)
+                }
                 is ContactResolution.Ambiguous -> buildContactPickerResult(
                     contact, resolved.matches, "SEND_TELEGRAM",
                     mapOf("message" to message)
                 )
-                is ContactResolution.NotFound -> {
-                    // If not found in device contacts, treat as Telegram username
-                    executeTelegram(trimmed.removePrefix("@"), contact, message, context, isUsername = true)
-                }
+                is ContactResolution.NotFound -> ActionResult.NeedsInput(
+                    question = "I couldn't find '$contact' in your contacts. What's their phone number or Telegram @username?",
+                    metadata = mapOf("param" to "contact")
+                )
             }
         }
     }
@@ -347,6 +400,20 @@ class CommunicationActions @Inject constructor(
         }
     }
 
+    private suspend fun sendTelegramToNumber(
+        number: String,
+        contactLabel: String,
+        message: String,
+        context: Context
+    ): ActionResult {
+        val phone = telegramPhoneDigits(number, context)
+            ?: return ActionResult.NeedsInput(
+                question = "What's the full number for '$contactLabel', including the country code?",
+                metadata = mapOf("param" to "contact")
+            )
+        return executeTelegram(phone, contactLabel, message, context, isUsername = false)
+    }
+
     private suspend fun executeTelegram(
         identifier: String,
         contactLabel: String,
@@ -359,7 +426,7 @@ class CommunicationActions @Inject constructor(
             val tgUri = if (isUsername) {
                 "tg://resolve?domain=$identifier&text=$encodedMsg".toUri()
             } else {
-                "tg://msg?to=$identifier&text=$encodedMsg".toUri()
+                "tg://resolve?phone=$identifier&text=$encodedMsg".toUri()
             }
 
             val intent = Intent(Intent.ACTION_VIEW, tgUri).apply {
@@ -387,7 +454,7 @@ class CommunicationActions @Inject constructor(
                 val fallbackUri = if (isUsername) {
                     "https://t.me/$identifier".toUri()
                 } else {
-                    "https://t.me/share/url?url=&text=$encodedMsg".toUri()
+                    "https://t.me/+$identifier?text=$encodedMsg".toUri()
                 }
                 val webIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -395,18 +462,17 @@ class CommunicationActions @Inject constructor(
                 context.startActivity(webIntent)
             }
 
-            val service = OpenDroidAccessibilityService.getInstance()
-            if (service != null) {
-                // Null when only the t.me web fallback ran: nothing in front can be Telegram.
-                val targetPackage = installedTgPkg
-                    ?: resolveTargetPackage(intent.resolveActivity(pm)?.packageName, null)
-                val autoSent = TelegramAutomator.automateSend(message, targetPackage)
-                if (autoSent) {
-                    return ActionResult(true, "Message sent to $contactLabel on Telegram!", null)
-                }
+            // Null when only the t.me web fallback ran: nothing in front can be Telegram.
+            val targetPackage = installedTgPkg
+                ?: resolveTargetPackage(intent.resolveActivity(pm)?.packageName, null)
+            // automateSend returns false when the accessibility service isn't running.
+            if (telegramAutoSender.send(message, targetPackage)) {
+                return ActionResult(true, "Message sent to $contactLabel on Telegram!", null)
             }
 
-            ActionResult(true, "Opened Telegram chat with $contactLabel with your message ready!", null)
+            ActionResult.UserActionRequired(
+                "Opened Telegram chat with $contactLabel with your message ready. Review it and tap Send; sending was not verified."
+            )
         } catch (e: Exception) {
             Log.e("SendTelegram", "Telegram failed: ${e.localizedMessage}")
             ActionResult(false, null, "Telegram didn't work. ${e.localizedMessage ?: "Please try again."}", true)
