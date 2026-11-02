@@ -18,6 +18,7 @@ import java.net.Socket
 import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,7 +34,8 @@ class McpServer @Inject constructor(
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
     private var serverThread: Thread? = null
-    private val dispatchLock = Any()
+    // Shared by every pool, so a pool from a previous run cannot dispatch alongside the current one.
+    private val dispatchLock = ReentrantLock()
 
     @Synchronized
     fun start() {
@@ -58,7 +60,7 @@ class McpServer @Inject constructor(
     }
 
     private fun serve() {
-        val connections = McpConnectionPool(WORKERS, QUEUED_CONNECTIONS, THREAD_NAME, ::handle)
+        val connections = McpConnectionPool(WORKERS, QUEUED_CONNECTIONS, THREAD_NAME, dispatchLock) { socket -> handle(socket) }
         try {
             ServerSocket(PORT, BACKLOG, InetAddress.getByName(LOOPBACK)).use { socket ->
                 serverSocket = socket
@@ -79,7 +81,7 @@ class McpServer @Inject constructor(
         }
     }
 
-    private fun handle(socket: Socket) {
+    private fun McpConnectionPool.handle(socket: Socket) {
         // The whole request must arrive within one deadline, so a client trickling bytes
         // cannot keep a worker past it; each read still times out after REQUEST_TIMEOUT_MS.
         val deadlineAtMs = System.currentTimeMillis() + REQUEST_DEADLINE_MS
@@ -127,8 +129,9 @@ class McpServer @Inject constructor(
                 writeEmptyResponse(socket.getOutputStream())
                 return
             }
-            // Requests are read in parallel, but tools still run one at a time as before.
-            val response = synchronized(dispatchLock) { dispatch(request) }
+            // Requests are read in parallel, but tools still run one at a time as before, and
+            // none starts once this connection's pool has been shut down.
+            val response = runExclusive { dispatch(request) }
             writeResponse(socket.getOutputStream(), 200, response)
         } catch (rejected: McpRequestRejectedException) {
             writeResponse(socket.getOutputStream(), rejected.status, JSONObject().put("error", rejected.message))
