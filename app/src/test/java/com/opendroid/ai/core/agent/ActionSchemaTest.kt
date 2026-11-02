@@ -286,9 +286,11 @@ class ActionSchemaTest {
     }
 
     @Test
-    fun `blank non path params stay valid`() {
-        val (result, _) = ActionSchema.validateParams("WRITE_FILE", mapOf("filePath" to "a.txt", "content" to ""))
+    fun `a blank path is reported by name and a filled one stays valid`() {
+        val (blank, _) = ActionSchema.validateParams("COPY_FILE", mapOf("sourcePath" to "a.txt", "destPath" to " "))
+        val (filled, _) = ActionSchema.validateParams("WRITE_FILE", mapOf("filePath" to "a.txt", "content" to "x"))
 
-        assertTrue(result is ActionSchema.ValidationResult.Valid)
+        assertEquals(ActionSchema.ValidationResult.MissingParams(listOf("destPath")), blank)
+        assertTrue(filled is ActionSchema.ValidationResult.Valid)
     }
 }
