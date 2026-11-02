@@ -134,7 +134,7 @@ class PlanValidatorContactsTest {
     fun `a pending step reuses an ask step that already exists`() = runBlocking {
         val asked = PlanStep(
             stepId = "s1_ask", order = 1, description = "ask", action = "ASK_USER",
-            params = mapOf("question" to "What is their phone number?"),
+            params = mapOf("question" to "I couldn't find a contact named 'Bob'. What is their phone number?"),
             status = StepStatus.COMPLETED, result = "+15550199"
         )
         val send = PlanStep(stepId = "s1", order = 2, description = "send", action = "SEND_SMS", params = mapOf("contact" to "Bob"))
@@ -143,6 +143,22 @@ class PlanValidatorContactsTest {
         assertEquals(asked.copy(order = 1), steps[0])
         assertEquals("\$s1_ask", steps[1].params["contact"])
         assertEquals(listOf("s1_ask"), steps[1].dependsOn)
+    }
+
+    @Test
+    fun `a pending step whose contact changed asks again under a fresh id`() = runBlocking {
+        val asked = PlanStep(
+            stepId = "s1_ask", order = 1, description = "ask", action = "ASK_USER",
+            params = mapOf("question" to "I couldn't find a contact named 'Bob'. What is their phone number?"),
+            status = StepStatus.COMPLETED, result = "+15550199"
+        )
+        val send = PlanStep(stepId = "s1", order = 2, description = "send", action = "SEND_SMS", params = mapOf("contact" to "Alice"))
+        val steps = validator("Mary Doe" to "+15550102").validateAndFix(plan(asked, send), context).steps
+        assertEquals(listOf("s1_ask", "s1_ask2", "s1"), steps.map { it.stepId })
+        assertEquals(asked.copy(order = 1), steps[0])
+        assertEquals("I couldn't find a contact named 'Alice'. What is their phone number?", steps[1].params["question"])
+        assertEquals("\$s1_ask2", steps[2].params["contact"])
+        assertEquals(listOf("s1_ask2"), steps[2].dependsOn)
     }
 
     private fun plan(vararg steps: PlanStep) =
