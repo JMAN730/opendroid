@@ -66,6 +66,12 @@ interface SocialPostDao {
     @Query("UPDATE social_posts SET status = :status, publishedTime = :publishedTime, platformPostId = :platformPostId, errorMessage = :errorMessage, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updatePublishResult(id: String, status: String, publishedTime: Long?, platformPostId: String?, errorMessage: String?, updatedAt: Long = System.currentTimeMillis())
 
+    @Query("UPDATE social_posts SET status = 'PUBLISHING', errorMessage = NULL, updatedAt = :updatedAt WHERE id = :id AND status IN ('DRAFT', 'SCHEDULED', 'FAILED')")
+    suspend fun claimForPublishing(id: String, updatedAt: Long = System.currentTimeMillis()): Int
+
+    @Query("UPDATE social_posts SET status = :status, publishedTime = :publishedTime, errorMessage = :errorMessage, updatedAt = :updatedAt WHERE id = :id AND status = 'PUBLISHING'")
+    suspend fun resolveInterruptedPublish(id: String, status: String, publishedTime: Long?, errorMessage: String?, updatedAt: Long = System.currentTimeMillis()): Int
+
     @Query("UPDATE social_posts SET status = :status, approvedBy = :approvedBy, approvedAt = :approvedAt, updatedAt = :updatedAt WHERE id = :id")
     suspend fun approvePost(id: String, status: String, approvedBy: String, approvedAt: Long, updatedAt: Long = System.currentTimeMillis())
 
@@ -105,11 +111,20 @@ interface SocialCommentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(comments: List<SocialCommentEntity>)
 
-    @Query("UPDATE social_comments SET suggestedReply = :reply, replyStatus = 'SUGGESTED' WHERE id = :id")
+    @Query("UPDATE social_comments SET suggestedReply = :reply, replyStatus = 'SUGGESTED' WHERE id = :id AND replyStatus != 'SENDING'")
     suspend fun updateSuggestedReply(id: String, reply: String)
 
     @Query("UPDATE social_comments SET actualReply = :reply, replyStatus = 'REPLIED', isAnswered = 1, replyTimestamp = :timestamp WHERE id = :id")
     suspend fun markReplied(id: String, reply: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE social_comments SET replyStatus = 'SENDING', actualReply = :reply WHERE id = :id AND isAnswered = 0 AND replyStatus NOT IN ('SENDING', 'REPLIED', 'IGNORED')")
+    suspend fun claimForReplying(id: String, reply: String): Int
+
+    @Query("UPDATE social_comments SET replyStatus = CASE WHEN suggestedReply IS NULL THEN 'NONE' ELSE 'SUGGESTED' END, actualReply = NULL WHERE id = :id AND replyStatus = 'SENDING'")
+    suspend fun releaseReplyClaim(id: String): Int
+
+    @Query("UPDATE social_comments SET replyStatus = 'REPLIED', isAnswered = 1, replyTimestamp = :timestamp WHERE id = :id AND replyStatus = 'SENDING'")
+    suspend fun confirmInterruptedReply(id: String, timestamp: Long = System.currentTimeMillis()): Int
 
     @Query("UPDATE social_comments SET replyStatus = 'IGNORED' WHERE id = :id")
     suspend fun ignoreComment(id: String)
