@@ -30,7 +30,7 @@ class ContactSelectionTest {
         assertEquals(0, selectContact("1", chrises))
         assertEquals(1, selectContact(" 2 ", chrises))
         assertEquals(1, selectContact("number 2", chrises))
-        listOf("0", "3", "99999999999").forEach { reply ->
+        listOf("0", "3", "99999999999", "-1", "-2", "number -1", "−1", "1-2").forEach { reply ->
             assertNull(reply, selectContact(reply, chrises))
         }
     }

@@ -3,7 +3,8 @@ package com.opendroid.ai.core.agent
 import com.opendroid.ai.actions.ConfirmationReply
 import java.util.Locale
 
-private val WORD = Regex("""[\p{L}\p{M}\p{N}']+""")
+// A sign stays on a number so "-1" is never read as index 1.
+private val WORD = Regex("""[-+−]?\p{N}[\p{L}\p{M}\p{N}']*|[\p{L}\p{M}\p{N}']+""")
 private val ORDINALS = listOf("first", "second", "third", "fourth", "fifth")
 private val FILLER_WORDS = setOf(
     "the", "one", "please", "pls", "thanks", "number", "option", "contact", "use", "pick", "choose"
