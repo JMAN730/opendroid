@@ -13,7 +13,9 @@ import com.opendroid.ai.data.models.AutoReplyConfig
 
 /**
  * Writes the text of an auto-reply. The reply goes to a third party unreviewed, so the prompt
- * only ever holds the user's display name, the configured tone, and this contact's own history.
+ * only ever holds the user's display name, the configured tone, and the history stored under the
+ * sender's name in the same app. The table has no conversation id, so two senders who use one name
+ * in one app still share that history.
  */
 internal class AutoReplyGenerator(
     private val notificationDao: NotificationDao,
@@ -38,8 +40,12 @@ internal class AutoReplyGenerator(
             val userName = displayName()
             val senderName = notification.contactName ?: notification.title
 
-            // Build conversation history from recent notifications with this contact
-            val recentMessages = notificationDao.getNotificationsForContact(senderName)
+            // Build conversation history from recent notifications with this contact, in this
+            // app only: the name is a free-form title, so a sender could otherwise pick another
+            // app's rows, such as an OTP sender's, just by taking its name.
+            val recentMessages = notificationDao.getNotificationsForContactInApp(
+                notification.packageName, senderName
+            )
             val conversationHistory = recentMessages
                 .sortedBy { it.timestamp }
                 .takeLast(10)

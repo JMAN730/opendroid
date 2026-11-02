@@ -382,6 +382,13 @@ class FakeNotificationDao : NotificationDao {
     override suspend fun getNotificationsForContact(contactName: String, limit: Int): List<NotificationEntity> =
         notifications.filter { it.contactName == contactName }.takeLast(limit).reversed()
 
+    override suspend fun getNotificationsForContactInApp(
+        packageName: String,
+        contactName: String,
+        limit: Int
+    ): List<NotificationEntity> =
+        notifications.filter { it.packageName == packageName && it.contactName == contactName }.takeLast(limit).reversed()
+
     override suspend fun getNotificationsSince(since: Long, limit: Int): List<NotificationEntity> =
         notifications.filter { it.timestamp > since }.takeLast(limit).reversed()
 
