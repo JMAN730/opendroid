@@ -12,7 +12,12 @@ import com.opendroid.ai.data.models.PlanStep
 object PlanApprovalSummary {
 
     private val ACRONYMS = setOf("SMS", "UPI", "URL", "PDF", "QR", "GPS", "NFC", "VPN")
-    private val RECIPIENT_KEYS = listOf("contact", "to", "destination")
+    // Every key a send or call handler reads a recipient from (CommunicationActions,
+    // ActionAutoMapper.RECIPIENT_PARAMS). Handlers differ in which key wins, so all of
+    // a step's recipients are shown, not just the first.
+    private val RECIPIENT_KEYS = listOf(
+        "contact", "to", "recipient", "number", "phone", "phoneNumber", "username", "channel", "destination"
+    )
     private val PATH_KEYS = listOf("filePath", "path")
     private const val MAX_VALUE_LENGTH = 40
 
@@ -25,12 +30,12 @@ object PlanApprovalSummary {
         "I've planned ${stepCount(plan)}: ${stepLines(plan).joinToString(", ")}. Say approve to run, or cancel."
 
     private fun describe(step: PlanStep, steps: List<PlanStep>): String {
-        val recipient = RECIPIENT_KEYS.firstNotNullOfOrNull { step.params[it]?.takeIf(String::isNotBlank) }
+        val recipients = RECIPIENT_KEYS.mapNotNull { step.params[it]?.takeIf(String::isNotBlank) }.distinct()
         val path = PATH_KEYS.firstNotNullOfOrNull { step.params[it]?.takeIf(String::isNotBlank) }
         val amount = step.params["amount"]?.takeIf(String::isNotBlank)
         return buildString {
             append(actionLabel(step.action))
-            if (recipient != null) append(" to ").append(value(recipient, steps))
+            if (recipients.isNotEmpty()) append(" to ").append(recipients.joinToString(" or ") { value(it, steps) })
             if (path != null) append(" ").append(value(path, steps))
             if (amount != null) append(" (amount ").append(value(amount, steps)).append(")")
         }

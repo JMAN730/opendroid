@@ -82,6 +82,41 @@ class PlanApprovalSummaryTest {
         )
     }
 
+    // PlanValidator only resolves `contact`; the handlers fall back to these other keys.
+    @Test
+    fun `a recipient under any key a handler reads is named`() {
+        val plan = validated.copy(
+            steps = listOf(
+                step("s1", 1, "SEND_SMS", mapOf("recipient" to "+19005550100", "message" to "hi")),
+                step("s2", 2, "MAKE_CALL", mapOf("number" to "+19005550101")),
+                step("s3", 3, "MAKE_CALL", mapOf("phone" to "+19005550102")),
+                step("s4", 4, "MAKE_CALL", mapOf("phoneNumber" to "+19005550103")),
+                step("s5", 5, "SEND_TELEGRAM", mapOf("username" to "mallory", "message" to "hi")),
+                step("s6", 6, "OPEN_TELEGRAM", mapOf("channel" to "somechannel"))
+            )
+        )
+        assertEquals(
+            listOf(
+                "Send SMS to +19005550100",
+                "Make call to +19005550101",
+                "Make call to +19005550102",
+                "Make call to +19005550103",
+                "Send telegram to mallory",
+                "Open telegram to somechannel"
+            ),
+            PlanApprovalSummary.stepLines(plan)
+        )
+    }
+
+    // MAKE_CALL ignores `to` and dials `number`, so naming only the first key would hide the real one.
+    @Test
+    fun `every distinct recipient on a step is named`() {
+        val plan = validated.copy(
+            steps = listOf(step("s1", 1, "MAKE_CALL", mapOf("to" to "Mom", "number" to "+19005550100")))
+        )
+        assertEquals("Make call to Mom or +19005550100", PlanApprovalSummary.stepLines(plan).single())
+    }
+
     @Test
     fun `a long value is cut short`() {
         val plan = validated.copy(steps = listOf(step("s1", 1, "SEND_EMAIL", mapOf("to" to "a".repeat(80)))))
