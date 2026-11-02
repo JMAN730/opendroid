@@ -140,7 +140,7 @@ class WhatsAppRoutingTest {
             override fun isCallInProgress(context: Context): Boolean = false
             override suspend fun awaitNewCallStarted(context: Context, wasAlreadyInProgress: Boolean): Boolean = true
         }),
-        TelegramAutoSender { false }
+        TelegramAutoSender { _, _ -> false }
     ).getActions()
 
     private fun setRegion(sim: String = "", network: String = "") {
