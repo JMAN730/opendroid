@@ -364,8 +364,14 @@ class FakeNotificationDao : NotificationDao {
         return notification.id
     }
 
-    override fun getAllNotificationsFlow(): Flow<List<NotificationEntity>> =
-        MutableStateFlow(notifications.toList())
+    override fun getNotificationHistoryFlow(
+        category: String?,
+        autoRepliedOnly: Boolean,
+        limit: Int
+    ): Flow<List<NotificationEntity>> = MutableStateFlow(notifications.toList())
+
+    override fun getNotificationHistoryStatsFlow(): Flow<NotificationHistoryStats> =
+        MutableStateFlow(NotificationHistoryStats(0, 0, 0))
 
     override suspend fun getRecentNotifications(limit: Int): List<NotificationEntity> =
         notifications.takeLast(limit).reversed()

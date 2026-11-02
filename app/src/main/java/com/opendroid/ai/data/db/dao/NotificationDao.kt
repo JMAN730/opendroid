@@ -10,8 +10,27 @@ interface NotificationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotification(notification: NotificationEntity): Long
 
-    @Query("SELECT * FROM notifications ORDER BY timestamp DESC")
-    fun getAllNotificationsFlow(): Flow<List<NotificationEntity>>
+    // Filters run in SQL, before the limit, so an older row still appears under its filter.
+    @Query("""
+        SELECT * FROM notifications
+        WHERE (:category IS NULL OR category = :category)
+          AND (:autoRepliedOnly = 0 OR isAutoReplied = 1)
+        ORDER BY timestamp DESC
+        LIMIT :limit
+    """)
+    fun getNotificationHistoryFlow(
+        category: String?,
+        autoRepliedOnly: Boolean,
+        limit: Int
+    ): Flow<List<NotificationEntity>>
+
+    @Query("""
+        SELECT COUNT(*) AS total,
+               COUNT(CASE WHEN category = 'MESSAGE' THEN 1 END) AS messages,
+               COUNT(CASE WHEN isAutoReplied = 1 THEN 1 END) AS replied
+        FROM notifications
+    """)
+    fun getNotificationHistoryStatsFlow(): Flow<NotificationHistoryStats>
 
     @Query("SELECT * FROM notifications ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecentNotifications(limit: Int = 50): List<NotificationEntity>
@@ -77,6 +96,12 @@ interface NotificationDao {
     @Query("DELETE FROM notifications WHERE id = :id")
     suspend fun deleteNotificationById(id: Long): Int
 }
+
+data class NotificationHistoryStats(
+    val total: Int,
+    val messages: Int,
+    val replied: Int
+)
 
 data class AppNotificationCount(
     val packageName: String,
