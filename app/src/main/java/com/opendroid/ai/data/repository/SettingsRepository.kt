@@ -99,25 +99,43 @@ class SettingsRepository internal constructor(
      * Supplies legacy DataStore values to a write only when direct credential reads are healthy.
      * This gives the one-time DataStore migration a source without exposing it to callers.
      */
-    private fun mergeSecretsForUpdate(persisted: LLMConfig): LLMConfig {
-        val snapshot = (readCredentialSnapshot() as? CredentialSnapshotResult.Success)?.snapshot
-            ?: return persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
-        return persisted.copy(
+    private fun mergeSecretsForUpdate(persisted: LLMConfig, snapshot: CredentialSnapshot): LLMConfig =
+        persisted.copy(
             apiKeys = persisted.apiKeys + snapshot.providerApiKeys,
             elevenLabsApiKey = snapshot.elevenLabsApiKey ?: persisted.elevenLabsApiKey
         )
+
+    /**
+     * Applies an update while direct credentials cannot be read. The update sees no secrets, so
+     * any difference in a secret field is a requested credential change, which cannot be
+     * reconciled without a snapshot and aborts the transaction. So does an update that changes
+     * nothing: it is a migration attempt, and that is what could not run. Otherwise the non-secret
+     * fields are written and the stored secret fields stay as they were, as migration input.
+     */
+    private fun applyWithoutCredentials(
+        persisted: LLMConfig,
+        update: (LLMConfig) -> LLMConfig,
+        failure: ProviderCredentialPersistenceState
+    ): LLMConfig {
+        val withoutSecrets = persisted.copy(apiKeys = emptyMap(), elevenLabsApiKey = "")
+        val updated = update(withoutSecrets)
+        if (updated == withoutSecrets ||
+            updated.apiKeys != withoutSecrets.apiKeys ||
+            updated.elevenLabsApiKey != withoutSecrets.elevenLabsApiKey
+        ) {
+            throw CredentialPersistenceAborted(failure)
+        }
+        return updated.copy(apiKeys = persisted.apiKeys, elevenLabsApiKey = persisted.elevenLabsApiKey)
     }
 
     /**
      * Commits direct credentials before returning a stripped DataStore configuration.
+     * [snapshot] must be the one the update was merged from: a credential committed after it is
+     * neither previous nor desired here, so it is left alone rather than removed.
      * Any failed direct-store mutation rolls back successful earlier mutations and aborts the
      * DataStore transaction, preserving the previously persisted configuration as retry input.
      */
-    private fun storeSecretsAndStrip(config: LLMConfig): CredentialStripResult {
-        val snapshot = when (val snapshotResult = readCredentialSnapshot()) {
-            is CredentialSnapshotResult.Success -> snapshotResult.snapshot
-            is CredentialSnapshotResult.Failure -> return CredentialStripResult.Failure(snapshotResult.state)
-        }
+    private fun storeSecretsAndStrip(config: LLMConfig, snapshot: CredentialSnapshot): CredentialStripResult {
         val desiredProviderApiKeys = linkedMapOf<String, String>()
         config.apiKeys.forEach { (provider, key) ->
             // Invalid historical JSON keys are deliberately stripped, never materialized as
@@ -293,13 +311,18 @@ class SettingsRepository internal constructor(
         try {
             dataStore.edit { preferences ->
                 val currentConfig = decodeConfig(preferences[llmConfigKey])
-                val newConfig = update(mergeSecretsForUpdate(currentConfig))
-                when (val result = storeSecretsAndStrip(newConfig)) {
-                    is CredentialStripResult.Success -> {
-                        preferences[llmConfigKey] = json.encodeToString(result.strippedConfig)
+                val configToStore = when (val snapshotResult = readCredentialSnapshot()) {
+                    is CredentialSnapshotResult.Success -> {
+                        val newConfig = update(mergeSecretsForUpdate(currentConfig, snapshotResult.snapshot))
+                        when (val result = storeSecretsAndStrip(newConfig, snapshotResult.snapshot)) {
+                            is CredentialStripResult.Success -> result.strippedConfig
+                            is CredentialStripResult.Failure -> throw CredentialPersistenceAborted(result.state)
+                        }
                     }
-                    is CredentialStripResult.Failure -> throw CredentialPersistenceAborted(result.state)
+                    is CredentialSnapshotResult.Failure ->
+                        applyWithoutCredentials(currentConfig, update, snapshotResult.state)
                 }
+                preferences[llmConfigKey] = json.encodeToString(configToStore)
             }
             mutableProviderCredentialPersistenceState.value = ProviderCredentialPersistenceState.Ready
             ProviderCredentialPersistenceState.Ready

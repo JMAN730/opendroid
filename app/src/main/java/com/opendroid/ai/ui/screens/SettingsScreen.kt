@@ -181,7 +181,8 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Saved provider credentials cannot be read on this device. " +
+                                text = "Saved provider credentials cannot be read on this device, so " +
+                                    "new API keys will not be saved. Other settings still save. " +
                                     "Clear unavailable records, then enter your API keys again.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
@@ -210,7 +211,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "CREDENTIALS WERE NOT SAVED",
+                                text = "SETTINGS WERE NOT SAVED",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
@@ -218,7 +219,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Secure credential storage is unavailable. Existing settings " +
+                                text = "App storage is unavailable. Existing settings and credentials " +
                                     "were preserved; check device storage and try again.",
                                 fontSize = 12.sp,
                                 color = TextSecondary
