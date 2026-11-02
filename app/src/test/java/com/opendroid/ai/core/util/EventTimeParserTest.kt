@@ -151,6 +151,20 @@ class EventTimeParserTest {
     }
 
     @Test
+    fun `half past and quarter forms read 12 with a part of the day`() {
+        assertEquals(11 to 45, EventTimeParser.parseClockTime("quarter to 12 in the morning"))
+        assertEquals(11 to 45, EventTimeParser.parseClockTime("quarter to 12 in the afternoon"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 12 in the evening"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 12 at night"))
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 in the morning"))
+        assertEquals(0 to 15, EventTimeParser.parseClockTime("quarter past 12 in the morning"))
+        assertEquals(12 to 30, EventTimeParser.parseClockTime("half past 12 in the afternoon"))
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 in the evening"))
+        assertEquals(0 to 45, EventTimeParser.parseClockTime("quarter to 1 in the morning"))
+        assertEquals(12 to 45, EventTimeParser.parseClockTime("quarter to 1 in the afternoon"))
+    }
+
+    @Test
     fun `half past and quarter forms without a suffix stay as written`() {
         assertEquals(6 to 30, EventTimeParser.parseClockTime("half past 6"))
         assertEquals(14 to 30, EventTimeParser.parseClockTime("at half past 14"))
