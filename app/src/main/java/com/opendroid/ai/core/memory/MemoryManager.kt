@@ -71,6 +71,9 @@ class MemoryManager @Inject constructor(
         // Collect facts from semantic database — only valid (non-expired, non-poisoned) entries
         val facts = memoryRepository.getValidMemoriesByType(MemoryType.SEMANTIC)
         val dbFacts = facts
+            // Contact picks are resolver lookups holding a third party's number, not facts
+            // about the user, and this context goes to the LLM with every prompt.
+            .filterNot { it.key.startsWith(CONTACT_PREF_PREFIX) }
             .filter { memoryExtractor.shouldStoreInSemanticMemory(it.key) && memoryExtractor.shouldStoreInSemanticMemory(it.value) }
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
@@ -349,7 +352,7 @@ class MemoryManager @Inject constructor(
     }
 
     private fun contactPreferenceKey(query: String): String =
-        "contact_pref_${query.lowercase().trim()}"
+        "$CONTACT_PREF_PREFIX${query.lowercase().trim()}"
 
     /**
      * Get all saved contact preferences (for UI display).
@@ -357,14 +360,18 @@ class MemoryManager @Inject constructor(
     suspend fun getAllContactPreferences(): List<Pair<String, com.opendroid.ai.core.agent.Contact>> {
         val allMemories = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
         return allMemories
-            .filter { it.key.startsWith("contact_pref_") }
+            .filter { it.key.startsWith(CONTACT_PREF_PREFIX) }
             .mapNotNull { entity ->
                 val parts = entity.value.split("||")
                 if (parts.size >= 2) {
-                    val queryStr = entity.key.removePrefix("contact_pref_")
+                    val queryStr = entity.key.removePrefix(CONTACT_PREF_PREFIX)
                     Pair(queryStr, com.opendroid.ai.core.agent.Contact(parts[0], parts[1]))
                 } else null
             }
+    }
+
+    private companion object {
+        const val CONTACT_PREF_PREFIX = "contact_pref_"
     }
 }
 
