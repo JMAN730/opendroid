@@ -7,8 +7,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -26,22 +24,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.opendroid.ai.data.models.AutoReplyConfig
-import com.opendroid.ai.data.repository.SettingsRepository
 import com.opendroid.ai.ui.theme.AppTheme
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import com.opendroid.ai.ui.viewmodel.AutoReplyViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AutoReplySettingsScreen(
-    settingsRepository: SettingsRepository,
+    viewModel: AutoReplyViewModel,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var config by remember { mutableStateOf(AutoReplyConfig()) }
-    var isLoading by remember { mutableStateOf(true) }
+    val config = viewModel.config
+    val isLoading = viewModel.isLoading
 
     var isNotificationPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var isAccessibilityPermissionGranted by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
@@ -52,33 +46,15 @@ fun AutoReplySettingsScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 isNotificationPermissionGranted = isNotificationServiceEnabled(context)
                 isAccessibilityPermissionGranted = isAccessibilityServiceEnabled(context)
+            } else if (event == Lifecycle.Event.ON_STOP) {
+                // The process may not survive the background long enough for the debounce.
+                viewModel.flushPendingConfig()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        config = settingsRepository.autoReplyConfig.first()
-        isLoading = false
-    }
-
-    var dbWriteJob by remember { mutableStateOf<Job?>(null) }
-
-    fun saveConfig(newConfig: AutoReplyConfig, debounce: Boolean = false) {
-        config = newConfig
-        dbWriteJob?.cancel()
-        dbWriteJob = scope.launch {
-            if (debounce) {
-                delay(1000)
-            }
-            try {
-                settingsRepository.updateAutoReplyConfig(newConfig)
-            } catch (e: Exception) {
-                android.util.Log.e("AutoReplySettings", "Failed to save config: ${e.message}", e)
-            }
+            viewModel.flushPendingConfig()
         }
     }
 
@@ -218,7 +194,7 @@ fun AutoReplySettingsScreen(
                         }
                         Switch(
                             checked = config.globalEnabled,
-                            onCheckedChange = { saveConfig(config.copy(globalEnabled = it)) },
+                            onCheckedChange = { viewModel.saveConfig(config.copy(globalEnabled = it)) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = themeColors.textPrimary,
                                 checkedTrackColor = themeColors.textPrimary.copy(alpha = 0.5f)
@@ -245,23 +221,23 @@ fun AutoReplySettingsScreen(
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             AppToggleRow("WhatsApp", "💬", config.whatsappEnabled, themeColors) {
-                                saveConfig(config.copy(whatsappEnabled = it))
+                                viewModel.saveConfig(config.copy(whatsappEnabled = it))
                             }
                             Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("Telegram", "✈️", config.telegramEnabled, themeColors) {
-                                saveConfig(config.copy(telegramEnabled = it))
+                                viewModel.saveConfig(config.copy(telegramEnabled = it))
                             }
                             Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("Discord", "🎮", config.discordEnabled, themeColors) {
-                                saveConfig(config.copy(discordEnabled = it))
+                                viewModel.saveConfig(config.copy(discordEnabled = it))
                             }
                             Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("SMS", "📱", config.smsEnabled, themeColors) {
-                                saveConfig(config.copy(smsEnabled = it))
+                                viewModel.saveConfig(config.copy(smsEnabled = it))
                             }
                             Divider(color = themeColors.borderColor.copy(alpha = 0.5f))
                             AppToggleRow("Email", "📧", config.emailEnabled, themeColors) {
-                                saveConfig(config.copy(emailEnabled = it))
+                                viewModel.saveConfig(config.copy(emailEnabled = it))
                             }
                         }
                     }
@@ -303,7 +279,7 @@ fun AutoReplySettingsScreen(
                             Slider(
                                 value = config.replyDelayMinutes.toFloat(),
                                 onValueChange = {
-                                    saveConfig(config.copy(replyDelayMinutes = it.toInt()))
+                                    viewModel.saveConfig(config.copy(replyDelayMinutes = it.toInt()))
                                 },
                                 valueRange = 0f..60f,
                                 steps = 59,
@@ -358,7 +334,7 @@ fun AutoReplySettingsScreen(
                             Slider(
                                 value = config.maxRepliesPerContactPerHour.toFloat(),
                                 onValueChange = {
-                                    saveConfig(config.copy(maxRepliesPerContactPerHour = it.toInt()))
+                                    viewModel.saveConfig(config.copy(maxRepliesPerContactPerHour = it.toInt()))
                                 },
                                 valueRange = 1f..10f,
                                 steps = 8,
@@ -401,7 +377,7 @@ fun AutoReplySettingsScreen(
                             OutlinedTextField(
                                 value = config.customReplyText ?: "",
                                 onValueChange = {
-                                    saveConfig(config.copy(customReplyText = it.ifBlank { null }), debounce = true)
+                                    viewModel.saveConfig(config.copy(customReplyText = it.ifBlank { null }), debounce = true)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = {
@@ -432,7 +408,7 @@ fun AutoReplySettingsScreen(
                             OutlinedTextField(
                                 value = config.customPrompt ?: "",
                                 onValueChange = {
-                                    saveConfig(config.copy(customPrompt = it.ifBlank { null }), debounce = true)
+                                    viewModel.saveConfig(config.copy(customPrompt = it.ifBlank { null }), debounce = true)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = {
