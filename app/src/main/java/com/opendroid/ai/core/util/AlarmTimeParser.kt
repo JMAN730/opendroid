@@ -66,23 +66,24 @@ object AlarmTimeParser {
             if (hour in 0..23) return Pair(hour, 0)
         }
 
-        // "half past 5" → 5:30
-        Regex("""half past (\d{1,2})""").find(clean)?.let { match ->
-            val hour = match.groupValues[1].toInt()
-            if (hour in 0..23) return Pair(hour, 30)
-        }
-
-        // "quarter past 5" → 5:15
-        Regex("""quarter past (\d{1,2})""").find(clean)?.let { match ->
-            val hour = match.groupValues[1].toInt()
-            if (hour in 0..23) return Pair(hour, 15)
-        }
-
-        // "quarter to 6" → 5:45
-        Regex("""quarter to (\d{1,2})""").find(clean)?.let { match ->
-            var hour = match.groupValues[1].toInt() - 1
-            if (hour < 0) hour = 23
-            return Pair(hour, 45)
+        // "half past 5" → 5:30, "quarter past 5 pm" → 17:15, "quarter to 8 pm" → 19:45.
+        // Anchored so an unconsumed qualifier ("tonight") rejects rather than being dropped.
+        val relative = Regex("""^(half past|quarter past|quarter to) (\d{1,2})(?:\s*(am|pm|a\.m\.|p\.m\.))?$""")
+        relative.find(clean)?.let { match ->
+            var hour = match.groupValues[2].toInt()
+            val amPm = match.groupValues[3]
+            if (amPm.isNotEmpty()) {
+                if (hour !in 1..12) return null
+                val isPm = amPm.startsWith("p")
+                if (isPm && hour != 12) hour += 12
+                if (!isPm && hour == 12) hour = 0
+            }
+            if (hour > 23) return null
+            return when (match.groupValues[1]) {
+                "half past" -> Pair(hour, 30)
+                "quarter past" -> Pair(hour, 15)
+                else -> Pair(if (hour == 0) 23 else hour - 1, 45)
+            }
         }
 
         return null

@@ -445,5 +445,6 @@ class AliasResolverTest {
         assertNull(AliasResolver.extractAlarmTime("set alarm for saturday at 7"))
         assertNull(AliasResolver.extractAlarmTime("set alarm for 9 later today"))
         assertNull(AliasResolver.extractAlarmTime("set alarm for 7 tonight"))
+        assertNull(AliasResolver.extractAlarmTime("set alarm for quarter to 8 tonight"))
     }
 }
