@@ -21,6 +21,9 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -66,6 +69,10 @@ class DeviceStateProvider internal constructor(
     // Last place name, keyed by coordinates rounded to ~1 km so small GPS jitter reuses it
     @Volatile
     private var cachedLocation: Pair<String, String>? = null
+    private val _resolvedLocation = MutableStateFlow<String?>(null)
+
+    /** The last place name a lookup found; changes when a background lookup lands. */
+    val resolvedLocation: StateFlow<String?> = _resolvedLocation.asStateFlow()
     private val locationRefreshInFlight = AtomicBoolean(false)
     private val locationScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
@@ -351,6 +358,7 @@ class DeviceStateProvider internal constructor(
             val name = withTimeoutOrNull(geocodeTimeoutMs) { reverseGeocoder.lookup(lat, lng) }
             if (name != null) {
                 cachedLocation = locationCacheKey(lat, lng) to name
+                _resolvedLocation.value = name
                 name
             } else {
                 formatCoordinates(lat, lng)

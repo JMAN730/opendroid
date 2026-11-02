@@ -220,6 +220,8 @@ fun MemoryScreen(
 fun WorkingMemoryView(viewModel: MemoryViewModel) {
     val activePlan by viewModel.activePlan.collectAsState()
     val workingMemory = viewModel.workingMemory
+    // Recompose the location row when the background geocode lands
+    val resolvedLocation by workingMemory.resolvedLocation.collectAsState()
     
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -265,7 +267,9 @@ fun WorkingMemoryView(viewModel: MemoryViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        StateItem("Location Context", workingMemory.locationContext, TextSecondary)
+                        key(resolvedLocation) {
+                            StateItem("Location Context", workingMemory.locationContext, TextSecondary)
+                        }
                     }
                 }
             }
