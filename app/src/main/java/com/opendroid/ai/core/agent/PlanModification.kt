@@ -30,9 +30,11 @@ object PlanModification {
      * result and error are execution state, so the model cannot set them.
      *
      * A step reusing a settled stepId is not dropped, because the model often renumbers
-     * the remainder from "s1". An unchanged echo of the settled step is ignored. Anything
-     * else takes over a pending step with the same action, since appending it next to
-     * that step would send the same message twice, or runs under a new "<id>_r1" id when
+     * the remainder from "s1". A step keeping the settled step's action is an echo of it,
+     * often with a "$$sN" reference now resolved, and is ignored so a sent message is
+     * never queued again. So is a renumbered echo of another settled step. Anything else
+     * takes over a pending step with the same action, since appending it next to that
+     * step would send the same message twice, or runs under a new "<id>_r1" id when
      * there is no such step. Either way it reaches [requiresApproval] as a change.
      *
      * [repairing] names the step that just failed with an unknown action. A step reusing
@@ -64,10 +66,10 @@ object PlanModification {
                 val old = settled[step.stepId]
                 when {
                     old == null -> true
-                    old === repairable -> step.action != old.action
-                    else -> old.action != step.action || old.fallback != step.fallback || old.params != step.params
+                    else -> step.action != old.action
                 }
             }
+            .filter { step -> step.stepId !in settled || settled.values.none { echoes(step, it) } }
             .map { it.copy(status = StepStatus.PENDING, result = null, error = null) }
 
         val open = current
@@ -134,6 +136,15 @@ object PlanModification {
 
     private fun hasKnownActions(step: PlanStep): Boolean =
         ActionSchema.isValid(step.action) && (step.fallback.isBlank() || ActionSchema.isValid(step.fallback))
+
+    /**
+     * Whether [step] repeats the settled step [old]: same action and fallback, and the
+     * same params except where [old] held a "$$" reference the model may have resolved.
+     */
+    private fun echoes(step: PlanStep, old: PlanStep): Boolean =
+        step.action == old.action && step.fallback == old.fallback &&
+            step.params.keys == old.params.keys &&
+            old.params.all { (key, value) -> "\$\$" in value || step.params[key] == value }
 
     private fun hasUnapprovedChange(before: List<PlanStep>, pending: List<PlanStep>): Boolean {
         val previous = before.filter { it.status == StepStatus.PENDING }.associateBy { it.stepId }

@@ -92,6 +92,15 @@ class PlanModificationTest {
     }
 
     @Test
+    fun `a settled step revised under its own id is not run again`() {
+        val revised = done.copy(status = StepStatus.PENDING, params = mapOf("state" to "on"))
+
+        val result = PlanModification.merge(current, listOf(revised))
+
+        assertEquals(current, result.steps)
+    }
+
+    @Test
     fun `a settled step echoed back is not run again`() {
         val failed = step("s3", "GET_WEATHER", status = StepStatus.FAILED)
         val settled = listOf(done, failed)
@@ -223,6 +232,43 @@ class PlanModificationTest {
             pendingOf(PlanModification.merge(listOf(search, edited), listOf(renumbered), asked).steps)
         )
         assertTrue(pendingOf(PlanModification.merge(listOf(search), listOf(renumbered), asked).steps).isEmpty())
+    }
+
+    @Test
+    fun `a sent message echoed with its reference resolved is not queued again`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val alarm = step("s3", "SET_ALARM")
+        val resolved = sent.copy(status = StepStatus.PENDING, params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, sent, alarm), listOf(resolved, alarm)).steps
+
+        assertEquals(listOf(search, sent, alarm), merged)
+        assertFalse(needsApproval(AutoMode.OFF, listOf(resolved, alarm), before = listOf(search, sent, alarm)))
+    }
+
+    @Test
+    fun `a sent message echoed under its own id does not take over another recipient's step`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val toDad = step("s3", "SEND_SMS", params = mapOf("contact" to "Dad", "message" to "hi"))
+        val resolved = sent.copy(status = StepStatus.PENDING, params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, sent, toDad), listOf(resolved, toDad)).steps
+
+        assertEquals(listOf(search, sent, toDad), merged)
+    }
+
+    @Test
+    fun `a renumbered echo of a sent message is not queued again`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val alarm = step("s3", "SET_ALARM")
+        val renumbered = listOf(
+            step("s1", "SEND_SMS", params = mapOf("contact" to "Mom", "message" to "22C")),
+            alarm.copy(stepId = "s2")
+        )
+
+        val merged = PlanModification.merge(listOf(search, sent, alarm), renumbered).steps
+
+        assertEquals(listOf(search, sent, alarm), merged)
     }
 
     @Test
