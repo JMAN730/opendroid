@@ -32,6 +32,13 @@ class MemoryExtractor @Inject constructor(
             "not a valid action",
             "action failed"
         )
+
+        // Words that can open "<word> is my wife" without being a name.
+        private val NON_NAME_WORDS = setOf(
+            "what", "who", "which", "where", "when", "why", "how", "whose",
+            "this", "that", "it", "he", "she", "they", "there", "here",
+            "today", "tomorrow", "tonight", "yesterday", "now", "then"
+        )
     }
 
     fun shouldStoreInSemanticMemory(content: String): Boolean {
@@ -56,6 +63,7 @@ class MemoryExtractor @Inject constructor(
         messages.forEach { msg ->
             if (msg.sender == ChatMessage.Sender.USER) {
                 // Heuristic pattern checking
+                val explicitKeys = mutableSetOf<String>()
                 patterns.forEach { (regex, key) ->
                     val match = regex.find(msg.text)
                     if (match != null) {
@@ -64,31 +72,31 @@ class MemoryExtractor @Inject constructor(
                             memoryRepository.saveMemory(
                                 Memory(key = key, value = value, type = MemoryType.SEMANTIC)
                             )
+                            explicitKeys += key
                         }
                     }
                 }
 
-                // Dynamic extraction helper
-                val wifeMatch = Regex("([a-zA-Z]+) is my wife", RegexOption.IGNORE_CASE).find(msg.text)
-                if (wifeMatch != null) {
-                    val value = wifeMatch.groupValues[1].trim()
-                    if (shouldStoreInSemanticMemory("wife_name") && shouldStoreInSemanticMemory(value)) {
-                        memoryRepository.saveMemory(
-                            Memory(key = "wife_name", value = value, type = MemoryType.SEMANTIC)
-                        )
-                    }
-                }
-
-                val husbandMatch = Regex("([a-zA-Z]+) is my husband", RegexOption.IGNORE_CASE).find(msg.text)
-                if (husbandMatch != null) {
-                    val value = husbandMatch.groupValues[1].trim()
-                    if (shouldStoreInSemanticMemory("husband_name") && shouldStoreInSemanticMemory(value)) {
-                        memoryRepository.saveMemory(
-                            Memory(key = "husband_name", value = value, type = MemoryType.SEMANTIC)
-                        )
-                    }
+                // "Maria is my wife": only fills an empty slot. An explicit "my wife's name is"
+                // statement is the only way to change a stored spouse name.
+                spousePatterns.forEach { (regex, key) ->
+                    if (key in explicitKeys) return@forEach
+                    val value = regex.find(msg.text)?.groupValues?.get(1)?.trim() ?: return@forEach
+                    if (value.lowercase() in NON_NAME_WORDS) return@forEach
+                    if (!shouldStoreInSemanticMemory(key) || !shouldStoreInSemanticMemory(value)) return@forEach
+                    if (memoryRepository.getMemory(key) != null) return@forEach
+                    memoryRepository.saveMemory(
+                        Memory(key = key, value = value, type = MemoryType.SEMANTIC)
+                    )
                 }
             }
         }
     }
+
+    // The name must open the sentence or clause, and "wife's"/"husband's" (someone else's
+    // relation, or a question about the spouse) never counts.
+    private val spousePatterns = listOf(
+        Regex("(?:^|[.!?,;:]\\s*)([a-zA-Z]+) is my wife\\b(?!\\s*['’]s)", RegexOption.IGNORE_CASE) to "wife_name",
+        Regex("(?:^|[.!?,;:]\\s*)([a-zA-Z]+) is my husband\\b(?!\\s*['’]s)", RegexOption.IGNORE_CASE) to "husband_name"
+    )
 }
