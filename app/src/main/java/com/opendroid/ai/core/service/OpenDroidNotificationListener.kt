@@ -8,11 +8,14 @@ import android.util.Log
 import com.opendroid.ai.core.agent.ActiveConversation
 import com.opendroid.ai.core.agent.AutoReplyEngine
 import com.opendroid.ai.core.agent.DISCORD_PACKAGES
+import com.opendroid.ai.core.agent.OutgoingMessage
 import com.opendroid.ai.core.agent.ReplyConversation
 import com.opendroid.ai.core.agent.SMS_PACKAGES
 import com.opendroid.ai.core.agent.TELEGRAM_PACKAGES
 import com.opendroid.ai.core.agent.WHATSAPP_PACKAGES
 import com.opendroid.ai.core.agent.isGroupConversation
+import com.opendroid.ai.core.agent.isOwnSenderLabel
+import com.opendroid.ai.core.agent.outgoingContactName
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
@@ -95,12 +98,14 @@ class OpenDroidNotificationListener : NotificationListenerService() {
                         // WhatsApp shows your own sent messages as "You: <text>"
                         // Check for self-authored/outgoing indicators BEFORE bounceback check
                         val isSelfMessage = entity.text.startsWith("You: ") ||
-                            entity.title.equals("You", ignoreCase = true)
+                            isOwnSenderLabel(entity.title)
 
                         if (isSelfMessage) {
                             // The user answered this conversation themselves, so the reply
                             // still waiting for it must not go out as well (#83).
-                            autoReplyEngine.cancelPendingReply(sbn.packageName, contactName)
+                            autoReplyEngine.cancelPendingReply(
+                                OutgoingMessage(sbn, outgoingContactName(contactName, notification))
+                            )
                             Log.d(TAG, "Skipping auto-reply: self-message/outgoing detected for $contactName")
                         } else {
                             // Only check bounceback for incoming messages

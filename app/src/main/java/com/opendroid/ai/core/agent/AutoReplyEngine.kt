@@ -142,6 +142,11 @@ class AutoReplyEngine @Inject constructor(
                     return@launch
                 }
 
+                if (!pendingReplies.claimForSending(contactKey, coroutineContext.job)) {
+                    Log.d(TAG, "Auto-reply cancelled for ${notification.contactName} before sending")
+                    return@launch
+                }
+
                 val sent = dispatchReply(notification, sbn, replyText, context, channel)
                 if (sent) {
                     // Record the send timestamp AND reply text BEFORE marking in DB so the
@@ -166,16 +171,19 @@ class AutoReplyEngine @Inject constructor(
         }
 
         // Replaces (and cancels) any reply already waiting for this contact: they sent another message.
-        pendingReplies.register(contactKey, job)
+        pendingReplies.register(
+            contactKey,
+            job,
+            ReplyConversation(notification.packageName, notification.contactName ?: notification.title, sbn)
+        )
         job.start()
     }
 
     /**
-     * Cancel a pending auto-reply (e.g., user opened the app and is replying manually).
+     * Cancel the pending auto-reply for the conversation the user just answered by hand.
      */
-    fun cancelPendingReply(packageName: String, contactName: String?) {
-        val contactKey = "$packageName:${contactName ?: ""}"
-        pendingReplies.cancel(contactKey)
+    internal fun cancelPendingReply(outgoing: OutgoingMessage) {
+        pendingReplies.cancelAnsweredBy(outgoing)
     }
 
     /**
