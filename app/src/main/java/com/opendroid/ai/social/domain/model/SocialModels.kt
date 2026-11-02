@@ -90,7 +90,8 @@ data class SocialInteraction(
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
     val status: String = "UNREAD", // UNREAD, READ, RESOLVED, REPLIED
-    val suggestedAction: String? = null
+    val suggestedAction: String? = null,
+    val replyTargetId: String? = null
 )
 
 data class SocialAnalytics(

@@ -177,7 +177,7 @@ class SocialManagerIdempotencyTest {
     fun `leaving the screen mid-publish still records the post that went live`() = runBlocking {
         val id = savePost()
 
-        cancelledDuringSend { manager.publishPost(id) }
+        cancelledDuringSend { manager.publishPost(id, "USER") }
 
         assertEquals(1, sends.get())
         val post = repository.getPostById(id)!!
@@ -190,9 +190,9 @@ class SocialManagerIdempotencyTest {
     @Test
     fun `publishing again after leaving the screen does not post twice`() = runBlocking {
         val id = savePost()
-        cancelledDuringSend { manager.publishPost(id) }
+        cancelledDuringSend { manager.publishPost(id, "USER") }
 
-        val retry = manager.publishPost(id)
+        val retry = manager.publishPost(id, "USER")
 
         assertTrue(retry.isFailure)
         assertEquals(1, sends.get())
@@ -204,10 +204,10 @@ class SocialManagerIdempotencyTest {
         var second: Result<PublishPostResult>? = null
         duringSend = {
             duringSend = {}
-            second = runBlocking { manager.publishPost(id) }
+            second = runBlocking { manager.publishPost(id, "USER") }
         }
 
-        val first = manager.publishPost(id)
+        val first = manager.publishPost(id, "USER")
 
         assertTrue(first.isSuccess)
         assertTrue(second!!.isFailure)
@@ -262,7 +262,7 @@ class SocialManagerIdempotencyTest {
     fun `a post left in PUBLISHING by process death is never re-sent automatically`() = runBlocking {
         val id = savePost(PostStatus.PUBLISHING)
 
-        val retry = manager.publishPost(id)
+        val retry = manager.publishPost(id, "USER")
 
         assertTrue(retry.isFailure)
         assertEquals(0, sends.get())
@@ -275,7 +275,7 @@ class SocialManagerIdempotencyTest {
         for (status in listOf(PostStatus.PUBLISHED, PostStatus.CANCELLED)) {
             val id = savePost(status)
 
-            assertTrue(manager.publishPost(id).isFailure)
+            assertTrue(manager.publishPost(id, "USER").isFailure)
             assertEquals(status, repository.getPostById(id)!!.status)
         }
         assertEquals(0, sends.get())
@@ -286,13 +286,13 @@ class SocialManagerIdempotencyTest {
         val id = savePost()
         responseCode = 500
 
-        assertTrue(manager.publishPost(id).isFailure)
+        assertTrue(manager.publishPost(id, "USER").isFailure)
 
         assertEquals(PostStatus.FAILED, repository.getPostById(id)!!.status)
         assertNotNull(repository.getPostById(id)!!.errorMessage)
 
         responseCode = 200
-        assertTrue(manager.publishPost(id).isSuccess)
+        assertTrue(manager.publishPost(id, "USER").isSuccess)
 
         assertEquals(2, sends.get())
         val post = repository.getPostById(id)!!
@@ -306,7 +306,7 @@ class SocialManagerIdempotencyTest {
             SocialPost(id = POST_ID, accountId = "gone", platform = SocialPlatform.X, content = "hello")
         )
 
-        assertTrue(manager.publishPost(POST_ID).isFailure)
+        assertTrue(manager.publishPost(POST_ID, "USER").isFailure)
 
         assertEquals(PostStatus.DRAFT, repository.getPostById(POST_ID)!!.status)
         assertEquals(0, sends.get())
@@ -356,7 +356,7 @@ class SocialManagerIdempotencyTest {
         assertEquals(0, sends.get())
         assertEquals(1, audit("RESOLVED_INTERRUPTED_PUBLISH").size)
 
-        assertTrue(manager.publishPost(id).isSuccess)
+        assertTrue(manager.publishPost(id, "USER").isSuccess)
         assertEquals(1, sends.get())
     }
 
@@ -381,7 +381,7 @@ class SocialManagerIdempotencyTest {
             settled = runBlocking { manager.resolveInterruptedPublish(id, wasPublished = false) }
         }
 
-        assertTrue(manager.publishPost(id).isSuccess)
+        assertTrue(manager.publishPost(id, "USER").isSuccess)
 
         assertTrue(settled!!.isFailure)
         assertEquals(PostStatus.PUBLISHED, repository.getPostById(id)!!.status)
@@ -495,7 +495,7 @@ class SocialManagerIdempotencyTest {
             )
         )
 
-        val result = manager.publishPost(POST_ID)
+        val result = manager.publishPost(POST_ID, "USER")
 
         assertEquals("Publishing to YouTube isn't supported yet", result.exceptionOrNull()?.message)
         assertEquals(0, sends.get())
@@ -555,7 +555,7 @@ class SocialManagerIdempotencyTest {
         val account = connectSandboxTelegram(listOf(SocialPermission.READ_POSTS))
         val draft = manager.createDraft(account.id, SocialPlatform.TELEGRAM, "hello")
 
-        val result = manager.publishPost(draft.id)
+        val result = manager.publishPost(draft.id, "USER")
 
         assertEquals(
             "@${account.username} doesn't have the Publish Posts permission. Reconnect the account to turn it on.",
@@ -591,7 +591,7 @@ class SocialManagerIdempotencyTest {
         val account = connectSandboxTelegram(SEND_PERMISSIONS)
         val draft = manager.createDraft(account.id, SocialPlatform.TELEGRAM, "hello")
 
-        assertTrue(manager.publishPost(draft.id).isSuccess)
+        assertTrue(manager.publishPost(draft.id, "USER").isSuccess)
         assertTrue(manager.replyToComment(saveCommentFor(account.id), "thanks").isSuccess)
 
         assertEquals(PostStatus.PUBLISHED, repository.getPostById(draft.id)!!.status)
@@ -660,7 +660,7 @@ class SocialManagerIdempotencyTest {
         val attachedTo = repository.getAccountByPlatform(SocialPlatform.TELEGRAM)!!.id
         val draft = manager.createDraft(attachedTo, SocialPlatform.TELEGRAM, "hello")
 
-        assertTrue(manager.publishPost(draft.id).isSuccess)
+        assertTrue(manager.publishPost(draft.id, "USER").isSuccess)
         assertEquals("b", attachedTo)
         assertTrue(lastRequestUrl!!.contains("123:b"))
     }

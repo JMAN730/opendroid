@@ -20,6 +20,8 @@ interface SocialPlatformAdapter {
     suspend fun fetchInbox(credentials: SocialCredentials, since: Long?): Result<List<SocialInteraction>>
     suspend fun fetchComments(credentials: SocialCredentials, postId: String?): Result<List<SocialComment>>
     suspend fun replyToComment(credentials: SocialCredentials, commentId: String, text: String): Result<ReplyCommentResult>
+    // Inbox items (DMs, mentions) aren't comments, so each platform answers them its own way.
+    suspend fun replyToInteraction(credentials: SocialCredentials, interaction: SocialInteraction, text: String): Result<ReplyCommentResult>
     suspend fun fetchAnalytics(credentials: SocialCredentials): Result<SocialAnalytics>
     suspend fun refreshToken(credentials: SocialCredentials): Result<SocialCredentials>
 }

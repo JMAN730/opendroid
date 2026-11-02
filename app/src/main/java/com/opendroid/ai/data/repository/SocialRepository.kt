@@ -31,6 +31,9 @@ open class SocialRepository @Inject constructor(
     fun getConnectedAccountsFlow(): Flow<List<SocialAccount>> =
         accountDao.getConnectedAccountsFlow().map { list -> list.map { it.toDomain() } }
 
+    suspend fun getConnectedAccounts(): List<SocialAccount> =
+        accountDao.getConnectedAccounts().map { it.toDomain() }
+
     suspend fun getAccountById(id: String): SocialAccount? =
         accountDao.getAccountById(id)?.toDomain()
 
@@ -136,7 +139,9 @@ open class SocialRepository @Inject constructor(
     }
 
     suspend fun saveComments(comments: List<SocialComment>) {
-        commentDao.insertAll(comments.map { it.toEntity() })
+        val entities = comments.map { it.toEntity() }
+        commentDao.insertAllNew(entities)
+        entities.forEach { commentDao.updateSyncedContent(it.id, it.content, it.authorName, it.authorAvatarUrl, it.accountId) }
     }
 
     suspend fun updateSuggestedReply(id: String, reply: String) {
@@ -179,8 +184,13 @@ open class SocialRepository @Inject constructor(
     }
 
     suspend fun saveInteractions(interactions: List<SocialInteraction>) {
-        interactionDao.insertAll(interactions.map { it.toEntity() })
+        val entities = interactions.map { it.toEntity() }
+        interactionDao.insertAllNew(entities)
+        entities.forEach { interactionDao.updateSyncedContent(it.id, it.content, it.authorName, it.authorHandle, it.replyTargetId) }
     }
+
+    suspend fun getInteractionById(id: String): SocialInteraction? =
+        interactionDao.getInteractionById(id)?.toDomain()
 
     suspend fun updateInteractionStatus(id: String, status: String) {
         interactionDao.updateStatus(id, status)
@@ -401,7 +411,8 @@ open class SocialRepository @Inject constructor(
         content = content,
         timestamp = timestamp,
         status = status,
-        suggestedAction = suggestedAction
+        suggestedAction = suggestedAction,
+        replyTargetId = replyTargetId
     )
 
     private fun SocialInteraction.toEntity(): SocialInteractionEntity = SocialInteractionEntity(
@@ -416,7 +427,8 @@ open class SocialRepository @Inject constructor(
         content = content,
         timestamp = timestamp,
         status = status,
-        suggestedAction = suggestedAction
+        suggestedAction = suggestedAction,
+        replyTargetId = replyTargetId
     )
 
     private fun SocialAnalyticsSnapshotEntity.toDomain(): SocialAnalytics = SocialAnalytics(
@@ -444,19 +456,19 @@ open class SocialRepository @Inject constructor(
         accountId = accountId,
         platform = platform.id,
         timestamp = timestamp,
-        followersCount = followersCount ?: 0,
-        followingCount = followingCount ?: 0,
-        postsCount = postsCount ?: 0,
-        totalLikes = totalLikes ?: 0,
-        totalComments = totalComments ?: 0,
-        totalShares = totalShares ?: 0,
-        totalViews = totalViews ?: 0,
-        reach = reach ?: 0,
-        impressions = impressions ?: 0,
-        engagementRate = engagementRate ?: 0f,
-        subscribersCount = subscribersCount ?: 0,
-        profileVisits = profileVisits ?: 0,
-        linkClicks = linkClicks ?: 0,
+        followersCount = followersCount,
+        followingCount = followingCount,
+        postsCount = postsCount,
+        totalLikes = totalLikes,
+        totalComments = totalComments,
+        totalShares = totalShares,
+        totalViews = totalViews,
+        reach = reach,
+        impressions = impressions,
+        engagementRate = engagementRate,
+        subscribersCount = subscribersCount,
+        profileVisits = profileVisits,
+        linkClicks = linkClicks,
         periodLabel = periodLabel
     )
 
