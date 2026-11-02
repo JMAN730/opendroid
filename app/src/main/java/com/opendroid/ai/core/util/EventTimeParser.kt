@@ -25,6 +25,9 @@ object EventTimeParser {
     private val ISO_DATE = Regex("""^\d{4}-\d{2}-\d{2}$""")
     private val MONTH_FIRST = Regex("""^([a-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?$""")
     private val DAY_FIRST = Regex("""^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,})(?:\s+(\d{4}))?$""")
+    private const val DURATION_PART =
+        """\d+(?:\.\d+)?\s*(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|sec|s)"""
+    private val RELATIVE_DURATION = Regex("""^$DURATION_PART(?:\s*(?:and\s+)?$DURATION_PART)*$""")
 
     fun parseMoment(input: String, now: ZonedDateTime): EventMoment? {
         val raw = input.trim()
@@ -44,6 +47,8 @@ object EventTimeParser {
         val clean = words.joinToString(" ")
 
         Regex("""^in\s+(\d.*[a-z])$""").find(clean)?.let { match ->
+            // DurationParser skips words it cannot read, so "1 day and 2 hours" would come back as two hours.
+            if (!RELATIVE_DURATION.matches(match.groupValues[1])) return null
             val seconds = DurationParser.parseToSeconds(match.groupValues[1]) ?: return null
             return EventMoment(now.plusSeconds(seconds.toLong()), hasTime = true)
         }

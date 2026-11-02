@@ -66,6 +66,15 @@ class EventTimeParserTest {
     fun `relative durations count from now`() {
         assertTimed("in 30 minutes", at(11, 2, 10, 30))
         assertTimed("in 2 hours", at(11, 2, 12, 0))
+        assertTimed("in 1 hour and 30 minutes", at(11, 2, 11, 30))
+        assertTimed("in 1h30m", at(11, 2, 11, 30))
+    }
+
+    @Test
+    fun `relative durations with an unread part are null rather than shortened`() {
+        listOf("in 1 day and 2 hours", "in 2 weeks 3 hours", "in 2 hours or so").forEach {
+            assertNull(it, EventTimeParser.parseMoment(it, now))
+        }
     }
 
     @Test
