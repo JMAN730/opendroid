@@ -17,6 +17,8 @@ import com.opendroid.ai.actions.MediaPlaybackVerifier
 import com.opendroid.ai.core.agent.ActionSequenceExecutor
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.ChatAgent
+import com.opendroid.ai.core.llm.OnDeviceEngineReleaser
+import com.opendroid.ai.core.llm.providers.LiteRTLMProvider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -82,6 +84,15 @@ object AppModule {
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .build()
+    }
+
+    // Lazy: LiteRTLMProvider itself depends on ModelRepository, which takes this releaser.
+    @Provides
+    @Singleton
+    fun provideOnDeviceEngineReleaser(
+        liteRTProvider: dagger.Lazy<LiteRTLMProvider>
+    ): OnDeviceEngineReleaser = OnDeviceEngineReleaser { modelDir ->
+        liteRTProvider.get().releaseIfLoadedFrom(modelDir)
     }
 
     @Provides

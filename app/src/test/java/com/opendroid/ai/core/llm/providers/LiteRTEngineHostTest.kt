@@ -2,6 +2,7 @@ package com.opendroid.ai.core.llm.providers
 
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.OnDeviceModelSpec
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -257,6 +258,21 @@ class LiteRTEngineHostTest {
         host.complete("other/model.litertlm", spec, PROMPT, 500, 0.5f)
         assertFalse(host.holds(PATH))
         assertTrue(host.holds("other/model.litertlm"))
+    }
+
+    @Test
+    fun `closeIfLoadedFrom closes only an engine loaded from that model folder`() = runBlocking {
+        val runtime = FakeRuntime(tokens = 1)
+        val host = LiteRTEngineHost(runtime::open)
+        host.complete(PATH, spec, PROMPT, 500, 0.5f)
+
+        host.closeIfLoadedFrom(File("other"))
+        assertTrue(host.holds(PATH))
+        assertFalse(runtime.engines.single().closed)
+
+        host.closeIfLoadedFrom(File(PATH).parentFile!!)
+        assertFalse(host.holds(PATH))
+        assertTrue(runtime.engines.single().closed)
     }
 
     private companion object {
