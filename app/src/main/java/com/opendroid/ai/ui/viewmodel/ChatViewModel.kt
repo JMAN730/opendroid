@@ -169,7 +169,8 @@ class ChatViewModel @Inject constructor(
     val pendingContactPickerMessageId: StateFlow<String?> = agentLoop.pendingContactPickerMessageId
 
     fun selectContact(pickerMessageId: String, contact: Map<String, String>, context: Context) {
-        agentLoop.answerContactPicker(pickerMessageId, contact, context, pinTaskSessionSnapshot())
+        val sessionId = sessions.value.firstOrNull { it.isCurrent }?.id
+        agentLoop.answerContactPicker(pickerMessageId, contact, context, sessionId)
     }
 
     /**
