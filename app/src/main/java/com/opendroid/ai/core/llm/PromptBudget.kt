@@ -1,6 +1,8 @@
 package com.opendroid.ai.core.llm
 
 import com.opendroid.ai.data.models.ChatMessage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 /**
  * Token budgeting for on-device models with small, fixed context windows.
@@ -107,6 +109,21 @@ object PromptBudget {
         val remaining = contextWindow - budgetedPromptTokens(prompt)
         if (remaining < MIN_OUTPUT_TOKENS) return null
         return minOf(requestedOutputTokens, remaining)
+    }
+
+    /**
+     * Collects the deltas in [chunks], handing each to [onText], until they end or their text
+     * reaches [cap] tokens, and returns that text. Reaching the cap stops the collection of
+     * [chunks] but not native decoding, which the caller still has to cancel.
+     */
+    suspend fun collectCapped(chunks: Flow<String>, cap: Int, onText: suspend (String) -> Unit): String {
+        val text = StringBuilder()
+        chunks.firstOrNull { chunk ->
+            text.append(chunk)
+            onText(chunk)
+            estimateTokens(text.toString()) >= cap
+        }
+        return text.toString()
     }
 
     /**

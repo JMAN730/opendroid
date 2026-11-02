@@ -7,8 +7,11 @@ import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -44,6 +47,7 @@ class LiteRTLMProvider @Inject constructor(
 
     private var cachedEngine: Engine? = null
     private var cachedModelPath: String? = null
+    private val inferenceMutex = Mutex()
     private val artifactVerifier = ModelArtifactVerifier(
         hashVerifier = CachingFileHashVerifier()
     )
@@ -142,6 +146,8 @@ class LiteRTLMProvider @Inject constructor(
                     provider = name,
                     latencyMs = System.currentTimeMillis() - startTime
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 throw handleThrowable(e, spec)
             }
@@ -177,22 +183,13 @@ class LiteRTLMProvider @Inject constructor(
             val conversationConfig = ConversationConfig(samplerConfig = samplerConfig)
             val conversation = engine.createConversation(conversationConfig)
 
-            var lastLength = 0
             try {
-                conversation.sendMessageAsync(prompt).collect { msg ->
-                    val fullText = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                    if (fullText.length > lastLength) {
-                        val delta = fullText.substring(lastLength)
-                        lastLength = fullText.length
-                        emit(delta)
-                    }
-                    if (PromptBudget.estimateTokens(fullText) >= maxAllowedTokens) {
-                        return@collect
-                    }
-                }
+                PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) { emit(it) }
             } finally {
-                conversation.close()
+                conversation.cancelAndClose()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             val spec = resolveModelSpec(modelId)
             emit("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}")
@@ -231,6 +228,8 @@ class LiteRTLMProvider @Inject constructor(
             } catch (_: Throwable) {
                 // Not JSON — treat as plain text
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             val spec = resolveModelSpec(modelId)
             emit(StreamChunk.Content("Error (LiteRT-LM): ${handleThrowable(e, spec).localizedMessage}"))
@@ -370,8 +369,37 @@ class LiteRTLMProvider @Inject constructor(
             )
     }
 
-    @Synchronized
-    private fun invokeLiteRTInference(
+    /** The text deltas of the reply to [prompt]. LiteRT-LM emits only the new text in each message. */
+    private fun Conversation.textChunks(prompt: String): Flow<String> =
+        sendMessageAsync(prompt)
+            .map { msg -> msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text } }
+            .filter { it.isNotEmpty() }
+
+    /**
+     * Ends a conversation whether or not it is still decoding. The flow from `sendMessageAsync`
+     * does not cancel anything when its collector stops, so decoding has to be cancelled here.
+     * Cancelling after decoding has finished is a no-op.
+     */
+    private fun Conversation.cancelAndClose() {
+        try {
+            cancelProcess()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling LiteRT conversation: ${e.message}")
+        }
+        close()
+    }
+
+    private suspend fun invokeLiteRTInference(
+        modelPath: String,
+        spec: OnDeviceModelSpec,
+        prompt: String,
+        maxTokens: Int,
+        temperature: Float
+    ): String = inferenceMutex.withLock {
+        runLiteRTInference(modelPath, spec, prompt, maxTokens, temperature)
+    }
+
+    private suspend fun runLiteRTInference(
         modelPath: String,
         spec: OnDeviceModelSpec,
         prompt: String,
@@ -438,20 +466,12 @@ class LiteRTLMProvider @Inject constructor(
 
                 try {
                     val maxAllowedTokens = checkPromptFits(prompt, spec, maxTokens)
-                    var accumulatedText = ""
-                    kotlinx.coroutines.runBlocking {
-                        conversation.sendMessageAsync(prompt).collect { msg ->
-                            val text = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-                            accumulatedText = text
-                            if (PromptBudget.estimateTokens(accumulatedText) >= maxAllowedTokens) {
-                                return@collect
-                            }
-                        }
-                    }
-                    accumulatedText
+                    PromptBudget.collectCapped(conversation.textChunks(prompt), maxAllowedTokens) {}
                 } finally {
-                    conversation.close()
+                    conversation.cancelAndClose()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 val cause = e.cause
                 Log.e(TAG, "[INIT FLOW] [FAILURE] Inference execution failed", e)
@@ -460,6 +480,8 @@ class LiteRTLMProvider @Inject constructor(
             Log.i(TAG, "[INIT FLOW] [SUCCESS] Inference succeeded. Received response of length ${result.length}.")
             return result
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             closeCachedEngine()
             throw e
