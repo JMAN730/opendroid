@@ -205,36 +205,6 @@ class MemoryManager @Inject constructor(
         }
     }
 
-    suspend fun cleanPoisonedMemories() {
-        val poisonPhrases = listOf(
-            "invalid_action",
-            "not registered",
-            "actiondispatcher",
-            "do not use this action",
-            "whitelisted",
-            "execution error",
-            "action module",
-            "unknown action",
-            "not a valid action"
-        )
-
-        val allFacts = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
-        val poisoned = allFacts.filter { fact ->
-            poisonPhrases.any { phrase ->
-                fact.key.contains(phrase, ignoreCase = true) ||
-                fact.value.contains(phrase, ignoreCase = true)
-            }
-        }
-
-        if (poisoned.isNotEmpty()) {
-            poisoned.forEach { memoryRepository.deleteMemory(it.key) }
-            Log.d("MemoryCleanup", "Removed ${poisoned.size} poisoned memory entries")
-        }
-
-        // Also clean expired memories
-        memoryRepository.deleteExpiredMemories()
-    }
-
     suspend fun logTaskExecution(
         stepId: String,
         planId: String,
