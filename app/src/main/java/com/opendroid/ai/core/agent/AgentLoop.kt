@@ -350,6 +350,17 @@ interface ChatAgent {
     fun rejectProposedPlan()
     fun forgetSession(sessionId: String)
     fun cancelCurrentTask()
+
+    /** Id of the contact picker message the running task is waiting on, or null. */
+    val pendingContactPickerMessageId: StateFlow<String?>
+
+    /** Answers that picker with the tapped contact; false if [pickerMessageId] is not it. */
+    fun answerContactPicker(
+        pickerMessageId: String,
+        contact: Map<String, String>,
+        context: Context,
+        explicitSessionId: String?
+    ): Boolean
 }
 
 @Singleton
@@ -504,13 +515,13 @@ class AgentLoop @Inject constructor(
 
     @Volatile private var activeContactPicker: ActiveContactPicker? = null
     private val _pendingContactPickerMessageId = MutableStateFlow<String?>(null)
-    val pendingContactPickerMessageId: StateFlow<String?> = _pendingContactPickerMessageId.asStateFlow()
+    override val pendingContactPickerMessageId: StateFlow<String?> = _pendingContactPickerMessageId.asStateFlow()
 
     /**
      * Answers the pending contact picker with the contact tapped on its card. Returns false,
      * and does nothing, when [pickerMessageId] is not the picker currently waiting.
      */
-    fun answerContactPicker(
+    override fun answerContactPicker(
         pickerMessageId: String,
         contact: Map<String, String>,
         context: Context,
