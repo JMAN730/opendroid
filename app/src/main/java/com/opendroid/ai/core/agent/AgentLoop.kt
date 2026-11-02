@@ -1091,7 +1091,7 @@ class AgentLoop @Inject constructor(
             // Redaction must be based on the dispatcher's canonical mapped action,
             // not the raw plan action string — the dispatcher accepts non-canonical
             // names (e.g. "EMAIL", "send-email") that still execute as SEND_EMAIL.
-            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action)
+            val canonicalActionName = actionDispatcher.canonicalActionName(stepToExecute.action, resolvedParams)
 
             try {
                 memoryManager.logTaskExecution(

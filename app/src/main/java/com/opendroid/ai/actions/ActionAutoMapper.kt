@@ -549,6 +549,21 @@ class ActionAutoMapper @Inject constructor() {
     //  PUBLIC API — full resolution pipeline
     // ════════════════════════════════════════════════════════════════
 
+    /**
+     * The action [mapAction] will actually run for [action], for callers that decide on it after
+     * the fact, such as history redaction. Resolution depends on the step's params (a channel-led
+     * send needs its recipient), so they must be the ones execution saw.
+     */
+    fun canonicalActionName(
+        action: String,
+        params: Map<String, String>,
+        registeredActions: Set<String>
+    ): String {
+        val normalized = normalizeActionName(action)
+        if (ActionSchema.isValid(normalized) || normalized in registeredActions) return normalized
+        return mapAction(action, params, registeredActions).mappedAction ?: normalized
+    }
+
     fun mapAction(
         action: String,
         params: Map<String, String>,
