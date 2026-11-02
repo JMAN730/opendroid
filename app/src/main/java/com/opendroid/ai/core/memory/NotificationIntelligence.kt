@@ -34,6 +34,7 @@ class NotificationIntelligence @Inject constructor(
         val now = System.currentTimeMillis()
         if (now - lastAnalysisTimestamp < ANALYSIS_INTERVAL_MS) return
         lastAnalysisTimestamp = now
+        cleanupOldNotifications()
         analyzePatterns()
     }
 
