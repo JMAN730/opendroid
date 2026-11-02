@@ -479,11 +479,9 @@ object StorageWorkspaceProvider {
             val caseOnly = srcParts.isNotEmpty() && srcParts != destParts && srcParts.dropLast(1) == destParts.dropLast(1) &&
                 srcParts.last().equals(destParts.lastOrNull(), ignoreCase = true)
             if (caseOnly) {
-                return if (src.renameTo(destParts.last())) {
-                    ActionResult(true, "Moved from $srcPath to $destPath!", null)
-                } else {
-                    ActionResult(false, null, "Couldn't rename $srcPath to $destPath")
-                }
+                return renameCaseOnly(src, srcParts.last(), destParts.last())?.let {
+                    ActionResult(false, null, "Couldn't rename $srcPath to $destPath$it")
+                } ?: ActionResult(true, "Moved from $srcPath to $destPath!", null)
             }
             documentOverlapError(srcParts, destParts, srcPath, destPath)?.let { return ActionResult(false, null, it) }
             copyDocumentTo(context, src, root, destParts)
@@ -495,6 +493,17 @@ object StorageWorkspaceProvider {
         } catch (e: Exception) {
             ActionResult(false, null, "Couldn't move file in your chosen folder: ${e.localizedMessage}")
         }
+    }
+
+    /**
+     * Renames [doc] from [from] to [to], names that differ only by case. A provider on case-insensitive storage sees
+     * [to] as taken by [doc] itself and adds a " (1)" suffix, so the rename goes through a free name and the result is
+     * checked. Returns null on success, or what is left to say about where the document ended up.
+     */
+    private fun renameCaseOnly(doc: DocumentFile, from: String, to: String): String? {
+        if (!doc.renameTo("$from.opendroid-rename")) return ""
+        if (doc.renameTo(to) && doc.name == to) return null
+        return if (doc.renameTo(from) && doc.name == from) "" else "; it is now named ${doc.name}"
     }
 
     private fun moveFileLocal(context: Context, srcPath: String, destPath: String): ActionResult {
