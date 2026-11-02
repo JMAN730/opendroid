@@ -653,7 +653,7 @@ class AgentLoop @Inject constructor(
 
             val validated = planManager.startNewPlan(plan, context, PlanStatus.PROPOSED)
             val approval = settingsRepository.llmConfig.first().approvalSettings()
-            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated)) {
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, originalQuery)) {
                 executePlanLoop(validated, context, sessionId, autoApproved = true)
             } else {
                 proposePlan(validated, sessionId)
@@ -932,7 +932,7 @@ class AgentLoop @Inject constructor(
             // while planning was in flight; stale pre-LLM config must not auto-run.
             val liveConfig = settingsRepository.llmConfig.first()
             val approval = liveConfig.approvalSettings()
-            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated)) {
+            if (AutoApprovalPolicy.shouldAutoApprove(approval.mode, approval.grantedActions, validated, userMsg.text)) {
                 recordAutoApprovedTrace(validated, approval.mode, sessionId)
                 executePlanLoop(validated, context, sessionId, autoApproved = true)
             } else {

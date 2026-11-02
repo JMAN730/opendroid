@@ -105,6 +105,41 @@ class AutoApprovalPolicyTest {
     }
 
     @Test
+    fun `AUTO proposes a conditional send that runs before anything checks the condition`() {
+        val smsGranted = granted + "SEND_SMS"
+        val conditional = "If it rains tomorrow, text my wife that I'll pick up the kids"
+        assertFalse(AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, smsGranted, plan("SEND_SMS"), conditional))
+        assertFalse(
+            AutoApprovalPolicy.shouldAutoApprove(
+                AutoMode.AUTO, smsGranted, plan("SEND_SMS", "GET_WEATHER"), "Text my wife I'll pick up the kids if it rains"
+            )
+        )
+    }
+
+    @Test
+    fun `AUTO still runs a conditional send once a data step checks the condition first`() {
+        val smsGranted = granted + "SEND_SMS"
+        val conditional = "If it rains tomorrow, text my wife that I'll pick up the kids"
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, smsGranted, plan("GET_WEATHER", "SEND_SMS"), conditional)
+        )
+    }
+
+    @Test
+    fun `AUTO still runs an unconditional granted send`() {
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.AUTO, granted + "SEND_SMS", plan("SEND_SMS"), "text my wife hi")
+        )
+    }
+
+    @Test
+    fun `YOLO keeps approving a conditional send`() {
+        assertTrue(
+            AutoApprovalPolicy.shouldAutoApprove(AutoMode.YOLO, emptySet(), plan("SEND_SMS"), "if it rains text my wife")
+        )
+    }
+
+    @Test
     fun `blank primary action is ignored`() {
         val steps = listOf(step("s0", "   "))
         assertTrue(
