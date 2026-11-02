@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.models.PlanStep
+import com.opendroid.ai.data.models.StepStatus
 import dagger.Lazy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -97,6 +98,55 @@ class PlanValidatorContactsTest {
         shadowOf(context as Application).denyPermissions(Manifest.permission.READ_CONTACTS)
         assertEquals(listOf("ASK_USER", "SEND_SMS"), validated(validator, "SEND_SMS", "John").map { it.action })
     }
+
+    @Test
+    fun `re-validating an answered ask adds no second ask`() = runBlocking {
+        val validator = validator("Mary Doe" to "+15550102")
+        val first = validator.validateAndFix(
+            plan(
+                PlanStep(stepId = "s1", order = 1, description = "send", action = "SEND_SMS", params = mapOf("contact" to "Bob")),
+                PlanStep(stepId = "s2", order = 2, description = "alarm", action = "SET_ALARM", params = mapOf("time" to "07:00"))
+            ),
+            context
+        )
+        assertEquals(listOf("s1_ask", "s1", "s2"), first.steps.map { it.stepId })
+        assertEquals("\$s1_ask", first.steps[1].params["contact"])
+
+        val finished = first.steps.map {
+            if (it.stepId == "s2") it else it.copy(status = StepStatus.COMPLETED)
+        }
+        val second = validator.validateAndFix(first.copy(steps = finished), context)
+        assertEquals(listOf("s1_ask", "s1", "s2"), second.steps.map { it.stepId })
+        assertEquals(listOf(StepStatus.COMPLETED, StepStatus.COMPLETED, StepStatus.PENDING), second.steps.map { it.status })
+    }
+
+    @Test
+    fun `a finished step is copied through without resolving its contact`() = runBlocking {
+        val sent = PlanStep(
+            stepId = "s1", order = 4, description = "send", action = "SEND_SMS",
+            params = mapOf("contact" to "John"), status = StepStatus.COMPLETED, result = "sent"
+        )
+        val steps = validator("Mary Doe" to "+15550102").validateAndFix(plan(sent), context).steps
+        assertEquals(listOf(sent.copy(order = 1)), steps)
+    }
+
+    @Test
+    fun `a pending step reuses an ask step that already exists`() = runBlocking {
+        val asked = PlanStep(
+            stepId = "s1_ask", order = 1, description = "ask", action = "ASK_USER",
+            params = mapOf("question" to "What is their phone number?"),
+            status = StepStatus.COMPLETED, result = "+15550199"
+        )
+        val send = PlanStep(stepId = "s1", order = 2, description = "send", action = "SEND_SMS", params = mapOf("contact" to "Bob"))
+        val steps = validator("Mary Doe" to "+15550102").validateAndFix(plan(asked, send), context).steps
+        assertEquals(listOf("s1_ask", "s1"), steps.map { it.stepId })
+        assertEquals(asked.copy(order = 1), steps[0])
+        assertEquals("\$s1_ask", steps[1].params["contact"])
+        assertEquals(listOf("s1_ask"), steps[1].dependsOn)
+    }
+
+    private fun plan(vararg steps: PlanStep) =
+        Plan(planId = "p1", goal = "text", estimatedDuration = "", estimatedSteps = steps.size, steps = steps.toList())
 }
 
 class FakeContactsProvider : ContentProvider() {
