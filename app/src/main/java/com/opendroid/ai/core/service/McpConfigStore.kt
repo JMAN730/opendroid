@@ -71,6 +71,9 @@ class McpConfigStore private constructor(
 
     val recoveryState: StateFlow<McpConfigRecoveryState> = mutableRecoveryState
 
+    // Storage keys whose envelope failed to decrypt on the last read.
+    private val unreadableKeys = mutableSetOf<String>()
+
     @Synchronized
     fun accessToken(): String {
         readSecret(TOKEN_KEY, TOKEN_AAD)?.takeIf { it.isNotEmpty() }?.let { return it }
@@ -127,13 +130,42 @@ class McpConfigStore private constructor(
                 error("MCP secret storage is unavailable for $storageKey")
             }
         }
+        unreadableKeys.clear()
         mutableRecoveryState.value = McpConfigRecoveryState.Ready
     }
 
+    /**
+     * Reads every stored secret once so [recoveryState] reflects the records as they are now,
+     * without minting a token. Lets the settings screen offer the reset before any MCP request.
+     */
+    @Synchronized
+    fun refreshRecoveryState(): McpConfigRecoveryState {
+        for ((storageKey, aad) in SECRETS) {
+            try {
+                readSecret(storageKey, aad)
+            } catch (_: McpSecretsMustBeReenteredException) {
+                // Recorded in unreadableKeys; keep checking the other record.
+            }
+        }
+        return mutableRecoveryState.value
+    }
+
     // Once a stored envelope failed to decrypt, writing over it would discard what it held.
+    // Check again rather than trusting the last result, so a Keystore that came back is usable.
     private fun requireReady() {
-        if (mutableRecoveryState.value != McpConfigRecoveryState.Ready) {
+        if (mutableRecoveryState.value != McpConfigRecoveryState.Ready &&
+            refreshRecoveryState() != McpConfigRecoveryState.Ready
+        ) {
             throw McpSecretsMustBeReenteredException()
+        }
+    }
+
+    private fun markReadable(storageKey: String, readable: Boolean) {
+        if (readable) unreadableKeys.remove(storageKey) else unreadableKeys.add(storageKey)
+        mutableRecoveryState.value = if (unreadableKeys.isEmpty()) {
+            McpConfigRecoveryState.Ready
+        } else {
+            McpConfigRecoveryState.SecretsMustBeReentered
         }
     }
 
@@ -154,6 +186,7 @@ class McpConfigStore private constructor(
         while (true) {
             when (val result = records.read(storageKey, aad)) {
                 is SecretRecordResult.Success -> {
+                    markReadable(storageKey, readable = true)
                     val value = result.value ?: return migratePlaintext(storageKey, aad)
                     return String(value, StandardCharsets.UTF_8)
                 }
@@ -161,12 +194,13 @@ class McpConfigStore private constructor(
                     // A value that is not an envelope was written by the initial plaintext build.
                     val raw = rawPreference(storageKey)
                     if (raw != null && SecretEnvelope.decode(raw) == null) {
+                        markReadable(storageKey, readable = true)
                         return migratePlaintext(storageKey, aad)
                     }
                     // An envelope that will not decrypt. The Keystore reports a busy or restarting
                     // provider the same way as a lost key, so retry before giving up on it.
                     if (attempt >= DECRYPT_ATTEMPTS) {
-                        mutableRecoveryState.value = McpConfigRecoveryState.SecretsMustBeReentered
+                        markReadable(storageKey, readable = false)
                         throw McpSecretsMustBeReenteredException()
                     }
                     attempt++
@@ -216,6 +250,7 @@ class McpConfigStore private constructor(
         private const val ENDPOINTS_AAD = "mcp-endpoints"
         private const val DECRYPT_ATTEMPTS = 3
         private const val DECRYPT_RETRY_DELAY_MS = 50L
+        private val SECRETS = listOf(TOKEN_KEY to TOKEN_AAD, ENDPOINTS_KEY to ENDPOINTS_AAD)
         private val json = Json {
             ignoreUnknownKeys = true
             encodeDefaults = true

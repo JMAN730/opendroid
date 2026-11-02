@@ -65,12 +65,61 @@ class McpConfigStoreTest {
         cipher.broken = true
         assertThrows(McpSecretsMustBeReenteredException::class.java) { store.upsert(endpoint("b")) }
         assertThrows(McpSecretsMustBeReenteredException::class.java) { store.remove("a") }
+        assertEquals(McpConfigRecoveryState.SecretsMustBeReentered, store.recoveryState.value)
         cipher.broken = false
 
         assertEquals(listOf(a), store.list())
-        assertEquals(McpConfigRecoveryState.SecretsMustBeReentered, store.recoveryState.value)
-        assertThrows(McpSecretsMustBeReenteredException::class.java) { store.upsert(endpoint("c")) }
-        assertEquals(listOf(a), store.list())
+    }
+
+    @Test
+    fun `edits work again once the stored secrets decrypt again`() {
+        val cipher = BreakableCipher()
+        val store = sharedFileStore(cipher)
+        val a = endpoint("a")
+        store.upsert(a)
+        store.accessToken()
+
+        // Fails for longer than the retry window, then the Keystore comes back.
+        cipher.broken = true
+        assertThrows(McpSecretsMustBeReenteredException::class.java) { store.upsert(endpoint("b")) }
+        assertThrows(McpSecretsMustBeReenteredException::class.java) { store.accessToken() }
+        cipher.broken = false
+
+        val c = endpoint("c")
+        store.upsert(c)
+        assertEquals(listOf(a, c), store.list())
+        assertEquals(McpConfigRecoveryState.Ready, store.recoveryState.value)
+    }
+
+    @Test
+    fun `refreshRecoveryState reports an unreadable token without minting a new one`() {
+        val cipher = BreakableCipher()
+        val preferences = InMemorySharedPreferences()
+        val store = McpConfigStore.createForTest(
+            records = KeystoreSecretRecords(SharedPreferencesSecretRecordStorage(preferences), cipher),
+            preferences = preferences
+        )
+        store.accessToken()
+        val storedToken = preferences.getString("access_token", null)
+
+        cipher.broken = true
+        assertEquals(McpConfigRecoveryState.SecretsMustBeReentered, store.refreshRecoveryState())
+        assertEquals(storedToken, preferences.getString("access_token", null))
+
+        cipher.broken = false
+        assertEquals(McpConfigRecoveryState.Ready, store.refreshRecoveryState())
+    }
+
+    @Test
+    fun `refreshRecoveryState on an empty store stays ready and writes nothing`() {
+        val preferences = InMemorySharedPreferences()
+        val store = McpConfigStore.createForTest(
+            records = KeystoreSecretRecords(SharedPreferencesSecretRecordStorage(preferences), BreakableCipher()),
+            preferences = preferences
+        )
+
+        assertEquals(McpConfigRecoveryState.Ready, store.refreshRecoveryState())
+        assertEquals(emptyMap<String, Any?>(), preferences.all)
     }
 
     @Test
