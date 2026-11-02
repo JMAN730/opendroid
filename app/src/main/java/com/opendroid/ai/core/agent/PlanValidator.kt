@@ -31,6 +31,19 @@ class PlanValidator @Inject constructor(
             "ASK_USER", "SPLIT_BILL", "ANALYZE_SCREENSHOT",
             "READ_AND_REMEMBER_SCREEN", "RECALL_MEMORY", "QUERY_KNOWLEDGE_GRAPH"
         )
+
+        /**
+         * A "$stepId" contact is a reference to an earlier step's result, not a name.
+         * Plans are re-validated when re-evaluation modifies them, so treating one as
+         * a name would queue a second ask step for a contact already being asked for.
+         */
+        internal fun needsContactResolution(contact: String): Boolean =
+            contact.isNotEmpty() && !isPhoneNumber(contact) && !contact.startsWith("@") && !contact.startsWith("$")
+
+        private fun isPhoneNumber(contact: String): Boolean {
+            val cleaned = contact.replace(" ", "").replace("-", "")
+            return cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })
+        }
     }
 
     fun validatePlan(plan: Plan): List<String> {
@@ -96,7 +109,7 @@ class PlanValidator @Inject constructor(
             val commActions = listOf("SEND_WHATSAPP", "SEND_TELEGRAM", "MAKE_CALL", "SEND_SMS", "MAKE_VIDEO_CALL")
             if (commActions.contains(updatedStep.action.uppercase()) && updatedStep.params.containsKey("contact")) {
                 val contactName = updatedStep.params["contact"] ?: ""
-                if (contactName.isNotEmpty() && !isPhoneNumber(contactName) && !contactName.startsWith("@")) {
+                if (needsContactResolution(contactName)) {
                     val resolvedPhone = resolveContactToPhoneNumber(context, contactName)
                     if (resolvedPhone != null) {
                         val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", resolvedPhone) }
@@ -151,11 +164,6 @@ class PlanValidator @Inject constructor(
                 UnknownActionEntity(attemptedAction = attemptedAction, goal = goal, fixStatus = fixStatus)
             )
         } catch (e: Exception) { }
-    }
-
-    private fun isPhoneNumber(contact: String): Boolean {
-        val cleaned = contact.replace(" ", "").replace("-", "")
-        return cleaned.startsWith("+") || (cleaned.isNotEmpty() && cleaned.all { it.isDigit() })
     }
 
     // lint false positive: both cursors are closed by `?.use { }` on every path,
