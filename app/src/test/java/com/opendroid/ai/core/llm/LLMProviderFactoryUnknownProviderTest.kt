@@ -3,8 +3,13 @@ package com.opendroid.ai.core.llm
 import android.content.ContextWrapper
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.opendroid.ai.actions.ActionDispatcher
+import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
+import com.opendroid.ai.core.agent.ChatErrorUiState
 import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.core.agent.IntentClassifier
+import com.opendroid.ai.core.agent.guidance
+import com.opendroid.ai.core.agent.primaryAction
+import com.opendroid.ai.core.agent.title
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.security.CredentialStoreResult
@@ -94,10 +99,31 @@ class LLMProviderFactoryUnknownProviderTest {
         assertEquals(0, geminiRequests)
     }
 
+    @Test
+    fun `the card for an unknown saved provider sends the user to Settings`() {
+        val factory = newFactory(savedActiveProvider = "Requesty")
+
+        val failure = runCatching {
+            runBlocking { factory.getActiveProvider().complete(request()) }
+        }.exceptionOrNull() as LLMException
+        val card = ChatErrorUiState.fromException(
+            sessionId = "session",
+            requestId = "req",
+            runId = "run",
+            failure = failure
+        )
+
+        assertEquals(ChatErrorPrimaryAction.OPEN_SETTINGS, card.primaryAction())
+        assertTrue(card.guidance(), card.guidance().contains("Settings"))
+        // No vendor was contacted, and resending can't help.
+        assertFalse(card.title(), card.title().contains("rejected"))
+        assertFalse(failure.retryable)
+    }
+
     private fun assertRejectedWithoutGemini(failure: Throwable?) {
         assertEquals(0, geminiRequests)
         assertTrue("Expected an LLMException, got $failure", failure is LLMException)
-        assertEquals(LLMError.RequestInvalid, (failure as LLMException).error)
+        assertEquals(LLMError.ProviderUnrecognized, (failure as LLMException).error)
     }
 
     private fun newFactory(savedActiveProvider: String): LLMProviderFactory {

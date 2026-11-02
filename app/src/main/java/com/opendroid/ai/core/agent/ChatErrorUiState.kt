@@ -73,7 +73,8 @@ enum class ChatErrorPrimaryAction {
 }
 
 fun ChatErrorUiState.primaryAction(): ChatErrorPrimaryAction = when (category) {
-    LLMError.AuthMissing, LLMError.AuthInvalid -> ChatErrorPrimaryAction.OPEN_SETTINGS
+    LLMError.AuthMissing, LLMError.AuthInvalid, LLMError.ProviderUnrecognized ->
+        ChatErrorPrimaryAction.OPEN_SETTINGS
     LLMError.QuotaExhausted -> ChatErrorPrimaryAction.CHOOSE_PROVIDER
     LLMError.ModelUnavailable -> ChatErrorPrimaryAction.CHOOSE_MODEL
     LLMError.RequestInvalid -> ChatErrorPrimaryAction.EDIT_MESSAGE
@@ -97,6 +98,7 @@ fun ChatErrorUiState.title(): String = when (category) {
     LLMError.ServerError -> "$provider had a server error"
     LLMError.MalformedResponse -> "$provider returned an unreadable response"
     LLMError.SafeFallbackUnavailable -> "No safe fallback is configured for $provider"
+    LLMError.ProviderUnrecognized -> "Your saved AI provider isn't available"
     LLMError.Unknown -> "$provider request failed"
 }
 
@@ -111,5 +113,6 @@ fun ChatErrorUiState.guidance(): String = when (category) {
     LLMError.ServerError -> "Try again in a moment."
     LLMError.MalformedResponse -> "Try again, or check technical details."
     LLMError.SafeFallbackUnavailable -> "Choose and configure an explicit fallback provider, then retry."
+    LLMError.ProviderUnrecognized -> "This version of the app doesn't recognize it. Choose a provider in Settings."
     LLMError.Unknown -> "Try again, or check technical details."
 }

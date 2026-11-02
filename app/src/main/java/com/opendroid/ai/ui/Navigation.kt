@@ -414,7 +414,10 @@ fun MainDashboard(
                 label = "DashboardTabTransition"
             ) { tab ->
                 when (tab) {
-                    Screen.Chat -> ChatScreen(viewModel = chatViewModel)
+                    Screen.Chat -> ChatScreen(
+                        viewModel = chatViewModel,
+                        onOpenSettings = { currentTab = Screen.Settings }
+                    )
                     Screen.Plan -> PlanScreen(viewModel = planViewModel)
                     Screen.Memory -> MemoryScreen(viewModel = memoryViewModel)
                     Screen.Social -> SocialScreen(viewModel = socialViewModel)

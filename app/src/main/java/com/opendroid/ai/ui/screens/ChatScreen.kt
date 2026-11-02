@@ -73,7 +73,8 @@ import java.util.Locale
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -410,6 +411,10 @@ fun ChatScreen(
                                             }
                                             target?.let { startEditingMessage(it) }
                                             viewModel.dismissChatError()
+                                        }
+                                        ChatErrorPrimaryAction.OPEN_SETTINGS -> {
+                                            viewModel.dismissChatError()
+                                            onOpenSettings()
                                         }
                                         else -> viewModel.dismissChatError()
                                     }
