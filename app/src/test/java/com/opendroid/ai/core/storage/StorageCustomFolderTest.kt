@@ -44,6 +44,20 @@ class StorageCustomFolderTest {
         /** Children queries of this document report that the provider is still fetching more rows. */
         var loadingListingOf: String? = null
 
+        /**
+         * Renames pick a free name the way FileSystemProvider's buildUniqueFile does on case-insensitive storage:
+         * a name any sibling (the renamed file included) already has, ignoring case, gets a " (n)" suffix.
+         */
+        var uniquifyRenames = false
+
+        private fun uniqueName(dir: File, name: String): String {
+            val taken = dir.list().orEmpty().map { it.lowercase() }.toSet()
+            if (name.lowercase() !in taken) return name
+            val base = name.substringBeforeLast('.')
+            val ext = if ('.' in name) "." + name.substringAfterLast('.') else ""
+            return generateSequence(1) { it + 1 }.map { "$base ($it)$ext" }.first { it.lowercase() !in taken }
+        }
+
         private fun fileOf(documentId: String) = File(rootDir, documentId.removePrefix("root").trimStart('/'))
 
         override fun onCreate() = true
@@ -106,8 +120,9 @@ class StorageCustomFolderTest {
                 }
                 "android:deleteDocument" -> check(file.deleteRecursively()) { "Couldn't delete $id" }
                 "android:renameDocument" -> {
-                    check(file.renameTo(File(file.parentFile, name!!))) { "Couldn't rename $id" }
-                    val renamedId = id.substringBeforeLast('/') + "/" + name
+                    val actual = if (uniquifyRenames) uniqueName(file.parentFile!!, name!!) else name!!
+                    check(file.renameTo(File(file.parentFile, actual))) { "Couldn't rename $id" }
+                    val renamedId = id.substringBeforeLast('/') + "/" + actual
                     out.putParcelable("uri", DocumentsContract.buildDocumentUriUsingTree(uri, renamedId))
                 }
                 else -> error("Unexpected call: $method")
@@ -309,6 +324,18 @@ class StorageCustomFolderTest {
 
     @Test
     fun `moving to a name that differs only by case renames it`() {
+        givenFolderFile("dir/notes.txt", "keep")
+
+        val result = StorageWorkspaceProvider.moveFile(context, "dir/notes.txt", "dir/NOTES.txt")
+
+        assertTrue(result.error, result.success)
+        assertEquals(listOf("NOTES.txt"), folderFile("dir").list()!!.toList())
+        assertEquals("keep", folderFile("dir/NOTES.txt").readText())
+    }
+
+    @Test
+    fun `a case only rename lands on the requested name when the provider uniquifies names`() {
+        provider.uniquifyRenames = true
         givenFolderFile("dir/notes.txt", "keep")
 
         val result = StorageWorkspaceProvider.moveFile(context, "dir/notes.txt", "dir/NOTES.txt")
