@@ -106,7 +106,7 @@ class McpHttpRequestReaderTest {
     fun `a stalled connection does not stop the next client from being served`() {
         ServerSocket(0).use { server ->
             val served = CountDownLatch(1)
-            val pool = McpConnectionPool(workers = 2, queued = 2, threadName = "test-mcp") { socket ->
+            val pool = McpConnectionPool(workers = 2, queued = 2, threadName = "test-mcp", dispatchLock = java.util.concurrent.locks.ReentrantLock()) { socket ->
                 val first = socket.getInputStream().read()
                 if (first == 'B'.code) served.countDown()
             }
@@ -130,7 +130,7 @@ class McpHttpRequestReaderTest {
     fun `connections beyond the workers and queue are closed instead of piling up`() {
         ServerSocket(0).use { server ->
             val release = CountDownLatch(1)
-            val pool = McpConnectionPool(workers = 1, queued = 1, threadName = "test-mcp") {
+            val pool = McpConnectionPool(workers = 1, queued = 1, threadName = "test-mcp", dispatchLock = java.util.concurrent.locks.ReentrantLock()) {
                 release.await(5, TimeUnit.SECONDS)
             }
             val clients = List(3) { Socket("127.0.0.1", server.localPort) }
