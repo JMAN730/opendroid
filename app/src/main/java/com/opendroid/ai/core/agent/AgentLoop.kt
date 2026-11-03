@@ -1012,6 +1012,9 @@ class AgentLoop @Inject constructor(
             // hitting a suspending call that would otherwise surface the cancellation.
             currentCoroutineContext().ensureActive()
 
+            planManager.failBlockedSteps()
+            currentPlanState = planManager.currentPlan.value ?: return
+
             val nextStep = planManager.getActiveStep()
             if (nextStep == null) {
                 // If there are any failed steps, plan is failed. Otherwise, completed!
@@ -1116,6 +1119,11 @@ class AgentLoop @Inject constructor(
                 // instead of triggering an automated replan for this failure.
                 currentPlanState = planManager.currentPlan.value ?: break
                 continue
+            } else if (actionResult is ActionResult.Declined) {
+                // The user said no. Skip the re-evaluation below: whether the plan
+                // goes on after a refusal is not a question for the LLM.
+                cancelDeclinedPlan(stepToExecute, actionResult, currentPlanState.planId, sessionId)
+                return
             } else if (actionResult is ActionResult.UnknownAction) {
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
@@ -1194,6 +1202,10 @@ class AgentLoop @Inject constructor(
                     } catch (e: Exception) {
                         ActionResult(false, null, e.localizedMessage ?: "Unknown execution error")
                     }
+                    if (fallbackResult is ActionResult.Declined) {
+                        cancelDeclinedPlan(stepToExecute, fallbackResult, currentPlanState.planId, sessionId)
+                        return
+                    }
                     if (fallbackResult.success) {
                         planManager.updateStepStatus(
                             stepToExecute.stepId,
@@ -1256,13 +1268,13 @@ class AgentLoop @Inject constructor(
                 onSpeakCallback?.invoke(reEval.speech)
             }
 
-            when (reEval.decision.uppercase()) {
-                "ABANDON" -> {
+            when (PlanContinuation.afterReEvaluation(reEval.decision)) {
+                PlanContinuation.Abandon -> {
                     planManager.updatePlanStatus(PlanStatus.FAILED)
                     speakAndSaveSummary(currentPlanState, false, sessionId)
                     return
                 }
-                "MODIFY" -> {
+                PlanContinuation.Modify -> {
                     if (reEval.updatedPlan != null &&
                         parkedForApproval(currentPlanState, reEval.updatedPlan, context, sessionId, autoApproved)
                     ) {
@@ -1270,11 +1282,22 @@ class AgentLoop @Inject constructor(
                     }
                     currentPlanState = planManager.currentPlan.value ?: break
                 }
-                "CONTINUE" -> {
+                PlanContinuation.Continue -> {
                     // Do nothing, continue to next step
                 }
             }
         }
+    }
+
+    private suspend fun cancelDeclinedPlan(
+        step: PlanStep,
+        declined: ActionResult.Declined,
+        planId: String,
+        sessionId: String
+    ) {
+        planManager.updateStepStatus(step.stepId, StepStatus.FAILED, error = declined.message)
+        planManager.cancelPlan(planId)
+        speakAndSaveMessage("Okay, I won't go ahead with that.", sessionId)
     }
 
     /**
@@ -1627,6 +1650,10 @@ class AgentLoop @Inject constructor(
             userFacingError ?: humanizeFailure(plan.goal)
         }
 
+        speakAndSaveMessage(summaryText, sessionId)
+    }
+
+    private suspend fun speakAndSaveMessage(summaryText: String, sessionId: String) {
         val assistantMsg = ChatMessage(
             id = UUID.randomUUID().toString(),
             text = summaryText,

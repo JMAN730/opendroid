@@ -73,6 +73,17 @@ sealed class ActionResult {
         override val error: String? get() = message
     }
 
+    /**
+     * The user refused to let the plan go on. This is not a failure to recover from:
+     * no fallback runs and no LLM is asked whether to continue, so callers stop.
+     */
+    @Serializable
+    data class Declined(val message: String) : ActionResult() {
+        override val success: Boolean get() = false
+        override val data: String? get() = null
+        override val error: String? get() = message
+    }
+
     companion object {
         operator fun invoke(
             success: Boolean,

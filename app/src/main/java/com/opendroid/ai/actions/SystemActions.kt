@@ -524,32 +524,22 @@ class SystemActions @Inject constructor(
     ) : Action {
         override val name: String = "CONFIRM_ACTION"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val message = params["message"] ?: "Do you want to proceed with this action?"
-            
-            // Speak the confirmation warning
-            agentLoop.get().onSpeakCallback?.invoke(message)
-            
-            // Display Toast on main thread
-            try {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            val message = params["message"] ?: params["question"] ?: "Do you want to proceed with this action?"
+
+            return askForConfirmation(message) { prompt ->
+                // Speak the confirmation warning
+                agentLoop.get().onSpeakCallback?.invoke(prompt)
+
+                // Display Toast on main thread
+                try {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(context, prompt, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    // Ignore toast errors if any
                 }
-            } catch (e: Exception) {
-                // Ignore toast errors if any
-            }
-            
-            val response = agentLoop.get().awaitUserResponse().trim().lowercase()
-            
-            val positiveWords = listOf("yes", "yep", "sure", "ok", "okay", "confirm", "proceed", "do it", "yeah", "agree")
-            val negativeWords = listOf("no", "nope", "cancel", "stop", "dont", "don't", "deny", "abort")
-            
-            val isPositive = positiveWords.any { response.contains(it) }
-            val isNegative = negativeWords.any { response.contains(it) }
-            
-            return if (isPositive && !isNegative) {
-                ActionResult(true, "User confirmed: $response", null)
-            } else {
-                ActionResult(false, null, "Action cancelled by user response: $response")
+
+                agentLoop.get().awaitUserResponse()
             }
         }
     }
@@ -1006,8 +996,7 @@ class SystemActions @Inject constructor(
                     android.widget.Toast.makeText(context, question, android.widget.Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {}
-            val response = agentLoop.get().awaitUserResponse().trim()
-            return ActionResult(true, response, null)
+            return askUserResult(agentLoop.get().awaitUserResponse().trim())
         }
     }
 
