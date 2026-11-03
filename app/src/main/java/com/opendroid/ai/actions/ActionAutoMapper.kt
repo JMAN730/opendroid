@@ -504,6 +504,13 @@ class ActionAutoMapper @Inject constructor() {
 
         // ── Layer 1: Direct schema match ──
         if (ActionSchema.isValid(normalized)) {
+            // A schema action nothing implements (CHAT) can only run through its alias.
+            val handlerlessAlias = actionAliases[normalized]
+                ?.takeIf { normalized !in registeredActions && it in registeredActions }
+            if (handlerlessAlias != null) {
+                Log.d(TAG, "  Result:     ALIAS_RESOLVED → $handlerlessAlias")
+                return buildMappingResult(action, handlerlessAlias, params)
+            }
             Log.d(TAG, "  Result:     SCHEMA_VALID → $normalized")
             return MappingResult(action, normalized, action != normalized, params)
         }
@@ -640,6 +647,7 @@ class ActionAutoMapper @Inject constructor() {
 
             "DISPLAY_INFO" -> {
                 val message = originalParams["message"]
+                    ?: originalParams["response"]
                     ?: originalParams["text"]
                     ?: originalParams["content"]
                     ?: originalParams["info"]

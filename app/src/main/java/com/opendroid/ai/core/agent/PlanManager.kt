@@ -115,6 +115,8 @@ class PlanManager @Inject constructor(
     suspend fun updatePlanStatus(status: PlanStatus) {
         mutex.withLock {
             val plan = _currentPlan.value ?: return@withLock
+            // RUNNING would make a finished plan's pending steps runnable again.
+            if (status == PlanStatus.RUNNING && plan.status.isTerminal()) return@withLock
             val updatedPlan = plan.copy(status = status)
             _currentPlan.value = updatedPlan
             if (status == PlanStatus.COMPLETED || status == PlanStatus.FAILED) {

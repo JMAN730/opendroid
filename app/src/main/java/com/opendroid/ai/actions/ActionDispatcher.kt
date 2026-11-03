@@ -237,11 +237,13 @@ class ActionDispatcher @Inject constructor(
         params: Map<String, String>,
         context: Context
     ): ActionResult? {
+        // No handler means nothing to validate for: don't ask the user for a param of an
+        // action that can't run. The auto-mapper gets its turn instead.
+        val handler = actionsMap[actionName] ?: return null
         val (validation, enrichedParams) = ActionSchema.validateParams(actionName, params)
 
         return when (validation) {
             is ActionSchema.ValidationResult.Valid -> {
-                val handler = actionsMap[actionName] ?: return null
                 val stringParams = enrichedParams.mapValues { it.value.toString() }
                 safeExecute(handler, stringParams, context, actionName)
             }
@@ -253,7 +255,6 @@ class ActionDispatcher @Inject constructor(
                 }
 
                 if (allHaveDefaults) {
-                    val handler = actionsMap[actionName] ?: return null
                     val withDefaults = ActionSchema.applyDefaults(actionName, params)
                     val stringParams = withDefaults.mapValues { it.value.toString() }
                     safeExecute(handler, stringParams, context, actionName)

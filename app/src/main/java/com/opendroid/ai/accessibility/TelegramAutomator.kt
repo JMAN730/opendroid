@@ -7,7 +7,7 @@ object TelegramAutomator {
 
     private const val TAG = "TelegramAutomator"
 
-    suspend fun automateSend(message: String): Boolean {
+    suspend fun automateSend(message: String, targetPackage: String?): Boolean {
         val service = OpenDroidAccessibilityService.getInstance() ?: return false
 
         // Wait for Telegram chat screen to render
@@ -44,6 +44,12 @@ object TelegramAutomator {
             }
         }
 
+        // Typing and the text fallbacks match labels in whatever window is in front
+        if (!isTargetAppInFront(service.rootInActiveWindow?.packageName, targetPackage)) {
+            Log.w(TAG, "$targetPackage is not in front, not typing or tapping send")
+            return false
+        }
+
         // Type the message into the input field
         var typed = false
         for (id in inputIds) {
@@ -57,7 +63,17 @@ object TelegramAutomator {
                     service.findAndType("Write a message...", message)
         }
 
+        if (!inputFieldFound && !typed) {
+            Log.w(TAG, "Telegram chat input field not found - not on chat screen")
+            return false
+        }
+
         delay(600)
+
+        if (!isTargetAppInFront(service.rootInActiveWindow?.packageName, targetPackage)) {
+            Log.w(TAG, "$targetPackage left the front while typing, not tapping send")
+            return false
+        }
 
         // Known Telegram send button view IDs
         val sendButtonIds = listOf(
