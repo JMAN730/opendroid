@@ -128,4 +128,39 @@ class PlanApprovalSummaryTest {
         val plan = validated.copy(steps = listOf(step("s1", 1, "GET_WEATHER")))
         assertEquals("I've planned 1 step: Get weather. Say approve to run, or cancel.", PlanApprovalSummary.spokenPrompt(plan))
     }
+
+    @Test
+    fun `an action alias is labelled as the action it runs`() {
+        val plan = validated.copy(
+            steps = listOf(
+                step("s1", 1, "TEXT", mapOf("contact" to "+19005550100", "message" to "hi")),
+                step("s2", 2, "SEND_MESSAGE", mapOf("contact" to "+19005550101", "message" to "hi"))
+            )
+        )
+        assertEquals(
+            listOf("Send SMS to +19005550100", "Send whatsapp to +19005550101"),
+            PlanApprovalSummary.stepLines(plan)
+        )
+    }
+
+    @Test
+    fun `file operations name both ends`() {
+        val plan = validated.copy(
+            steps = listOf(
+                step("s1", 1, "MOVE_FILE", mapOf("sourcePath" to "/sdcard/a.txt", "destPath" to "/sdcard/b/a.txt")),
+                step("s2", 2, "COPY_FILE", mapOf("sourcePath" to "/sdcard/c.txt", "destPath" to "/sdcard/d.txt")),
+                step("s3", 3, "ZIP_FILES", mapOf("sourcePath" to "/sdcard/docs", "zipFilePath" to "/sdcard/docs.zip")),
+                step("s4", 4, "UNZIP_FILE", mapOf("zipFilePath" to "/sdcard/docs.zip", "destDirPath" to "/sdcard/out"))
+            )
+        )
+        assertEquals(
+            listOf(
+                "Move file from /sdcard/a.txt to /sdcard/b/a.txt",
+                "Copy file from /sdcard/c.txt to /sdcard/d.txt",
+                "Zip files from /sdcard/docs to /sdcard/docs.zip",
+                "Unzip file from /sdcard/docs.zip to /sdcard/out"
+            ),
+            PlanApprovalSummary.stepLines(plan)
+        )
+    }
 }
