@@ -265,6 +265,9 @@ object OnDeviceModelRegistry {
     /** Look up a catalog model spec by its stable [id]. Custom imports are resolved via [ModelRepository]. */
     fun findById(id: String): OnDeviceModelSpec? = allModels.find { it.id == id }
 
+    /** The context window of model [id], or the conservative custom default when it isn't listed. */
+    fun contextWindowFor(id: String): Int = findById(id)?.contextWindow ?: CUSTOM_DEFAULT_CONTEXT_WINDOW
+
     /** Returns the recommended model for the given [backend], or the first available. */
     fun recommendedFor(backend: OnDeviceBackend): OnDeviceModelSpec? =
         allModels.filter { it.backend == backend }.let { models ->
