@@ -96,6 +96,17 @@ class WhatsAppRoutingTest {
     }
 
     @Test
+    fun `unconfirmed send leaves the message for the user instead of failing into a fallback`() = runBlocking {
+        setRegion(sim = "us")
+        resolver.contacts += Contact(name = "Alex", phoneNumber = "(479) 555-0142")
+
+        val result = sendWhatsApp("Alex")
+
+        assertTrue(result is ActionResult.UserActionRequired)
+        assertWhatsAppPhone("14795550142")
+    }
+
+    @Test
     fun `video call to a saved national number uses the SIM country code`() = runBlocking {
         setRegion(sim = "us")
         resolver.contacts += Contact(name = "Alex", phoneNumber = "(479) 555-0142")

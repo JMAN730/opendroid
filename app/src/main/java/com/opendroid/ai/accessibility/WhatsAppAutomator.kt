@@ -1,9 +1,22 @@
 package com.opendroid.ai.accessibility
 
 import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.delay
 
 object WhatsAppAutomator {
+
+    /**
+     * An empty EditText reports its hint as the node text, and WhatsApp's hint is
+     * localized ("Mensaje", "Nachricht"…), so emptiness is judged by the node's
+     * own hint-showing flag rather than English placeholder literals. Text equal
+     * to the hint is not proof of emptiness: the user may have typed it.
+     */
+    internal fun isInputEmpty(text: String, showingHint: Boolean): Boolean =
+        showingHint || text.isBlank()
+
+    internal fun isInputEmpty(node: AccessibilityNodeInfo): Boolean =
+        isInputEmpty(node.text?.toString() ?: "", node.isShowingHintText)
 
     suspend fun automateSend(message: String): Boolean {
         val service = OpenDroidAccessibilityService.getInstance() ?: return false
@@ -96,8 +109,9 @@ object WhatsAppAutomator {
             val nodes = rootNode.findAccessibilityNodeInfosByViewId(id)
             for (node in nodes) {
                 val text = node.text?.toString() ?: ""
+                val empty = isInputEmpty(node)
                 node.recycle()
-                if (text.isNotBlank() && text != "Type a message" && text != "Message") {
+                if (!empty) {
                     // Input field still has text — message likely wasn't sent
                     Log.w("WhatsAppAutomator", "Post-send check: input field still has text '$text', message may not have been sent")
                     return false

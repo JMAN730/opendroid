@@ -395,13 +395,19 @@ class CommunicationActions internal constructor(
                         // Verified or inconclusive → trust the click
                         return ActionResult(true, "Message sent to $contactLabel!", null)
                     }
-                    // Verification says input field still has text — send didn't work
-                    return ActionResult(false, null, "I tapped send but the message is still in the input field. Please send it manually.", true)
+                    // Verification says input field still has text — send didn't work.
+                    // The message is still in WhatsApp, so a fallback must not send it again.
+                    return ActionResult.UserActionRequired(
+                        "I tapped send but the message is still in the WhatsApp input field. Please send it manually."
+                    )
                 }
             }
 
-            // No accessibility service or couldn't click send — chat is open with message pre-filled
-            ActionResult(false, null, "I've opened the chat with $contactLabel on WhatsApp with your message ready — just tap send!", true)
+            // No accessibility service or couldn't click send — chat is open with message pre-filled.
+            // Not a plain Failure: a fallback SEND_SMS would duplicate it once the user taps Send.
+            ActionResult.UserActionRequired(
+                "I've opened the chat with $contactLabel on WhatsApp with your message ready. Review it and tap Send; sending was not verified."
+            )
         } catch (e: Exception) {
             Log.e("SendWhatsApp", "WhatsApp failed: ${e.localizedMessage}")
             ActionResult(false, null, "WhatsApp didn't work. ${e.localizedMessage ?: "Please try again."}", true)
@@ -424,9 +430,8 @@ class CommunicationActions internal constructor(
             for (id in inputIds) {
                 val inputNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
                 for (node in inputNodes) {
-                    val text = node.text?.toString() ?: ""
-                    // If input field is empty or shows placeholder, message was sent
-                    if (text.isBlank() || text == "Type a message" || text == "Message") {
+                    // If input field is empty or shows its (localized) hint, message was sent
+                    if (WhatsAppAutomator.isInputEmpty(node)) {
                         return true
                     }
                     // Input field still has content — message wasn't sent
