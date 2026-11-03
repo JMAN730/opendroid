@@ -70,6 +70,14 @@ internal fun paramKeyForNeedsInput(needsInput: ActionResult.NeedsInput, actionNa
     }
 }
 
+/** Whether a failed step's error is actionable guidance to show the user rather than a technical detail. */
+internal fun isUserFacingStepError(error: String): Boolean =
+    error.contains("opened", ignoreCase = true) ||
+        error.contains("please", ignoreCase = true) ||
+        error.contains("check", ignoreCase = true) ||
+        error.contains("tap", ignoreCase = true) ||
+        error.contains("couldn't confirm", ignoreCase = true)
+
 internal fun extractJsonPayload(raw: String): String {
     val trimmed = raw.trim()
 
@@ -1952,14 +1960,7 @@ class AgentLoop @Inject constructor(
             // Check if any failed step has a user-friendly error message
             // (e.g. "I've opened the chat... please tap send")
             val userFacingError = failedSteps.firstNotNullOfOrNull { step ->
-                step.error?.takeIf { error ->
-                    // Include errors that contain actionable guidance for the user
-                    error.contains("opened", ignoreCase = true) ||
-                    error.contains("please", ignoreCase = true) ||
-                    error.contains("check", ignoreCase = true) ||
-                    error.contains("tap", ignoreCase = true) ||
-                    error.contains("couldn't confirm", ignoreCase = true)
-                }
+                step.error?.takeIf { error -> isUserFacingStepError(error) }
             }
             
             userFacingError ?: humanizeFailure(plan.goal)
