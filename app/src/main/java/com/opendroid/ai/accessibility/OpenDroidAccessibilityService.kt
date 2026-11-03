@@ -502,21 +502,12 @@ class OpenDroidAccessibilityService : AccessibilityService() {
         return false
     }
 
-    fun findAndType(searchText: String, content: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        val nodes = rootNode.findAccessibilityNodeInfosByText(searchText)
-        for (node in nodes) {
-            if (node.isEditable) {
-                val arguments = Bundle().apply {
-                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, content)
-                }
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                node.recycle()
-                return true
-            }
-            node.recycle()
-        }
-        return false
+    fun findAndType(searchText: String, content: String): Boolean =
+        findAndTypeOutcome(searchText, content).typed
+
+    fun findAndTypeOutcome(searchText: String, content: String): TypeOutcome {
+        val rootNode = rootInActiveWindow ?: return TypeOutcome.NOT_FOUND
+        return nodeTraversal.findAndType(rootNode, searchText, content)
     }
 
     fun findAndTypeById(viewId: String, content: String): Boolean {

@@ -404,8 +404,14 @@ class AdvancedControlActions @Inject constructor() {
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val searchText = params["searchText"] ?: return ActionResult(false, null, "searchText parameter is missing")
             val content = params["content"] ?: ""
-            val success = GenericAppAutomator.typeText(searchText, content)
-            return ActionResult(success, if (success) "Typed it in!" else "Couldn't find that text field.", null)
+            val outcome = GenericAppAutomator.typeText(searchText, content)
+            val message = when {
+                !outcome.typed -> "Couldn't find that text field."
+                outcome.overwrittenText != null ->
+                    "Typed it in, replacing the field's previous text \"${outcome.overwrittenText.take(80)}\"."
+                else -> "Typed it in!"
+            }
+            return ActionResult(outcome.typed, message, null)
         }
     }
 
