@@ -146,17 +146,20 @@ object PlanModification {
      * Rewrites a revised step's dependencies and "$id"/"$$id" references so they follow
      * revised steps the merge placed under another id ([moved]: incoming id to final id).
      * [knownIds] are matched longest first, as ActionSequenceExecutor.resolveParameters
-     * does, so "$s1" is never read out of "$s10". A step never ends up depending on itself.
+     * does, so "$s1" is never read out of "$s10". A step never ends up depending on itself,
+     * and a reference that would land on the step's own final id is left alone: it can only
+     * mean the settled step that originally held that id, whose result the executor resolves.
      */
     private fun referenceRemapper(moved: Map<String, String>, knownIds: Set<String>): (PlanStep) -> PlanStep {
         if (moved.isEmpty()) return { it.copy(dependsOn = it.dependsOn - it.stepId) }
         val ids = knownIds.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
         val reference = Regex("(\\$\\$?)($ids)")
         return { step ->
+            fun target(id: String) = moved[id]?.takeIf { it != step.stepId } ?: id
             step.copy(
-                dependsOn = step.dependsOn.map { moved[it] ?: it }.distinct() - step.stepId,
+                dependsOn = step.dependsOn.map(::target).distinct() - step.stepId,
                 params = step.params.mapValues { (_, value) ->
-                    reference.replace(value) { it.groupValues[1] + (moved[it.groupValues[2]] ?: it.groupValues[2]) }
+                    reference.replace(value) { it.groupValues[1] + target(it.groupValues[2]) }
                 }
             )
         }
