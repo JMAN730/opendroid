@@ -620,4 +620,14 @@ class PlanModificationTest {
         assertEquals("s2", merged[1].stepId)
         assertEquals("\$\$s1", merged[1].params["message"])
     }
+
+    @Test
+    fun `a whitespace-padded MODIFY still has its proposed actions named`() {
+        val plan = planOf(listOf(step("x1", "SEND_SMS")))
+
+        assertEquals(
+            setOf("SEND_SMS"),
+            ReEvaluationEngine.ReEvalResult("ok", " MODIFY ", plan).proposedActionNames().toSet()
+        )
+    }
 }
