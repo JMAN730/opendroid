@@ -73,13 +73,7 @@ class YouTubeAdapter @Inject constructor(
                 )
             )
         }
-        return Result.success(
-            PublishPostResult(
-                success = true,
-                platformPostId = "yt_${System.currentTimeMillis()}",
-                url = "https://youtube.com"
-            )
-        )
+        return Result.failure(UnsupportedOperationException("Publishing to YouTube isn't supported yet"))
     }
 
     override suspend fun fetchInbox(credentials: SocialCredentials, since: Long?): Result<List<SocialInteraction>> {
@@ -138,7 +132,7 @@ class YouTubeAdapter @Inject constructor(
                 )
             )
         }
-        return Result.success(ReplyCommentResult(success = true, platformReplyId = "yt_reply_${System.currentTimeMillis()}"))
+        return Result.failure(UnsupportedOperationException("Replying to YouTube comments isn't supported yet"))
     }
 
     override suspend fun fetchAnalytics(credentials: SocialCredentials): Result<SocialAnalytics> {
