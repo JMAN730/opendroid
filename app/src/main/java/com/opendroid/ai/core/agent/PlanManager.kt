@@ -326,6 +326,39 @@ class PlanManager @Inject constructor(
     }
 
     /**
+     * Fails every pending step that can no longer run because something it depends on
+     * failed, following the chain, so a blocked step ends FAILED instead of sitting
+     * PENDING in a finished plan. Unrelated steps stay runnable.
+     */
+    suspend fun failBlockedSteps() {
+        mutex.withLock {
+            val plan = _currentPlan.value ?: return@withLock
+            if (plan.status != PlanStatus.RUNNING) return@withLock
+            var steps = plan.steps
+            while (true) {
+                val blocked = steps.firstNotNullOfOrNull { step ->
+                    if (step.status != StepStatus.PENDING) return@firstNotNullOfOrNull null
+                    step.dependsOn
+                        .firstOrNull { depId -> steps.any { it.stepId == depId && it.status == StepStatus.FAILED } }
+                        ?.let { failedDepId -> step.stepId to failedDepId }
+                } ?: break
+                steps = steps.map { step ->
+                    if (step.stepId == blocked.first) {
+                        step.copy(status = StepStatus.FAILED, error = "Skipped: depends on failed step ${blocked.second}")
+                    } else {
+                        step
+                    }
+                }
+            }
+            if (steps == plan.steps) return@withLock
+            val updatedPlan = plan.copy(steps = steps)
+            _currentPlan.value = updatedPlan
+            workingMemory.activePlan = updatedPlan
+            saveCurrentPlanLocked()
+        }
+    }
+
+    /**
      * A plan in one of these statuses is done: nothing may ever relabel it into a
      * different status again. See [cancelPlan].
      */
@@ -334,14 +367,11 @@ class PlanManager @Inject constructor(
 
     private fun hasDependenciesMet(step: PlanStep, allSteps: List<PlanStep>): Boolean {
         if (step.dependsOn.isEmpty()) return true
-        // A dependency is met when it has finished executing (COMPLETED or FAILED).
-        // Only PENDING or RUNNING dependencies should block execution.
-        // Previously this required COMPLETED, which meant a step with dependsOn
-        // would be stuck forever if the dependency succeeded but returned no data
-        // (since the dependency check was too strict).
+        // A FAILED dependency is not met: the step may need its result, or its consent
+        // when the dependency was a confirmation. See failBlockedSteps.
         return step.dependsOn.all { depId ->
             val depStep = allSteps.find { it.stepId == depId }
-            depStep != null && (depStep.status == StepStatus.COMPLETED || depStep.status == StepStatus.FAILED)
+            depStep != null && depStep.status == StepStatus.COMPLETED
         }
     }
 }

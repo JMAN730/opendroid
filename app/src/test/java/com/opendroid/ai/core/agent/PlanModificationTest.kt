@@ -339,4 +339,14 @@ class PlanModificationTest {
         )
         assertTrue(ReEvaluationEngine.ReEvalResult("ok", "CONTINUE", plan).proposedActionNames().isEmpty())
     }
+
+    @Test
+    fun `a whitespace-padded MODIFY still has its proposed actions named`() {
+        val plan = planOf(listOf(step("x1", "SEND_SMS")))
+
+        assertEquals(
+            setOf("SEND_SMS"),
+            ReEvaluationEngine.ReEvalResult("ok", " MODIFY ", plan).proposedActionNames().toSet()
+        )
+    }
 }

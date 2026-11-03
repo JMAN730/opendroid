@@ -33,6 +33,11 @@ class PlanValidator @Inject constructor(
             "READ_AND_REMEMBER_SCREEN", "RECALL_MEMORY", "QUERY_KNOWLEDGE_GRAPH"
         )
 
+        /** A step after one of these depends on its answer, even though it produces no data. */
+        private val CONFIRMATION_ACTIONS = setOf(
+            "CONFIRM_ACTION", "ASK_CONFIRMATION", "REQUEST_CONFIRMATION", "CONFIRM_USER", "CONFIRM"
+        )
+
         /**
          * A "$stepId" contact is a reference to an earlier step's result, not a name.
          * Plans are re-validated when re-evaluation modifies them, so treating one as
@@ -71,6 +76,18 @@ class PlanValidator @Inject constructor(
         // anywhere in a value; the lookahead keeps "$s2_ask2" from counting as "$s2_ask".
         private fun readsResultOf(value: String, stepId: String): Boolean =
             Regex("\\$" + Regex.escape(stepId) + "(?![A-Za-z0-9_])").containsMatchIn(value)
+
+        internal fun removeBadDependencies(steps: List<PlanStep>): List<PlanStep> {
+            return steps.map { step ->
+                if (step.dependsOn.isEmpty()) return@map step
+                val trueDeps = step.dependsOn.filter { depId ->
+                    val depStep = steps.find { it.stepId == depId }
+                    val action = depStep?.action?.uppercase()
+                    action != null && (action in DATA_PRODUCING_ACTIONS || action in CONFIRMATION_ACTIONS)
+                }
+                step.copy(dependsOn = trueDeps)
+            }
+        }
 
         private fun isPhoneNumber(contact: String): Boolean {
             val cleaned = contact.replace(" ", "").replace("-", "")
@@ -179,17 +196,6 @@ class PlanValidator @Inject constructor(
 
         val cleanedSteps = removeBadDependencies(finalSteps)
         return plan.copy(steps = cleanedSteps, estimatedSteps = cleanedSteps.size)
-    }
-
-    private fun removeBadDependencies(steps: List<PlanStep>): List<PlanStep> {
-        return steps.map { step ->
-            if (step.dependsOn.isEmpty()) return@map step
-            val trueDeps = step.dependsOn.filter { depId ->
-                val depStep = steps.find { it.stepId == depId }
-                depStep != null && DATA_PRODUCING_ACTIONS.contains(depStep.action.uppercase())
-            }
-            step.copy(dependsOn = trueDeps)
-        }
     }
 
     private suspend fun logUnknownAction(attemptedAction: String, goal: String, fixStatus: String) {

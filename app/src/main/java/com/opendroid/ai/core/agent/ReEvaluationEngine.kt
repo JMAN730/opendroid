@@ -40,7 +40,7 @@ class ReEvaluationEngine @Inject constructor(
     ) {
         /** Actions this answer would add to the plan: step actions and their fallbacks. */
         fun proposedActionNames(): List<String> {
-            if (!decision.equals("MODIFY", ignoreCase = true)) return emptyList()
+            if (PlanContinuation.afterReEvaluation(decision) != PlanContinuation.Modify) return emptyList()
             return updatedPlan?.steps.orEmpty().flatMap { step ->
                 listOf(step.action, step.fallback).filter { it.isNotBlank() }
             }

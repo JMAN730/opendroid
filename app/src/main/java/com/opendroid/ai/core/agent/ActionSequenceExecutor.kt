@@ -108,7 +108,8 @@ class ActionSequenceExecutor(
             hasAction(step.fallback) &&
             result !is ActionResult.UnknownAction &&
             result !is ActionResult.PendingUserAction &&
-            result !is ActionResult.UserActionRequired
+            result !is ActionResult.UserActionRequired &&
+            result !is ActionResult.Declined
 
     /**
      * Runs a complete saved macro. Later steps are not dispatched after a
@@ -129,6 +130,7 @@ class ActionSequenceExecutor(
             currentCoroutineContext().ensureActive()
             val execution = executeStep(step, completedResults, context)
             val result = execution.finalResult
+            if (result is ActionResult.Declined) return result
             if (!result.success) {
                 val actionName = step.action.ifBlank { "unknown action" }
                 val detail = result.error
