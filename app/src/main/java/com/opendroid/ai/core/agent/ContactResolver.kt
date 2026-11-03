@@ -19,7 +19,8 @@ data class Contact(
     val phoneNumber: String,
     val type: String = "Mobile",
     val source: String = "contacts",
-    val matchScore: Int = 0
+    val matchScore: Int = 0,
+    val lookupKey: String? = null
 )
 
 /**
@@ -49,7 +50,8 @@ sealed class ContactResolution {
  *   Tier 3: Multiple matches → return Ambiguous for user picker
  *
  * Also supports memory-backed contact preferences — once the user picks
- * "Dad" from [Dad, Dada, Daddu], future "call dad" resolves instantly.
+ * "Dad" from [Dad, Dada, Daddu], future "call dad" resolves instantly, using
+ * whatever number that contact has at the time.
  */
 @Singleton
 open class ContactResolver @Inject constructor(
@@ -59,125 +61,13 @@ open class ContactResolver @Inject constructor(
 
     companion object {
         private const val TAG = "ContactResolver"
-
-        /**
-         * Legacy static resolve for backward compatibility.
-         * Guesses the shortest matching name: actions use [resolveWithDisambiguation].
-         */
-        fun resolve(context: Context, input: String): ContactResult {
-            val cleaned = input.trim()
-
-            // CASE 1: Input is already a phone number
-            val digitsOnly = cleaned.replace(Regex("[^0-9+]"), "")
-            if (digitsOnly.length >= 7 && (digitsOnly.all { it.isDigit() || it == '+' })) {
-                return ContactResult.Found(
-                    displayName = cleaned,
-                    phoneNumber = digitsOnly
-                )
-            }
-
-            // Check contacts permission
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
-                != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "READ_CONTACTS permission not granted")
-                return ContactResult.NotFound(cleaned)
-            }
-
-            // CASE 2: Exact name match in Android contacts
-            val exactMatch = searchContactsLegacy(context, cleaned, exact = true)
-            if (exactMatch != null) return exactMatch
-
-            // CASE 3: Partial/LIKE match in Android contacts
-            val partialMatch = searchContactsLegacy(context, cleaned, exact = false)
-            if (partialMatch != null) return partialMatch
-
-            // CASE 4: Fuzzy relationship matching
-            val fuzzyMatch = fuzzyRelationshipSearchLegacy(context, cleaned)
-            if (fuzzyMatch != null) return fuzzyMatch
-
-            // CASE 5: Not found
-            return ContactResult.NotFound(cleaned)
-        }
-
-        // lint false positive: the cursor is closed by `?.use { }` on every path,
-        // but the Recycle detector does not model Kotlin's use() inlining. See #67.
-        @Suppress("Recycle")
-        private fun searchContactsLegacy(context: Context, name: String, exact: Boolean): ContactResult.Found? {
-            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-            val projection = arrayOf(
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
-            )
-            val selection: String
-            val selectionArgs: Array<String>
-            if (exact) {
-                selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
-                selectionArgs = arrayOf(name)
-            } else {
-                selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-                selectionArgs = arrayOf("%${name}%")
-            }
-            try {
-                val candidates = mutableListOf<Pair<String, String>>()
-                context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                    val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                    val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (nameIdx >= 0 && numIdx >= 0) {
-                        while (cursor.moveToNext()) {
-                            val displayName = cursor.getString(nameIdx) ?: continue
-                            val number = cursor.getString(numIdx)?.replace(Regex("[^0-9+]"), "")
-                            if (!number.isNullOrBlank()) {
-                                candidates.add(displayName to number)
-                            }
-                        }
-                    }
-                }
-                if (candidates.isEmpty()) return null
-                val bestMatch = candidates
-                    .sortedWith(compareBy(
-                        { if (it.first.equals(name, ignoreCase = true)) 0 else 1 },
-                        { it.first.length }
-                    ))
-                    .first()
-                return ContactResult.Found(bestMatch.first, bestMatch.second)
-            } catch (e: Exception) {
-                Log.e(TAG, "Contact search failed: ${e.message}")
-            }
-            return null
-        }
-
-        private val relationshipAliasesStatic: Map<String, List<String>> = mapOf(
-            "dad"       to listOf("dad", "father", "papa", "baba", "abbu", "pita", "daddy", "pops"),
-            "mom"       to listOf("mom", "mother", "mama", "maa", "amma", "mummy", "mum", "mommy", "ma"),
-            "wife"      to listOf("wife", "wifey", "mrs", "better half", "patni", "biwi"),
-            "husband"   to listOf("husband", "hubby", "mr", "pati"),
-            "brother"   to listOf("brother", "bro", "bhai", "anna", "bhaiya"),
-            "sister"    to listOf("sister", "sis", "didi", "akka", "behan"),
-            "boss"      to listOf("boss", "manager", "sir", "madam"),
-            "home"      to listOf("home", "house", "landline", "ghar"),
-            "office"    to listOf("office", "work", "company", "workplace")
+        private val CONTACT_PROJECTION = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.TYPE,
+            ContactsContract.CommonDataKinds.Phone.LOOKUP_KEY
         )
-
-        private fun fuzzyRelationshipSearchLegacy(context: Context, name: String): ContactResult.Found? {
-            val lower = name.lowercase()
-            val searchTerms = relationshipAliasesStatic.entries
-                .firstOrNull { (key, aliases) ->
-                    key == lower || aliases.any { it.equals(lower, ignoreCase = true) }
-                }?.value ?: return null
-            for (term in searchTerms) {
-                val exact = searchContactsLegacy(context, term, exact = true)
-                if (exact != null) return exact
-                val partial = searchContactsLegacy(context, term, exact = false)
-                if (partial != null) return partial
-            }
-            return null
-        }
-    }
-
-    /** Legacy result type kept for backward compat with CommunicationActions */
-    sealed class ContactResult {
-        data class Found(val displayName: String, val phoneNumber: String) : ContactResult()
-        data class NotFound(val searchedName: String) : ContactResult()
+        private val NAME_TOKEN_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
     }
 
     // ── New disambiguation-aware resolve ──────────────────
@@ -204,17 +94,24 @@ open class ContactResolver @Inject constructor(
         }
 
         // STEP 2: Check memory for saved preference
-        val memoryMatch = memoryManager?.recallContactPreference(query)
-        if (memoryMatch != null) {
-            Log.d(TAG, "  → Memory preference: ${memoryMatch.name}")
-            return ContactResolution.Found(memoryMatch)
-        }
+        val savedPick = recallSavedPick(query)
 
         // Check contacts permission
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
             != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "READ_CONTACTS permission not granted")
             return ContactResolution.NotFound(query)
+        }
+
+        // A saved pick is only used if the contact is still there to confirm it
+        if (savedPick != null) {
+            val current = currentNumberFor(savedPick)
+            if (current != null) {
+                Log.d(TAG, "  → Memory preference: ${current.name}")
+                return ContactResolution.Found(current)
+            }
+            Log.d(TAG, "  → Dropping stale memory preference")
+            forgetSavedPick(query)
         }
 
         // STEP 3: Get ALL matching contacts
@@ -275,6 +172,31 @@ open class ContactResolver @Inject constructor(
         }
     }
 
+    protected open suspend fun recallSavedPick(query: String): Contact? =
+        memoryManager?.recallContactPreference(query)
+
+    protected open suspend fun forgetSavedPick(query: String) {
+        memoryManager?.forgetContactPreference(query)
+    }
+
+    /**
+     * Re-read a saved pick from contacts: the number it chose if the contact still has
+     * it, otherwise the contact's only number. Null means the pick can't be trusted: the
+     * contact is gone, it has several other numbers, or the pick predates lookup keys.
+     */
+    private fun currentNumberFor(savedPick: Contact): Contact? {
+        val lookupKey = savedPick.lookupKey ?: return null
+        val numbers = queryContacts(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            CONTACT_PROJECTION,
+            "${ContactsContract.CommonDataKinds.Phone.LOOKUP_KEY} = ?",
+            arrayOf(lookupKey)
+        ).distinctBy { it.phoneNumber }
+        val current = numbers.firstOrNull { it.phoneNumber == savedPick.phoneNumber }
+            ?: numbers.singleOrNull()
+        return current?.copy(source = "memory")
+    }
+
     /**
      * Find ALL contacts that match query using 4-tier search.
      */
@@ -283,11 +205,7 @@ open class ContactResolver @Inject constructor(
         val seen = mutableSetOf<String>() // avoid duplicates by phone number
 
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-        val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.TYPE
-        )
+        val projection = CONTACT_PROJECTION
 
         // Search 1: Exact name match (highest priority, score=100)
         queryContacts(uri, projection,
@@ -335,7 +253,7 @@ open class ContactResolver @Inject constructor(
             queryContacts(uri, projection,
                 "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
                 arrayOf("%$alias%")
-            ).forEach { contact ->
+            ).filter { hasNameToken(it.name, alias) }.forEach { contact ->
                 if (seen.add(contact.phoneNumber)) {
                     results.add(contact.copy(matchScore = 50))
                 }
@@ -369,7 +287,8 @@ open class ContactResolver @Inject constructor(
                             name = name,
                             phoneNumber = cleanPhone(number),
                             type = getPhoneTypeLabel(type),
-                            source = "contacts"
+                            source = "contacts",
+                            lookupKey = cursor.getString(3)
                         )
                     )
                 }
@@ -379,6 +298,10 @@ open class ContactResolver @Inject constructor(
         }
         return contacts
     }
+
+    /** "anna" is a word of "Anna (Chennai)", but only a substring of "Joanna". */
+    private fun hasNameToken(name: String, token: String): Boolean =
+        name.split(NAME_TOKEN_SEPARATOR).any { it.equals(token, ignoreCase = true) }
 
     /** Relationship word mappings for fuzzy matching */
     private fun getRelationshipAliases(query: String): List<String> {

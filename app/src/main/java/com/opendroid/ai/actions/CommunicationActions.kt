@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.telephony.PhoneNumberUtils
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
@@ -17,6 +18,7 @@ import com.opendroid.ai.accessibility.TelegramAutomator
 import com.opendroid.ai.accessibility.SmsAutomator
 import com.opendroid.ai.actions.base.Action
 import com.opendroid.ai.actions.base.ActionResult
+import com.opendroid.ai.core.agent.Contact
 import com.opendroid.ai.core.agent.ContactResolution
 import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.maskPhone
@@ -135,12 +137,19 @@ class CommunicationActions internal constructor(
      */
     private fun buildContactPickerResult(
         contactQuery: String,
-        matches: List<com.opendroid.ai.core.agent.Contact>,
+        matches: List<Contact>,
         action: String,
         extraMeta: Map<String, String> = emptyMap()
     ): ActionResult.NeedsInput {
         val matchesJson = json.encodeToString(
-            matches.map { mapOf("name" to it.name, "phone" to it.phoneNumber, "type" to it.type) }
+            matches.map { contact ->
+                buildMap {
+                    put("name", contact.name)
+                    put("phone", contact.phoneNumber)
+                    put("type", contact.type)
+                    contact.lookupKey?.let { put("lookupKey", it) }
+                }
+            }
         )
         return ActionResult.NeedsInput(
             question = "Which '$contactQuery' do you mean?",
@@ -156,6 +165,21 @@ class CommunicationActions internal constructor(
         )
     }
 
+    /**
+     * A saved pick skips the picker, so the result has to say who it chose.
+     */
+    private fun ActionResult.namingSavedPick(contact: Contact): ActionResult {
+        if (contact.source != "memory") return this
+        val notice = "Using ${contact.name} (${maskPhone(contact.phoneNumber)}). "
+        return when (this) {
+            is ActionResult.Success -> copy(dataMap = dataMap + ("message" to notice + data.orEmpty()))
+            is ActionResult.Failure -> copy(errorMsg = notice + errorMsg)
+            is ActionResult.PendingUserAction -> copy(message = notice + message)
+            is ActionResult.UserActionRequired -> copy(message = notice + message)
+            is ActionResult.NeedsInput, is ActionResult.UnknownAction, is ActionResult.Declined -> this
+        }
+    }
+
     // ── MAKE_CALL with disambiguation ────────────────────────
 
     private inner class MakeCallAction : Action {
@@ -169,6 +193,7 @@ class CommunicationActions internal constructor(
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
                 is ContactResolution.Found -> executeCall(resolved.contact.phoneNumber, context)
+                    .namingSavedPick(resolved.contact)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_CALL")
                 is ContactResolution.NotFound -> ActionResult.NeedsInput(
                     question = "I couldn't find '$contact' in your contacts. What's their number?",
@@ -188,6 +213,7 @@ class CommunicationActions internal constructor(
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
                 is ContactResolution.Found -> executeWhatsApp(resolved.contact.phoneNumber, contact, message, context)
+                    .namingSavedPick(resolved.contact)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(
                     contact, resolved.matches, "SEND_WHATSAPP",
                     mapOf("message" to message)
@@ -233,6 +259,7 @@ class CommunicationActions internal constructor(
                         return ActionResult(false, null, "The number saved for '$contact' can't be used on Telegram.")
                     }
                     sendTelegramToNumber(number, contact, message, context)
+                        .namingSavedPick(resolved.contact)
                 }
                 is ContactResolution.Ambiguous -> buildContactPickerResult(
                     contact, resolved.matches, "SEND_TELEGRAM",
@@ -307,6 +334,7 @@ class CommunicationActions internal constructor(
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
                 is ContactResolution.Found -> executeSms(resolved.contact.phoneNumber, contact, message, context)
+                    .namingSavedPick(resolved.contact)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(
                     contact, resolved.matches, "SEND_SMS",
                     mapOf("message" to message)
@@ -612,20 +640,21 @@ class CommunicationActions internal constructor(
             val app = params["app"] ?: "whatsapp"
 
             return when (val resolved = contactResolver.resolveWithDisambiguation(contact)) {
-                is ContactResolution.Found -> executeVideoCall(resolved.contact.phoneNumber, contact, app, context)
+                is ContactResolution.Found -> startVideoCall(resolved.contact.phoneNumber, contact, app, context)
+                    .namingSavedPick(resolved.contact)
                 is ContactResolution.Ambiguous -> buildContactPickerResult(contact, resolved.matches, "MAKE_VIDEO_CALL")
                 is ContactResolution.NotFound -> ActionResult.NeedsInput(
-                    question = "I couldn't find '$contact'. What's their phone number?",
+                    question = "I couldn't find '$contact' in your contacts. What's their number?",
                     metadata = mapOf("param" to "contact")
                 )
             }
         }
 
-        private fun executeVideoCall(phone: String, contact: String, app: String, context: Context): ActionResult {
+        private fun startVideoCall(phone: String, contact: String, app: String, context: Context): ActionResult {
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=$phone".toUri()).apply {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=${phone.substringBefore('#').substringBefore(';').substringBefore(',').filter { it.isDigit() || it == '+' }}".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -640,7 +669,7 @@ class CommunicationActions internal constructor(
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
                         } else {
-                            val dialIntent = Intent(Intent.ACTION_DIAL, "tel:$phone".toUri()).apply {
+                            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", phone, null)).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             // Telephony is optional — a device with no radio and no

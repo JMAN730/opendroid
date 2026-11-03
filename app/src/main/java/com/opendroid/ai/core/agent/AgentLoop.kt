@@ -1845,7 +1845,7 @@ class AgentLoop @Inject constructor(
         // Remember this choice for next time
         memoryManager.storeContactPreference(
             query = query,
-            contact = Contact(name = name, phoneNumber = phone)
+            contact = Contact(name = name, phoneNumber = phone, lookupKey = selectedContact["lookupKey"])
         )
 
         // Confirm selection to user

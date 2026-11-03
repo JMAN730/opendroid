@@ -4,8 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
 import com.opendroid.ai.accessibility.CallFlowVerifier
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.util.DeviceCapabilities
@@ -22,7 +22,8 @@ class CallFlowExecutor @Inject constructor(
             return ActionResult.Failure("The requested phone number is empty.")
         }
 
-        val callUri = "tel:$cleanPhone".toUri()
+        // "tel:$number" would read a "#" as the start of a URI fragment and drop it.
+        val callUri = Uri.fromParts("tel", cleanPhone, null)
         val hasTelephony = DeviceCapabilities.canMakeCalls(context)
         val dialIntent = Intent(Intent.ACTION_DIAL, callUri).withNewTask()
 

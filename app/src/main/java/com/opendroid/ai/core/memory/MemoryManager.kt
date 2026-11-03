@@ -317,11 +317,10 @@ class MemoryManager @Inject constructor(
         query: String,
         contact: com.opendroid.ai.core.agent.Contact
     ) {
-        val key = "contact_pref_${query.lowercase().trim()}"
         memoryRepository.saveMemory(
             Memory(
-                key = key,
-                value = "${contact.name}||${contact.phoneNumber}",
+                key = contactPreferenceKey(query),
+                value = encodeContactPreference(contact),
                 type = MemoryType.SEMANTIC
             )
         )
@@ -335,19 +334,22 @@ class MemoryManager @Inject constructor(
     suspend fun recallContactPreference(
         query: String
     ): com.opendroid.ai.core.agent.Contact? {
-        val key = "contact_pref_${query.lowercase().trim()}"
+        val key = contactPreferenceKey(query)
         val memories = memoryRepository.getMemoriesByType(MemoryType.SEMANTIC)
         val memory = memories.find { it.key == key } ?: return null
 
-        val parts = memory.value.split("||")
-        if (parts.size < 2) return null
-
-        return com.opendroid.ai.core.agent.Contact(
-            name = parts[0],
-            phoneNumber = parts[1],
-            source = "memory"
-        )
+        return decodeContactPreference(memory.value)
     }
+
+    /**
+     * Drop a stored contact preference whose contact can no longer be confirmed.
+     */
+    suspend fun forgetContactPreference(query: String) {
+        memoryRepository.deleteMemory(contactPreferenceKey(query))
+    }
+
+    private fun contactPreferenceKey(query: String): String =
+        "contact_pref_${query.lowercase().trim()}"
 
     /**
      * Get all saved contact preferences (for UI display).
@@ -364,5 +366,25 @@ class MemoryManager @Inject constructor(
                 } else null
             }
     }
+}
+
+/**
+ * "name||number||lookupKey". The number only says which of the contact's numbers was
+ * chosen: [com.opendroid.ai.core.agent.ContactResolver] re-reads it before use.
+ */
+internal fun encodeContactPreference(contact: com.opendroid.ai.core.agent.Contact): String =
+    "${contact.name}||${contact.phoneNumber}||${contact.lookupKey.orEmpty()}"
+
+/** Picks saved before lookup keys were stored decode with a null [lookupKey]. */
+internal fun decodeContactPreference(value: String): com.opendroid.ai.core.agent.Contact? {
+    val parts = value.split("||")
+    if (parts.size < 2) return null
+
+    return com.opendroid.ai.core.agent.Contact(
+        name = parts[0],
+        phoneNumber = parts[1],
+        source = "memory",
+        lookupKey = parts.getOrNull(2)?.takeIf { it.isNotBlank() }
+    )
 }
 
