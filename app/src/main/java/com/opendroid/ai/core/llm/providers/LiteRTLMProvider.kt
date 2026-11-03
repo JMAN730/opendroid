@@ -105,6 +105,9 @@ class LiteRTLMProvider @Inject constructor(
     /** Closes the cached engine if it was loaded from [modelDir], once its session ends. */
     suspend fun releaseIfLoadedFrom(modelDir: File) = engineHost.closeIfLoadedFrom(modelDir)
 
+    /** Closes the cached engine, whichever model it holds, once its session ends. */
+    suspend fun releaseEngine() = engineHost.close()
+
     /**
      * Deletes a downloaded model to free storage.
      */

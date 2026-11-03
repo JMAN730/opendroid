@@ -104,112 +104,108 @@ class ModelDownloadWorker(
         val expectedSize = artifact.expectedSize!!
         val downloadUrl = artifact.downloadUrl!!
         val temporaryFile = File(applicationContext.cacheDir, "$modelId.download")
-        var retainTemporaryFileForResume = false
-
-        try {
-            if (temporaryFile.exists() && temporaryFile.length() > expectedSize) {
-                temporaryFile.delete()
-            }
-
-            if (temporaryFile.length() < expectedSize) {
-                val startBytes = temporaryFile.takeIf(File::exists)?.length() ?: 0L
-                val response = when (val outcome = executeRequest(downloadUrl, startBytes)) {
-                    is RequestOutcome.Received -> outcome.response
-                    is RequestOutcome.Retryable -> {
-                        Log.w(
-                            tag,
-                            "[RETRY] Transport failed for model=$modelId; retaining partial " +
-                                "download (${outcome.error.javaClass.simpleName})."
-                        )
-                        retainTemporaryFileForResume = true
-                        return Result.retry()
-                    }
-                    RequestOutcome.Failed ->
-                        return fail(modelId, "Internet connection unavailable.")
+        return withPartialDownloadFile(temporaryFile) { keepForResume ->
+            try {
+                if (temporaryFile.exists() && temporaryFile.length() > expectedSize) {
+                    temporaryFile.delete()
                 }
 
-                response.use { httpResponse ->
-                    if (!httpResponse.isSuccessful && httpResponse.code != 206) {
-                        if (ModelDownloadRetryPolicy.isRetryableHttpStatus(httpResponse.code)) {
+                if (temporaryFile.length() < expectedSize) {
+                    val startBytes = temporaryFile.takeIf(File::exists)?.length() ?: 0L
+                    val response = when (val outcome = executeRequest(downloadUrl, startBytes)) {
+                        is RequestOutcome.Received -> outcome.response
+                        is RequestOutcome.Retryable -> {
                             Log.w(
                                 tag,
-                                "[RETRY] HTTP ${httpResponse.code} for model=$modelId; " +
-                                    "retaining partial download."
+                                "[RETRY] Transport failed for model=$modelId; retaining partial " +
+                                    "download (${outcome.error.javaClass.simpleName})."
                             )
-                            retainTemporaryFileForResume = true
+                            keepForResume()
                             return Result.retry()
                         }
-                        return fail(modelId, httpFailureMessage(httpResponse.code))
+                        RequestOutcome.Failed ->
+                            return fail(modelId, "Internet connection unavailable.")
                     }
 
-                    val append = startBytes > 0L && httpResponse.code == 206
-                    if (append && httpResponse.header("Content-Range")
-                            ?.startsWith("bytes $startBytes-") != true
-                    ) {
-                        return fail(modelId, "Server returned an invalid download range.")
-                    }
+                    response.use { httpResponse ->
+                        if (!httpResponse.isSuccessful && httpResponse.code != 206) {
+                            if (ModelDownloadRetryPolicy.isRetryableHttpStatus(httpResponse.code)) {
+                                Log.w(
+                                    tag,
+                                    "[RETRY] HTTP ${httpResponse.code} for model=$modelId; " +
+                                        "retaining partial download."
+                                )
+                                keepForResume()
+                                return Result.retry()
+                            }
+                            return fail(modelId, httpFailureMessage(httpResponse.code))
+                        }
 
-                    httpResponse.body.byteStream().use { input ->
-                        FileOutputStream(temporaryFile, append).use { output ->
-                            copyResponse(
-                                input = input,
-                                output = output,
-                                initialBytes = if (append) startBytes else 0L,
-                                expectedSize = expectedSize,
-                                modelId = modelId
-                            )
-                            output.fd.sync()
+                        val append = startBytes > 0L && httpResponse.code == 206
+                        if (append && httpResponse.header("Content-Range")
+                                ?.startsWith("bytes $startBytes-") != true
+                        ) {
+                            return fail(modelId, "Server returned an invalid download range.")
+                        }
+
+                        httpResponse.body.byteStream().use { input ->
+                            FileOutputStream(temporaryFile, append).use { output ->
+                                copyResponse(
+                                    input = input,
+                                    output = output,
+                                    initialBytes = if (append) startBytes else 0L,
+                                    expectedSize = expectedSize,
+                                    modelId = modelId
+                                )
+                                output.fd.sync()
+                            }
                         }
                     }
                 }
-            }
 
-            if (isStopped) {
-                retainTemporaryFileForResume = true
-                logStopReason(modelId)
+                if (isStopped) {
+                    keepForResume()
+                    logStopReason(modelId)
+                    return Result.retry()
+                }
+
+                val downloadedPayload = verifier.verifyManagedPayload(temporaryFile, spec)
+                if (downloadedPayload is ArtifactVerificationResult.Invalid) {
+                    return fail(modelId, verificationFailureMessage(downloadedPayload.failure))
+                }
+
+                val targetDir = modelDirectory(spec)
+                if (!targetDir.exists() && !targetDir.mkdirs()) {
+                    return fail(modelId, "Could not prepare model storage.")
+                }
+                val install = installer.installManagedDownload(
+                    source = temporaryFile,
+                    target = ModelStoragePaths.targetFile(targetDir, spec),
+                    manifestFile = ModelStoragePaths.manifestFile(targetDir),
+                    spec = spec,
+                    verifyFormat = { LiteRtCompatibility.verify(it, applicationContext.cacheDir, spec.contextWindow) }
+                )
+                if (install is ArtifactVerificationResult.Invalid) {
+                    return fail(modelId, verificationFailureMessage(install.failure))
+                }
+
+                val refFile = File(applicationContext.filesDir, "litert_models/$modelId.litertlm")
+                val refDirectory = requireNotNull(refFile.parentFile)
+                if (!refDirectory.exists() && !refDirectory.mkdirs()) {
+                    return fail(modelId, "Could not finalize model installation.")
+                }
+                refFile.writeText(targetDir.absolutePath)
+
+                modelDao.markDownloadReady(modelId, expectedSize)
+                return Result.success()
+            } catch (interrupted: RetryableTransportInterruption) {
+                Log.w(
+                    tag,
+                    "[RETRY] Transport interrupted for model=$modelId; retaining partial download " +
+                        "(${interrupted.cause?.javaClass?.simpleName})."
+                )
+                keepForResume()
                 return Result.retry()
-            }
-
-            val downloadedPayload = verifier.verifyManagedPayload(temporaryFile, spec)
-            if (downloadedPayload is ArtifactVerificationResult.Invalid) {
-                return fail(modelId, verificationFailureMessage(downloadedPayload.failure))
-            }
-
-            val targetDir = modelDirectory(spec)
-            if (!targetDir.exists() && !targetDir.mkdirs()) {
-                return fail(modelId, "Could not prepare model storage.")
-            }
-            val install = installer.installManagedDownload(
-                source = temporaryFile,
-                target = ModelStoragePaths.targetFile(targetDir, spec),
-                manifestFile = ModelStoragePaths.manifestFile(targetDir),
-                spec = spec,
-                verifyFormat = { LiteRtCompatibility.verify(it, applicationContext.cacheDir, spec.contextWindow) }
-            )
-            if (install is ArtifactVerificationResult.Invalid) {
-                return fail(modelId, verificationFailureMessage(install.failure))
-            }
-
-            val refFile = File(applicationContext.filesDir, "litert_models/$modelId.litertlm")
-            val refDirectory = requireNotNull(refFile.parentFile)
-            if (!refDirectory.exists() && !refDirectory.mkdirs()) {
-                return fail(modelId, "Could not finalize model installation.")
-            }
-            refFile.writeText(targetDir.absolutePath)
-
-            modelDao.markDownloadReady(modelId, expectedSize)
-            return Result.success()
-        } catch (interrupted: RetryableTransportInterruption) {
-            Log.w(
-                tag,
-                "[RETRY] Transport interrupted for model=$modelId; retaining partial download " +
-                    "(${interrupted.cause?.javaClass?.simpleName})."
-            )
-            retainTemporaryFileForResume = true
-            return Result.retry()
-        } finally {
-            if (!retainTemporaryFileForResume) {
-                temporaryFile.delete()
             }
         }
     }
@@ -383,4 +379,28 @@ class ModelDownloadWorker(
     private class RetryableTransportInterruption(
         cause: Throwable
     ) : Exception(cause)
+}
+
+/**
+ * Runs one download attempt into [partialFile] and deletes the file afterwards, unless [block]
+ * called its `keepForResume` argument so the next run can resume it with a Range request.
+ *
+ * A cancelled attempt always keeps the file. WorkManager stops a run by cancelling it, which can
+ * land at any suspension point, such as a progress write, before [block] gets to ask.
+ */
+internal suspend inline fun <T> withPartialDownloadFile(
+    partialFile: File,
+    block: (keepForResume: () -> Unit) -> T
+): T {
+    var keep = false
+    try {
+        return block { keep = true }
+    } catch (cancelled: CancellationException) {
+        keep = true
+        throw cancelled
+    } finally {
+        if (!keep) {
+            partialFile.delete()
+        }
+    }
 }

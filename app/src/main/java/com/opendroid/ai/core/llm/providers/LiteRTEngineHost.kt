@@ -57,6 +57,11 @@ internal class LiteRTEngineHost(
         }
     }
 
+    /** Closes the cached engine, if any, once a running session ends. */
+    suspend fun close() {
+        mutex.withLock { closeEngine() }
+    }
+
     /** Decodes [prompt] and emits each text delta, up to the output cap. */
     fun stream(
         modelPath: String,
