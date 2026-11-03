@@ -1,5 +1,6 @@
 package com.opendroid.ai.core.service
 
+import android.annotation.SuppressLint
 import android.content.pm.ServiceInfo
 
 /**
@@ -8,7 +9,12 @@ import android.content.pm.ServiceInfo
  */
 internal object ForegroundStart {
 
-    /** Types to try in order. null means an untyped startForeground (before API 30). */
+    /**
+     * Types to try in order. null means an untyped startForeground (before API 30).
+     * The constants are compile-time ints gated on [sdk], which lint's InlinedApi check
+     * cannot tie to SDK_INT.
+     */
+    @SuppressLint("InlinedApi")
     fun typesFor(sdk: Int, micGranted: Boolean): List<Int?> = when {
         sdk >= 34 -> if (micGranted) {
             listOf(ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
