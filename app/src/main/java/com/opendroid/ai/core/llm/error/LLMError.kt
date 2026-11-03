@@ -300,9 +300,7 @@ object LLMErrorMapper {
 
     private fun parseRetryAfter(value: String?): Long? {
         val text = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        text.toDoubleOrNull()?.takeIf { it >= 0.0 }?.let {
-            return (it * 1_000.0).roundToLong()
-        }
+        text.toDoubleOrNull()?.let { return (it * 1_000.0).toRetryAfterMillisOrNull() }
 
         val parts = GO_DURATION_PART.findAll(text).toList()
         if (parts.isNotEmpty() && parts.joinToString("") { it.value } == text) {
@@ -316,7 +314,7 @@ object LLMErrorMapper {
                 }
                 amount * multiplier
             }
-            return millis.roundToLong().takeIf { it >= 0L }
+            return millis.toRetryAfterMillisOrNull()
         }
 
         return runCatching {
@@ -324,4 +322,8 @@ object LLMErrorMapper {
             (retryAt.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0L)
         }.getOrNull()
     }
+
+    // roundToLong saturates, so a value that does not fit a Long must be rejected up front.
+    private fun Double.toRetryAfterMillisOrNull(): Long? =
+        takeIf { it.isFinite() && it >= 0.0 && it < Long.MAX_VALUE.toDouble() }?.roundToLong()
 }
