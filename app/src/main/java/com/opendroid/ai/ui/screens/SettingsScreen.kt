@@ -45,6 +45,7 @@ import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
+import com.opendroid.ai.core.service.McpConfigRecoveryState
 import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import com.google.mlkit.genai.prompt.*
 import com.google.mlkit.genai.common.FeatureStatus
@@ -90,6 +91,8 @@ fun SettingsScreen(
     val hfToken by viewModel.huggingFaceToken.collectAsState()
     val providerCredentialRecoveryState by viewModel.providerCredentialRecoveryState.collectAsState()
     val providerCredentialPersistenceState by viewModel.providerCredentialPersistenceState.collectAsState()
+    val mcpConfigRecoveryState by viewModel.mcpConfigRecoveryState.collectAsState()
+    val mcpResetFailed by viewModel.mcpResetFailed.collectAsState()
 
     val providers = listOf(
         "Google Gemini",
@@ -193,6 +196,50 @@ fun SettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
                             ) {
                                 Text("Clear unavailable credentials", color = DarkBackground)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (mcpConfigRecoveryState == McpConfigRecoveryState.SecretsMustBeReentered) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "MCP SETUP MUST BE REDONE",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "The MCP access token and saved MCP servers cannot be read on " +
+                                    "this device, so MCP requests are refused. Resetting discards them; " +
+                                    "pair your MCP client and add your servers again afterwards.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            if (mcpResetFailed) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Reset failed. Try again.",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFFF9800)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = viewModel::resetMcpConfigForReentry,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                            ) {
+                                Text("Reset MCP setup", color = DarkBackground)
                             }
                         }
                     }

@@ -39,6 +39,7 @@ import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.service.McpConfigStore
 import com.opendroid.ai.core.settings.AppSettingsStore
 import com.opendroid.ai.data.repository.ProviderCredentialPersistenceState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -64,7 +65,8 @@ class SettingsViewModel @Inject constructor(
     private val providerCredentialStore: ProviderCredentialStore,
     // The verification timestamp says when a token was last checked, never what the token is,
     // so it lives with ordinary settings rather than in encrypted storage.
-    private val appSettingsStore: AppSettingsStore
+    private val appSettingsStore: AppSettingsStore,
+    private val mcpConfigStore: McpConfigStore
 ) : ViewModel() {
 
     private val _huggingFaceToken = MutableStateFlow("")
@@ -124,8 +126,17 @@ class SettingsViewModel @Inject constructor(
 
     val providerCredentialRecoveryState = providerCredentialStore.recoveryState
     val providerCredentialPersistenceState = settingsRepository.providerCredentialPersistenceState
+    val mcpConfigRecoveryState = mcpConfigStore.recoveryState
+
+    private val _mcpResetFailed = MutableStateFlow(false)
+    val mcpResetFailed: StateFlow<Boolean> = _mcpResetFailed
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            // The MCP server only reads its secrets when a request arrives; check now so a lost
+            // key is reported here even before anything connects.
+            runCatching { mcpConfigStore.refreshRecoveryState() }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             providerCredentialStore.migrateLegacyCredentials()
             val token = when (
@@ -202,6 +213,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             providerCredentialStore.remove(ProviderCredentialId.HuggingFaceToken)
             clearHuggingFaceVerificationMetadata()
+        }
+    }
+
+    /** Discards the unreadable MCP access token and endpoints so MCP clients can pair again. */
+    fun resetMcpConfigForReentry() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _mcpResetFailed.value = runCatching { mcpConfigStore.resetForReentry() }.isFailure
         }
     }
 
