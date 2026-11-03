@@ -110,7 +110,14 @@ class PlanManager @Inject constructor(
                     step
                 }
             }
-            val updatedPlan = plan.copy(steps = updatedSteps)
+            // A step that has run never needs its secret again, so it leaves the step.
+            val updatedPlan = plan.copy(steps = updatedSteps).let {
+                if (status == StepStatus.COMPLETED || status == StepStatus.FAILED) {
+                    PlanPrivacy.forgetStepSecrets(it, stepId)
+                } else {
+                    it
+                }
+            }
             _currentPlan.value = updatedPlan
             workingMemory.activePlan = updatedPlan
             saveCurrentPlanLocked()
@@ -122,7 +129,9 @@ class PlanManager @Inject constructor(
             val plan = _currentPlan.value ?: return@withLock
             // RUNNING would make a finished plan's pending steps runnable again.
             if (status == PlanStatus.RUNNING && plan.status.isTerminal()) return@withLock
-            val updatedPlan = plan.copy(status = status)
+            val updatedPlan = plan.copy(status = status).let {
+                if (status.isTerminal()) PlanPrivacy.redactPlan(it) else it
+            }
             _currentPlan.value = updatedPlan
             if (status == PlanStatus.COMPLETED || status == PlanStatus.FAILED) {
                 workingMemory.activePlan = null
@@ -239,7 +248,7 @@ class PlanManager @Inject constructor(
             val plan = _currentPlan.value ?: return@withLock
             if (plan.status.isTerminal()) return@withLock
             if (expectedPlanId != null && plan.planId != expectedPlanId) return@withLock
-            val updatedPlan = plan.copy(status = PlanStatus.CANCELLED)
+            val updatedPlan = PlanPrivacy.redactPlan(plan.copy(status = PlanStatus.CANCELLED))
             _currentPlan.value = updatedPlan
             workingMemory.activePlan = null
             saveCurrentPlanLocked()
@@ -322,8 +331,10 @@ class PlanManager @Inject constructor(
             val plan = _currentPlan.value ?: return@withLock
             val targetStep = plan.steps.find { it.stepId == stepId } ?: return@withLock
             if (targetStep.status != StepStatus.PENDING) return@withLock
-            val updatedSteps = plan.steps.filterNot { it.stepId == stepId }
-            val updatedPlan = plan.copy(steps = updatedSteps)
+            // Other steps can echo a removed sensitive step's value, and the goal can hold it.
+            val updatedPlan = PlanPrivacy.forgetStepSecrets(plan, stepId).let { forgotten ->
+                forgotten.copy(steps = forgotten.steps.filterNot { it.stepId == stepId })
+            }
             _currentPlan.value = updatedPlan
             workingMemory.activePlan = updatedPlan
             saveCurrentPlanLocked()

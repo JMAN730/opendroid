@@ -24,6 +24,7 @@ import java.time.ZonedDateTime
 import java.time.format.TextStyle
 import java.util.Calendar
 import java.util.Locale
+import com.opendroid.ai.core.memory.ExecutionHistoryPrivacy
 import com.opendroid.ai.core.memory.graph.KnowledgeCategory
 import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
@@ -594,13 +595,18 @@ class CalendarActions @Inject constructor(
         }
     }
 
-    private class SaveSensitiveInfoAction(
+    internal class SaveSensitiveInfoAction(
         private val personalGrowthEngine: dagger.Lazy<PersonalGrowthEngine>
     ) : Action {
         override val name: String = "SAVE_SENSITIVE_INFO"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val key = params["key"] ?: return ActionResult(false, null, "Sensitive key is required.")
             val secret = params["secret"] ?: return ActionResult(false, null, "Sensitive secret value is required.")
+            // A plan reloaded from history or replayed from a macro only has the placeholder,
+            // and storing that would overwrite the real secret under this key.
+            if (secret == ExecutionHistoryPrivacy.REDACTED) {
+                return ActionResult(false, null, "This secret isn't kept in saved plans. Please provide it again.")
+            }
             val label = params["label"]?.ifBlank { key } ?: key
 
             return try {
