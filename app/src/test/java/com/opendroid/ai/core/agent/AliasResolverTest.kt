@@ -39,6 +39,11 @@ class AliasResolverTest {
         assertEquals("0", hint.baseParams["level"])
     }
 
+    @Test
+    fun `turn on do not disturb resolves to the DND toggle`() {
+        assertEquals("TOGGLE_DND", AliasResolver.resolve("turn on do not disturb")?.action)
+    }
+
     // ── cleanInput: stop-word / filler stripping ────────────────────────
 
     @Test
