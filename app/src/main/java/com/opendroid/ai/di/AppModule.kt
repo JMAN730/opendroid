@@ -15,6 +15,8 @@ import com.opendroid.ai.actions.AndroidMediaPlaybackVerifier
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.actions.MediaPlaybackVerifier
 import com.opendroid.ai.core.agent.ActionSequenceExecutor
+import com.opendroid.ai.core.agent.AgentLoop
+import com.opendroid.ai.core.agent.ChatAgent
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -92,4 +94,7 @@ object AppModule {
         },
         hasAction = { action -> actionDispatcher.get().hasAction(action) }
     )
+
+    @Provides
+    fun provideChatAgent(agentLoop: AgentLoop): ChatAgent = agentLoop
 }

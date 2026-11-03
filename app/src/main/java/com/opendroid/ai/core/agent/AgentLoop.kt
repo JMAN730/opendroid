@@ -133,6 +133,31 @@ sealed interface AgentState {
     data class Error(val message: String) : AgentState
 }
 
+/**
+ * The part of [AgentLoop] the chat UI drives. [activeTaskSessionId] and
+ * [proposedPlanSessionId] are the sessions the loop itself pinned, so the UI attributes
+ * [agentState] to the chat a task really runs in - including a voice or bubble task,
+ * which the UI never started and so can't track on its own.
+ */
+interface ChatAgent {
+    val agentState: StateFlow<AgentState>
+    val chatError: StateFlow<ChatErrorUiState?>
+
+    /** Session the latest task was pinned to, or null before any task has started. */
+    val activeTaskSessionId: StateFlow<String?>
+
+    /** Session of the plan waiting in [AgentState.PlanProposed], or null when none is. */
+    val proposedPlanSessionId: StateFlow<String?>
+
+    fun processQuery(query: String, context: Context, explicitSessionId: String? = null)
+    fun retryRequest(requestId: String, sessionId: String, context: Context)
+    fun dismissChatError()
+    fun approveProposedPlan(context: Context, planId: String, grantActions: Set<String> = emptySet())
+    fun rejectProposedPlan()
+    fun forgetSession(sessionId: String)
+    fun cancelCurrentTask()
+}
+
 @Singleton
 class AgentLoop @Inject constructor(
     private val intentClassifier: IntentClassifier,
@@ -144,7 +169,7 @@ class AgentLoop @Inject constructor(
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
     private val reEvalEngine: dagger.Lazy<ReEvaluationEngine>
-) {
+) : ChatAgent {
     private val scope = CoroutineScope(Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
     private val queryMutex = Mutex()
@@ -163,11 +188,13 @@ class AgentLoop @Inject constructor(
     // If the user switches (or starts) a chat while the task is still running, its writes
     // keep landing in the chat it was pinned to, not wherever the user has navigated to.
     //
-    // That parameter-threading is what makes pinning safe against races: this field is only
-    // ever read back in one place - relaying a reply to THIS SAME task's awaitUserResponse()
-    // prompt (see processQuery) - never by the task's own ongoing execution, so a later task
-    // overwriting this field can't redirect an earlier task's still-unwinding writes.
-    @Volatile private var activeTaskSessionId: String = ""
+    // That parameter-threading is what makes pinning safe against races: inside the loop this
+    // field is only ever read back in one place - relaying a reply to THIS SAME task's
+    // awaitUserResponse() prompt (see processQuery) - never by the task's own ongoing
+    // execution, so a later task overwriting this field can't redirect an earlier task's
+    // still-unwinding writes. Also published, so the UI can tell which chat a task belongs to.
+    private val _activeTaskSessionId = MutableStateFlow<String?>(null)
+    override val activeTaskSessionId: StateFlow<String?> = _activeTaskSessionId.asStateFlow()
 
     // The last successfully executed action/params, scoped PER SESSION so a contextual
     // follow-up (AliasResolver.resolveContextual - "turn it off", "stop it", ...) in one
@@ -186,13 +213,14 @@ class AgentLoop @Inject constructor(
     // a genuinely new task starting in a DIFFERENT session (see resolveStaleProposedPlan)
     // recognize "there's a proposal out there that isn't mine" before it does anything
     // that would otherwise silently clobber it.
-    @Volatile private var proposedPlanSessionId: String? = null
+    private val _proposedPlanSessionId = MutableStateFlow<String?>(null)
+    override val proposedPlanSessionId: StateFlow<String?> = _proposedPlanSessionId.asStateFlow()
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
-    val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
+    override val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
 
     private val _chatError = MutableStateFlow<ChatErrorUiState?>(null)
-    val chatError: StateFlow<ChatErrorUiState?> = _chatError.asStateFlow()
+    override val chatError: StateFlow<ChatErrorUiState?> = _chatError.asStateFlow()
 
     // Ids of partially streamed agent replies, so re-sent context can label them as
     // incomplete. Bounded: an insertion-ordered set capped at
@@ -240,7 +268,7 @@ class AgentLoop @Inject constructor(
      * happens from within that task's own execution. Pass a session explicitly only if
      * that assumption doesn't hold.
      */
-    suspend fun awaitUserResponse(sessionId: String = activeTaskSessionId): String {
+    suspend fun awaitUserResponse(sessionId: String = _activeTaskSessionId.value.orEmpty()): String {
         val request = PendingUserInput(sessionId, UUID.randomUUID().toString(), CompletableDeferred())
         waitingSessionId = sessionId
         pendingUserInput = request
@@ -276,7 +304,7 @@ class AgentLoop @Inject constructor(
      * pre-multi-session behavior: a null session is always assumed to answer whatever
      * prompt is currently pending, and otherwise falls back to resolving "current".
      */
-    fun processQuery(query: String, context: Context, explicitSessionId: String? = null) {
+    override fun processQuery(query: String, context: Context, explicitSessionId: String?) {
         // processQuery is also the delivery path for a reply to a pending
         // awaitUserResponse() prompt (see below). That's ONLY true when this message comes
         // from the SAME session the waiting task is pinned to (waitingSessionId) - a
@@ -304,6 +332,12 @@ class AgentLoop @Inject constructor(
             currentJob?.cancel()
         }
 
+        // A caller that knows the session pins it before returning, so the chat that just
+        // sent this message is already the one the shared agent state is attributed to.
+        if (!isAnsweringPendingQuestion && explicitSessionId != null) {
+            _activeTaskSessionId.value = explicitSessionId
+        }
+
         val job = scope.launch {
             try {
                 // Pin the session THIS task writes to, resolved once, right here, before any
@@ -314,10 +348,10 @@ class AgentLoop @Inject constructor(
                 // re-resolve "current", since the user may have switched (or created) chats
                 // while that task was still waiting on them.
                 val sessionId = if (isAnsweringPendingQuestion) {
-                    activeTaskSessionId
+                    _activeTaskSessionId.value.orEmpty()
                 } else {
-                    (explicitSessionId ?: conversationRepository.ensureCurrentSessionId())
-                        .also { activeTaskSessionId = it }
+                    explicitSessionId ?: conversationRepository.ensureCurrentSessionId()
+                        .also { _activeTaskSessionId.value = it }
                 }
 
                 if (!isAnsweringPendingQuestion) {
@@ -385,7 +419,7 @@ class AgentLoop @Inject constructor(
      * Falls back to the session's last user message if [requestId] doesn't resolve to
      * one (e.g. a plan re-evaluation failure, whose requestId is a plan id).
      */
-    fun retryRequest(requestId: String, sessionId: String, context: Context) {
+    override fun retryRequest(requestId: String, sessionId: String, context: Context) {
         val waitingSession = waitingSessionId
         if (waitingSession != null && waitingSession != sessionId) {
             abandonWaitingTask(waitingSession)
@@ -393,9 +427,10 @@ class AgentLoop @Inject constructor(
             currentJob?.cancel()
         }
 
+        _activeTaskSessionId.value = sessionId
+
         val job = scope.launch {
             try {
-                activeTaskSessionId = sessionId
                 resolveStaleProposedPlan(sessionId)
 
                 val messages = conversationRepository.getMessages(sessionId).first()
@@ -540,7 +575,7 @@ class AgentLoop @Inject constructor(
         }
     }
 
-    fun dismissChatError() {
+    override fun dismissChatError() {
         _chatError.value = null
     }
 
@@ -853,14 +888,14 @@ class AgentLoop @Inject constructor(
      * approval - a spoken "yes" landing after Stop, say - returns before anything
      * happens: no job cancelled, no grant persisted, no step run.
      */
-    fun approveProposedPlan(context: Context, planId: String, grantActions: Set<String> = emptySet()) {
+    override fun approveProposedPlan(context: Context, planId: String, grantActions: Set<String>) {
         if (!claimProposedPlan(_agentState, planId)) return
         currentJob?.cancel()
         val job = scope.launch {
             queryMutex.withLock {
                 val plan = planManager.currentPlan.value
                 if (plan == null || !isAwaitingApproval(plan, planId)) {
-                    proposedPlanSessionId = null
+                    _proposedPlanSessionId.value = null
                     _agentState.compareAndSet(AgentState.Thinking, AgentState.Idle)
                     return@withLock
                 }
@@ -883,17 +918,17 @@ class AgentLoop @Inject constructor(
                 // session the plan was actually PROPOSED for, never wherever the user happens
                 // to be looking right now - falls back to "current" only if somehow nothing
                 // was pinned (there is no proposal to misattribute in that case anyway).
-                val sessionId = (proposedPlanSessionId ?: conversationRepository.ensureCurrentSessionId())
-                    .also { activeTaskSessionId = it }
-                proposedPlanSessionId = null
+                val sessionId = (_proposedPlanSessionId.value ?: conversationRepository.ensureCurrentSessionId())
+                    .also { _activeTaskSessionId.value = it }
+                _proposedPlanSessionId.value = null
                 executePlanLoop(plan, context, sessionId)
             }
         }
         currentJob = job
     }
 
-    fun rejectProposedPlan() {
-        proposedPlanSessionId = null
+    override fun rejectProposedPlan() {
+        _proposedPlanSessionId.value = null
         planManager.clearPlan()
         _agentState.value = AgentState.Idle
     }
@@ -906,7 +941,7 @@ class AgentLoop @Inject constructor(
      * to ask "turn it off" against whatever it last did. Harmless no-op if the
      * session never executed an action, or is already gone.
      */
-    fun forgetSession(sessionId: String) {
+    override fun forgetSession(sessionId: String) {
         lastExecutedActionsBySession.remove(sessionId)
     }
 
@@ -932,11 +967,11 @@ class AgentLoop @Inject constructor(
      * even starts unwinding. [planManager.currentPlan] is a plain StateFlow
      * read, not suspending, so this capture is safe to do here.
      */
-    fun cancelCurrentTask() {
+    override fun cancelCurrentTask() {
         val jobToCancel = currentJob
         currentJob = null
         waitingSessionId = null
-        proposedPlanSessionId = null
+        _proposedPlanSessionId.value = null
         _agentState.value = AgentState.Idle
         jobToCancel?.cancel() ?: return
         val planIdToCancel = planManager.currentPlan.value?.planId
@@ -963,11 +998,11 @@ class AgentLoop @Inject constructor(
      * belongs to [newSessionId] (a new task in the SAME chat legitimately supersedes it).
      */
     private suspend fun resolveStaleProposedPlan(newSessionId: String) {
-        val staleSessionId = proposedPlanSessionId
+        val staleSessionId = _proposedPlanSessionId.value
         if (staleSessionId == null || staleSessionId == newSessionId) return
         val proposedState = _agentState.value as? AgentState.PlanProposed ?: return
 
-        proposedPlanSessionId = null
+        _proposedPlanSessionId.value = null
         _agentState.value = AgentState.Idle
         // Target the exact plan this state was carrying, not "whatever is
         // current" - see cancelPlan's expectedPlanId doc comment. There is no
@@ -1024,7 +1059,7 @@ class AgentLoop @Inject constructor(
     }
 
     private fun proposePlan(plan: Plan, sessionId: String) {
-        proposedPlanSessionId = sessionId
+        _proposedPlanSessionId.value = sessionId
         _agentState.value = AgentState.PlanProposed(plan)
     }
 
