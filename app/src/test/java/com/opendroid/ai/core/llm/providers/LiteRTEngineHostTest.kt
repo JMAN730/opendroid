@@ -275,6 +275,35 @@ class LiteRTEngineHostTest {
         assertTrue(runtime.engines.single().closed)
     }
 
+    @Test
+    fun `close releases the cached engine once its running session ends`() = runBlocking(Dispatchers.Default) {
+        val runtime = FakeRuntime(tokens = 20, tokenDelayMs = 5)
+        val host = LiteRTEngineHost(runtime::open)
+        val firstToken = CompletableDeferred<Unit>()
+
+        val stream = launch {
+            host.stream(PATH, spec, PROMPT, 500, 0.5f).collect { firstToken.complete(Unit) }
+        }
+        firstToken.await()
+
+        withTimeout(5_000) { host.close() }
+        stream.join()
+
+        assertFalse(host.holds(PATH))
+        assertTrue(runtime.engines.single().closed)
+        assertFalse(runtime.closedWhileOpen)
+    }
+
+    @Test
+    fun `close without a cached engine does nothing`() = runBlocking {
+        val runtime = FakeRuntime(tokens = 1)
+        val host = LiteRTEngineHost(runtime::open)
+
+        host.close()
+
+        assertTrue(runtime.engines.isEmpty())
+    }
+
     private companion object {
         const val PATH = "models/fake.litertlm"
         const val PROMPT = "Model:"

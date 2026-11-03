@@ -5,13 +5,17 @@ import android.util.Log
 import com.opendroid.ai.core.crash.CrashLogRecorder
 import com.opendroid.ai.core.crash.DeviceMetadata
 import com.opendroid.ai.core.crash.OpenDroidCrashHandler
+import com.opendroid.ai.core.llm.OnDeviceEngineReleaseMonitor
+import com.opendroid.ai.core.llm.providers.LiteRTLMProvider
 import com.opendroid.ai.core.memory.MemoryManager
 import com.opendroid.ai.core.security.LegacyPreferenceMigration
 import com.opendroid.ai.data.crash.CrashLogRepository
+import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -27,7 +31,18 @@ class OpenDroidApp : Application() {
     @Inject
     lateinit var legacyPreferenceMigration: LegacyPreferenceMigration
 
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var liteRTProvider: dagger.Lazy<LiteRTLMProvider>
+
     private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // The cached LiteRT engine keeps its whole model mapped; drop it when it is not needed.
+    private val engineReleaseMonitor by lazy {
+        OnDeviceEngineReleaseMonitor(appScope) { liteRTProvider.get().releaseEngine() }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -49,6 +64,13 @@ class OpenDroidApp : Application() {
                 // Silently ignore cleanup errors to not block app startup
             }
         }
+
+        engineReleaseMonitor.watch(settingsRepository.llmConfig.map { it.activeProvider })
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        engineReleaseMonitor.onTrimMemory(level)
     }
 
     private fun installCrashHandler() {
