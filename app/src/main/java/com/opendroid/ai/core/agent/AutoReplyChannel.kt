@@ -50,15 +50,17 @@ internal fun replyChannelFor(
     }
     if (!appEnabled) return null
 
-    // Check blacklist
+    // Check blacklist. A bare name still blocks in every app: wrongly staying silent is harmless.
     val contact = notification.contactName ?: notification.title
-    if (config.blacklistedContacts.any { it.equals(contact, ignoreCase = true) }) {
+    val entry = "${notification.packageName}:$contact"
+    if (config.blacklistedContacts.any { it.equals(entry, ignoreCase = true) || it.equals(contact, ignoreCase = true) }) {
         return null
     }
 
-    // Check whitelist (if set, only reply to whitelisted contacts)
+    // Check whitelist (if set, only reply to whitelisted contacts). Only an entry naming the app
+    // counts: a sender in any app can take a bare name, and that must not let them in.
     if (config.whitelistedContacts.isNotEmpty()) {
-        if (!config.whitelistedContacts.any { it.equals(contact, ignoreCase = true) }) {
+        if (!config.whitelistedContacts.any { it.equals(entry, ignoreCase = true) }) {
             return null
         }
     }

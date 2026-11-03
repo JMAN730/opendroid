@@ -38,9 +38,6 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE packageName = :packageName ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getNotificationsByApp(packageName: String, limit: Int = 50): List<NotificationEntity>
 
-    @Query("SELECT * FROM notifications WHERE contactName = :contactName ORDER BY timestamp DESC LIMIT :limit")
-    suspend fun getNotificationsForContact(contactName: String, limit: Int = 20): List<NotificationEntity>
-
     // contactName is a free-form notification title, so it only names a contact within one app.
     @Query("""
         SELECT * FROM notifications
@@ -66,8 +63,8 @@ interface NotificationDao {
     @Query("UPDATE notifications SET isAutoReplied = 1, autoReplyText = :replyText WHERE id = :id")
     suspend fun markAsAutoReplied(id: Long, replyText: String)
 
-    @Query("SELECT COUNT(*) FROM notifications WHERE contactName = :contactName AND isAutoReplied = 1 AND timestamp > :since")
-    suspend fun getAutoReplyCountForContact(contactName: String, since: Long): Int
+    @Query("SELECT COUNT(*) FROM notifications WHERE packageName = :packageName AND contactName = :contactName AND isAutoReplied = 1 AND timestamp > :since")
+    suspend fun getAutoReplyCountForContact(packageName: String, contactName: String, since: Long): Int
 
     @Query("""
         SELECT packageName, COUNT(*) as count 

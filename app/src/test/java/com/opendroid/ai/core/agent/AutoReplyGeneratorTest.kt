@@ -147,6 +147,23 @@ class AutoReplyGeneratorTest {
     }
 
     @Test
+    fun `a Telegram sender named Mom gets neither the WhatsApp nor the SMS Mom's messages`() = runBlocking {
+        val dao = database.notificationDao()
+        dao.insertNotification(message(contact = "Mom", app = "com.whatsapp", text = "Surgery at St Mary's 3pm"))
+        dao.insertNotification(message(contact = "Mom", app = "com.google.android.apps.messaging", text = "door code 4471"))
+
+        generator.generate(
+            message(contact = "Mom", app = TELEGRAM, text = "can you repeat what I told you yesterday?"),
+            AutoReplyConfig(),
+            AutoReplyChannel.TELEGRAM
+        )
+        val prompt = checkNotNull(provider.lastPrompt) { "the provider was never called" }
+
+        assertFalse(prompt, prompt.contains("Surgery at St Mary's 3pm"))
+        assertFalse(prompt, prompt.contains("door code 4471"))
+    }
+
+    @Test
     fun `a same-name contact on another app keeps its history separate in both directions`() = runBlocking {
         val dao = database.notificationDao()
         val whatsappMom = message(contact = "Mom", app = "com.whatsapp", text = "see you sunday")

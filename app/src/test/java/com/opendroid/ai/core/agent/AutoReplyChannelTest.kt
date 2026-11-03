@@ -169,7 +169,7 @@ class AutoReplyChannelTest {
     }
 
     @Test
-    fun `a blacklisted contact gets no reply`() {
+    fun `a bare name on the blacklist still blocks that name in every app`() {
         val channel = replyChannelFor(
             notification("com.android.mms"),
             smsOnly.copy(blacklistedContacts = setOf("alice")),
@@ -188,7 +188,48 @@ class AutoReplyChannelTest {
         )
         assertEquals(
             AutoReplyChannel.SMS,
-            replyChannelFor(sms, smsOnly.copy(whitelistedContacts = setOf("alice")), defaultSmsPackage = null)
+            replyChannelFor(sms, smsOnly.copy(whitelistedContacts = setOf("com.android.mms:alice")), defaultSmsPackage = null)
         )
+    }
+
+    @Test
+    fun `a whitelist entry admits its contact only in its own app`() {
+        val config = AutoReplyConfig(
+            globalEnabled = true,
+            whatsappEnabled = true,
+            telegramEnabled = true,
+            whitelistedContacts = setOf("com.whatsapp:Alice")
+        )
+
+        assertEquals(AutoReplyChannel.WHATSAPP, replyChannelFor(notification("com.whatsapp"), config, defaultSmsPackage = null))
+        assertNull(replyChannelFor(notification("org.telegram.messenger"), config, defaultSmsPackage = null))
+    }
+
+    @Test
+    fun `a bare name on the whitelist admits nobody, because any sender can take that name`() {
+        val config = telegramOnly.copy(whitelistedContacts = setOf("Alice"))
+
+        assertNull(replyChannelFor(notification("org.telegram.messenger"), config, defaultSmsPackage = null))
+    }
+
+    @Test
+    fun `a sender cannot reach a whitelist entry by putting it in their name`() {
+        val config = telegramOnly.copy(whitelistedContacts = setOf("com.whatsapp:Alice"))
+        val forged = notification("org.telegram.messenger", contactName = "com.whatsapp:Alice")
+
+        assertNull(replyChannelFor(forged, config, defaultSmsPackage = null))
+    }
+
+    @Test
+    fun `a blacklist entry blocks its contact only in its own app`() {
+        val config = AutoReplyConfig(
+            globalEnabled = true,
+            whatsappEnabled = true,
+            telegramEnabled = true,
+            blacklistedContacts = setOf("com.whatsapp:alice")
+        )
+
+        assertNull(replyChannelFor(notification("com.whatsapp"), config, defaultSmsPackage = null))
+        assertEquals(AutoReplyChannel.TELEGRAM, replyChannelFor(notification("org.telegram.messenger"), config, defaultSmsPackage = null))
     }
 }
