@@ -86,6 +86,15 @@ internal fun isUserFacingStepError(error: String): Boolean =
 internal fun stopsPlanAfterUserHandOff(canonicalActionName: String): Boolean =
     canonicalActionName == "PAY_UPI"
 
+/**
+ * The user-facing failure text a plan summary should speak: the step that just stopped the plan
+ * wins, because an earlier step's hand-off (already marked failed) is stale by then.
+ */
+internal fun selectUserFacingFailure(preferredError: String?, stepErrors: List<String?>): String? =
+    (listOf(preferredError) + stepErrors).firstNotNullOfOrNull { error ->
+        error?.takeIf { isUserFacingStepError(it) }
+    }
+
 internal fun extractJsonPayload(raw: String): String {
     val trimmed = raw.trim()
 
@@ -1432,7 +1441,12 @@ class AgentLoop @Inject constructor(
                 )
                 if (stopsPlanAfterUserHandOff(canonicalActionName)) {
                     planManager.updatePlanStatus(PlanStatus.FAILED)
-                    speakAndSaveSummary(planManager.currentPlan.value ?: currentPlanState, false, sessionId)
+                    speakAndSaveSummary(
+                        planManager.currentPlan.value ?: currentPlanState,
+                        false,
+                        sessionId,
+                        preferredError = actionResult.error
+                    )
                     return
                 }
                 // Skip the generic re-evaluation below: its prompt allows adding
@@ -1945,7 +1959,12 @@ class AgentLoop @Inject constructor(
         onSpeakCallback?.invoke("Running: ${plan.goal}")
     }
 
-    private suspend fun speakAndSaveSummary(plan: Plan, isSuccess: Boolean, sessionId: String) {
+    private suspend fun speakAndSaveSummary(
+        plan: Plan,
+        isSuccess: Boolean,
+        sessionId: String,
+        preferredError: String? = null
+    ) {
         val summaryText = if (isSuccess) {
             // Build a natural, human-sounding summary from step results
             val stepSummaries = plan.steps
@@ -1972,9 +1991,7 @@ class AgentLoop @Inject constructor(
             
             // Check if any failed step has a user-friendly error message
             // (e.g. "I've opened the chat... please tap send")
-            val userFacingError = failedSteps.firstNotNullOfOrNull { step ->
-                step.error?.takeIf { error -> isUserFacingStepError(error) }
-            }
+            val userFacingError = selectUserFacingFailure(preferredError, failedSteps.map { it.error })
             
             userFacingError ?: humanizeFailure(plan.goal)
         }
