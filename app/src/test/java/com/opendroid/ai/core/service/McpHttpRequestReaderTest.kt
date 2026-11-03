@@ -103,6 +103,39 @@ class McpHttpRequestReaderTest {
     }
 
     @Test
+    fun `a socket timeout fired by the request deadline is refused with 408`() {
+        var now = 0L
+        // The socket timeout was set to the 2 s left on the deadline, so the stalled read throws then.
+        val stalled = object : InputStream() {
+            override fun read(): Int {
+                now += 1_999
+                throw SocketTimeoutException("Read timed out")
+            }
+        }
+        val input = DeadlineInputStream(stalled, deadlineAtMs = 2_000, clock = { now }) {}
+
+        val rejected = assertThrows(McpRequestRejectedException::class.java) {
+            McpHttpRequestReader.readHead(input)
+        }
+
+        assertEquals(408, rejected.status)
+    }
+
+    @Test
+    fun `a socket timeout well before the request deadline is left alone`() {
+        var now = 0L
+        val stalled = object : InputStream() {
+            override fun read(): Int {
+                now += 15_000
+                throw SocketTimeoutException("Read timed out")
+            }
+        }
+        val input = DeadlineInputStream(stalled, deadlineAtMs = 60_000, clock = { now }) {}
+
+        assertThrows(SocketTimeoutException::class.java) { McpHttpRequestReader.readHead(input) }
+    }
+
+    @Test
     fun `a stalled connection does not stop the next client from being served`() {
         ServerSocket(0).use { server ->
             val served = CountDownLatch(1)

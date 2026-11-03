@@ -2,6 +2,7 @@ package com.opendroid.ai.core.service
 
 import java.io.IOException
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
 
 internal class McpHttpRequestHead(val requestLine: String, val headers: Map<String, String>)
@@ -72,21 +73,43 @@ internal class DeadlineInputStream(
 
     override fun read(): Int {
         beforeRead()
-        return input.read()
+        try {
+            return input.read()
+        } catch (e: SocketTimeoutException) {
+            throw deadlineOr(e)
+        }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         beforeRead()
-        return input.read(buffer, offset, length)
+        try {
+            return input.read(buffer, offset, length)
+        } catch (e: SocketTimeoutException) {
+            throw deadlineOr(e)
+        }
     }
 
     private fun beforeRead() {
         val remaining = deadlineAtMs - clock()
-        if (remaining <= 0) throw McpRequestRejectedException(408, "Request took too long to arrive")
+        if (remaining <= 0) throw expired()
         applyReadTimeout(remaining.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
+
+    /**
+     * A read timeout set to the time left on the deadline fires at the deadline, before the next
+     * [beforeRead] can notice it; that is an expired request, not a failed read.
+     */
+    private fun deadlineOr(timeout: SocketTimeoutException): IOException =
+        if (deadlineAtMs - clock() <= DEADLINE_TOLERANCE_MS) expired() else timeout
+
+    private fun expired() = McpRequestRejectedException(408, "Request took too long to arrive")
 
     override fun available(): Int = input.available()
 
     override fun close() = input.close()
+
+    private companion object {
+        /** Clock granularity and timer slack between a socket timeout firing and the clock reading. */
+        const val DEADLINE_TOLERANCE_MS = 50L
+    }
 }
