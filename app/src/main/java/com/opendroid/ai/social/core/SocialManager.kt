@@ -16,6 +16,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -59,6 +61,10 @@ class SocialManager @Inject constructor(
     private val postsInFlight = ConcurrentHashMap.newKeySet<String>()
     private val repliesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val inboxRepliesInFlight = ConcurrentHashMap.newKeySet<String>()
+
+    // One inbox fetch/save/acknowledge at a time per account, so an acknowledgement can only
+    // confirm the batch that the same sync just saved.
+    private val inboxSyncLocks = ConcurrentHashMap<String, Mutex>()
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -426,13 +432,15 @@ class SocialManager @Inject constructor(
         val adapter = getAdapter(account.platform)
 
         // 1. Sync Inbox
-        val inboxResult = adapter.fetchInbox(credentials, account.lastSyncAt)
-        if (inboxResult.isSuccess) {
-            val interactions = inboxResult.getOrThrow()
-            if (interactions.isNotEmpty()) {
-                socialRepository.saveInteractions(interactions.map { it.copy(accountId = account.id) })
+        inboxSyncLocks.getOrPut(account.id) { Mutex() }.withLock {
+            val inboxResult = adapter.fetchInbox(credentials, account.lastSyncAt)
+            if (inboxResult.isSuccess) {
+                val interactions = inboxResult.getOrThrow()
+                if (interactions.isNotEmpty()) {
+                    socialRepository.saveInteractions(interactions.map { it.copy(accountId = account.id) })
+                }
+                adapter.acknowledgeInbox(credentials)
             }
-            adapter.acknowledgeInbox(credentials)
         }
 
         // 2. Sync Comments
