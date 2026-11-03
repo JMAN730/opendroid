@@ -11,12 +11,17 @@ import com.opendroid.ai.core.security.UserProfile
 import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.data.db.MigrationTestApplication
 import com.opendroid.ai.data.db.OpenDroidDatabase
+import com.opendroid.ai.data.db.dao.ContactNotificationCount
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.ConversationRepository
 import com.opendroid.ai.data.repository.MemoryRepository
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -137,6 +142,33 @@ class NotificationPatternRetentionTest {
         assertFalse(prompt, prompt.contains("Most contacted"))
         assertFalse(prompt, prompt.contains("Breaking"))
         (FIRST_SENDERS + LATER_SENDERS).forEach { assertFalse("$it in:\n$prompt", prompt.contains(it)) }
+    }
+
+    @Test
+    fun `analysis already in flight cannot rewrite patterns after the history is cleared`() = runBlocking {
+        FIRST_SENDERS.forEachIndexed { i, name -> insert(name, minutesAgo = 100 - i) }
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val gated = object : NotificationDao by dao {
+            override suspend fun getMostActiveContacts(since: Long, limit: Int): List<ContactNotificationCount> {
+                val rows = dao.getMostActiveContacts(since, limit)
+                entered.complete(Unit)
+                release.await()
+                return rows
+            }
+        }
+        val gatedIntelligence = NotificationIntelligence(gated, memoryRepository)
+
+        val analysis = async(Dispatchers.Default) { gatedIntelligence.analyzePatterns() }
+        entered.await()
+        val clearing = async(Dispatchers.Default) { gatedIntelligence.clearHistory() }
+        delay(200)
+        release.complete(Unit)
+        analysis.await()
+        clearing.await()
+
+        val leaked = patternRows().joinToString { "${it.key}=${it.value}" }
+        assertTrue(leaked, patternRows().isEmpty())
     }
 
     @Test

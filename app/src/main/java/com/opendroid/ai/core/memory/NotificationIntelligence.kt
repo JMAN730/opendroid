@@ -6,6 +6,8 @@ import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +32,9 @@ class NotificationIntelligence @Inject constructor(
 
     private var lastAnalysisTimestamp = 0L
 
+    // Analysis reads history and then writes patterns; clearing must not interleave with that.
+    private val patternLock = Mutex()
+
     /**
      * Run periodic pattern analysis on notification history.
      * Call this after receiving notifications or on app startup.
@@ -45,7 +50,7 @@ class NotificationIntelligence @Inject constructor(
     /**
      * Full pattern analysis — extracts communication patterns from notification history.
      */
-    suspend fun analyzePatterns() {
+    suspend fun analyzePatterns() = patternLock.withLock {
         try {
             val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 3600 * 1000L)
 
@@ -232,17 +237,17 @@ class NotificationIntelligence @Inject constructor(
      * Forget everything learned from notifications. Call it whenever the history it was
      * learned from is cleared or the listener loses access.
      */
-    suspend fun clearLearnedPatterns() {
+    suspend fun clearLearnedPatterns() = patternLock.withLock {
         deletePatternsStartingWith("")
     }
 
     /**
      * Clear the captured notification history along with the patterns learned from it.
      */
-    suspend fun clearHistory(): Int {
+    suspend fun clearHistory(): Int = patternLock.withLock {
         val deleted = notificationDao.clearAll()
-        clearLearnedPatterns()
-        return deleted
+        deletePatternsStartingWith("")
+        deleted
     }
 
     /**
