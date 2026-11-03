@@ -11,6 +11,8 @@ data class AutoReplyConfig(
     val smsEnabled: Boolean = false,
     val emailEnabled: Boolean = false,
     val replyDelayMinutes: Int = 15,
+    // Entries are "packageName:contactName", because a contact name is a free-form title that
+    // only identifies someone within one app.
     val blacklistedContacts: Set<String> = emptySet(),
     val whitelistedContacts: Set<String> = emptySet(),
     val customPrompt: String? = null,
