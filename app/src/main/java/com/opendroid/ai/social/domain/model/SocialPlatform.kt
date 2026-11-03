@@ -43,6 +43,7 @@ enum class SocialPermission(val title: String, val description: String) {
 enum class PostStatus {
     DRAFT,
     SCHEDULED,
+    PUBLISHING, // Claimed for sending. Left behind by process death, the outcome is unknown.
     PUBLISHED,
     FAILED,
     CANCELLED
@@ -86,6 +87,7 @@ enum class CommentReplyStatus {
     NONE,
     SUGGESTED,
     APPROVED,
+    SENDING, // Claimed for sending. Left behind by process death, the outcome is unknown.
     REPLIED,
     IGNORED
 }

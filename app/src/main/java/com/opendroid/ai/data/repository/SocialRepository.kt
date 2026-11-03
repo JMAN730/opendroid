@@ -87,6 +87,16 @@ open class SocialRepository @Inject constructor(
         postDao.updatePublishResult(id, status.name, publishedTime, platformPostId, errorMessage)
     }
 
+    suspend fun claimPostForPublishing(id: String): Boolean =
+        postDao.claimForPublishing(id) == 1
+
+    suspend fun resolveInterruptedPublish(
+        id: String,
+        status: PostStatus,
+        publishedTime: Long?,
+        errorMessage: String?
+    ): Boolean = postDao.resolveInterruptedPublish(id, status.name, publishedTime, errorMessage) == 1
+
     suspend fun approvePost(id: String, approvedBy: String, immediatePublish: Boolean = false) {
         val nextStatus = if (immediatePublish) PostStatus.PUBLISHED else PostStatus.SCHEDULED
         postDao.approvePost(id, nextStatus.name, approvedBy, System.currentTimeMillis())
@@ -136,6 +146,18 @@ open class SocialRepository @Inject constructor(
     suspend fun markCommentReplied(id: String, reply: String) {
         commentDao.markReplied(id, reply)
     }
+
+    suspend fun claimCommentForReplying(id: String, reply: String): Boolean =
+        commentDao.claimForReplying(id, reply) == 1
+
+    suspend fun releaseReplyClaim(id: String): Boolean =
+        commentDao.releaseReplyClaim(id) == 1
+
+    suspend fun confirmInterruptedReply(id: String): Boolean =
+        commentDao.confirmInterruptedReply(id) == 1
+
+    suspend fun getCommentById(id: String): SocialComment? =
+        commentDao.getCommentById(id)?.toDomain()
 
     suspend fun ignoreComment(id: String) {
         commentDao.ignoreComment(id)

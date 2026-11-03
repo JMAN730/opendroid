@@ -33,6 +33,7 @@ fun SocialCommentsTab(
     unansweredComments: List<SocialComment>,
     onReplyToComment: (String, String) -> Unit,
     onIgnoreComment: (String) -> Unit,
+    onResolveInterruptedReply: (String, Boolean) -> Unit,
     onGenerateSuggestedReply: (SocialComment, (SuggestedReply) -> Unit) -> Unit
 ) {
     val theme = AppTheme.colors
@@ -152,6 +153,7 @@ fun SocialCommentsTab(
                     comment = comment,
                     onReply = { text -> onReplyToComment(comment.id, text) },
                     onIgnore = { onIgnoreComment(comment.id) },
+                    onResolveInterrupted = { wasSent -> onResolveInterruptedReply(comment.id, wasSent) },
                     onGenerateReply = { callback -> onGenerateSuggestedReply(comment, callback) }
                 )
             }
@@ -164,6 +166,7 @@ private fun CommentReviewCard(
     comment: SocialComment,
     onReply: (String) -> Unit,
     onIgnore: () -> Unit,
+    onResolveInterrupted: (Boolean) -> Unit,
     onGenerateReply: ((SuggestedReply) -> Unit) -> Unit
 ) {
     val theme = AppTheme.colors
@@ -173,7 +176,9 @@ private fun CommentReviewCard(
         mutableStateOf(comment.suggestedReply ?: "")
     }
     var isGeneratingReply by remember { mutableStateOf(false) }
-    val isPending = comment.replyStatus != CommentReplyStatus.REPLIED && comment.replyStatus != CommentReplyStatus.IGNORED
+    val isPending = comment.replyStatus != CommentReplyStatus.REPLIED &&
+        comment.replyStatus != CommentReplyStatus.IGNORED &&
+        comment.replyStatus != CommentReplyStatus.SENDING
 
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -243,6 +248,40 @@ private fun CommentReviewCard(
                         Text("Replied:", color = theme.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(comment.actualReply, color = theme.textPrimary, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            // A reply on the wire, or one the app stopped sending: the user settles it
+            if (comment.replyStatus == CommentReplyStatus.SENDING) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Sending, or the app stopped mid-send. It may already be posted, so it won't be re-sent automatically. Check ${comment.platform.displayName}, then choose below.",
+                    color = theme.accentOrange,
+                    fontSize = 11.sp
+                )
+                if (!comment.actualReply.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(comment.actualReply, color = theme.textPrimary, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(
+                        onClick = { onResolveInterrupted(false) },
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, theme.borderColor)
+                    ) {
+                        Text("Not posted", color = theme.textPrimary, fontSize = 11.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { onResolveInterrupted(true) },
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, theme.borderColor)
+                    ) {
+                        Text("It's posted", color = theme.textPrimary, fontSize = 11.sp)
                     }
                 }
             }
@@ -356,6 +395,7 @@ private fun CommentStatusBadge(status: CommentReplyStatus) {
         CommentReplyStatus.NONE -> theme.textSecondary to "PENDING"
         CommentReplyStatus.SUGGESTED -> theme.accentOrange to "SUGGESTED"
         CommentReplyStatus.APPROVED -> theme.accentCyan to "APPROVED"
+        CommentReplyStatus.SENDING -> theme.accentOrange to "SENDING"
         CommentReplyStatus.REPLIED -> theme.accentCyan to "REPLIED"
         CommentReplyStatus.IGNORED -> theme.textSecondary to "DISMISSED"
     }
