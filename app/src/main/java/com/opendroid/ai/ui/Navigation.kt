@@ -225,9 +225,9 @@ fun OpenDroidNavigation(
         }
 
         composable(OpenDroidRoutes.AUTO_REPLY_SETTINGS) {
-            val settingsRepo = hiltViewModel<AutoReplyViewModel>().settingsRepository
+            val autoReplyViewModel = hiltViewModel<AutoReplyViewModel>()
             AutoReplySettingsScreen(
-                settingsRepository = settingsRepo,
+                viewModel = autoReplyViewModel,
                 onBack = {
                     navController.popBackStack()
                 }
