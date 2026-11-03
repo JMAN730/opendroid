@@ -5,8 +5,6 @@ import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.core.agent.IntentClassifier
-import com.opendroid.ai.core.agent.QueryComplexity
-import com.opendroid.ai.core.llm.prompts.SystemPrompts
 import com.opendroid.ai.core.llm.error.LLMErrorMapper
 import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.core.llm.providers.*
@@ -51,6 +49,12 @@ class LLMProviderFactory @Inject constructor(
     private val deviceStateProvider: DeviceStateProvider
 ) {
 
+    private val planningRequestRewriter = PlanningRequestRewriter(
+        classifyComplexity = { intentClassifier.get().classifyComplexity(it) },
+        registeredActions = { actionDispatcher.get().getAllRegisteredActions() },
+        deviceState = { deviceStateProvider.getFullStateString() }
+    )
+
     fun getProviderByName(name: String): LLMProvider {
         val rawProvider = when (name) {
             "Anthropic Claude" -> claudeProvider.get()
@@ -79,7 +83,7 @@ class LLMProviderFactory @Inject constructor(
         return WrappedLLMProvider(
             delegate = rawProvider,
             configProvider = { settingsRepository.llmConfig.first() },
-            requestRewriter = ::rewriteRequestIfNeeded
+            requestRewriter = planningRequestRewriter::rewrite
         )
     }
 
@@ -133,60 +137,8 @@ class LLMProviderFactory @Inject constructor(
         }
     }
 
-    private fun rewriteRequestIfNeeded(request: LLMRequest): LLMRequest =
-        PlanningRequestRewriter.rewrite(
-            request = request,
-            classifyComplexity = { intentClassifier.get().classifyComplexity(it) },
-            registeredActions = { actionDispatcher.get().getAllRegisteredActions() },
-            deviceState = { deviceStateProvider.getFullStateString() },
-            currentDateTime = {
-                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-            }
-        )
-
     private companion object {
         const val TAG = "LLMProviderFactory"
-    }
-}
-
-/**
- * Swaps a planning system prompt for [SystemPrompts.buildMainPrompt], with a step
- * cap sized by the request's complexity. Other requests pass through unchanged.
- */
-internal object PlanningRequestRewriter {
-
-    fun rewrite(
-        request: LLMRequest,
-        classifyComplexity: (String) -> QueryComplexity,
-        registeredActions: () -> List<String>,
-        deviceState: () -> String,
-        currentDateTime: () -> String
-    ): LLMRequest {
-        if (!request.systemPrompt.contains("Planning Engine") && !request.systemPrompt.contains("AVAILABLE ACTIONS")) {
-            return request
-        }
-        val userMessageText = request.messages.lastOrNull()?.text ?: ""
-        val maxSteps = when (classifyComplexity(userMessageText)) {
-            QueryComplexity.SIMPLE -> 1
-            QueryComplexity.MEDIUM -> 3
-            QueryComplexity.COMPLEX -> 10
-        }
-
-        val memoryContext = if (request.systemPrompt.contains("Context about user and device:")) {
-            request.systemPrompt.substringAfter("Context about user and device:").trim()
-        } else {
-            ""
-        }
-
-        return request.copy(
-            systemPrompt = SystemPrompts.buildMainPrompt(
-                registeredActions = registeredActions(),
-                memoryContext = memoryContext,
-                currentDateTime = currentDateTime(),
-                deviceState = deviceState(),
-                maxSteps = maxSteps
-            )
-        )
     }
 }
 
