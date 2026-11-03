@@ -40,7 +40,7 @@ class WorkingMemory @Inject constructor(
         }
 
     /** Emits when a background place-name lookup finishes, so readers of [locationContext] can refresh. */
-    val resolvedLocation: StateFlow<String?>
+    val resolvedLocation: StateFlow<Pair<String, String>?>
         get() = deviceStateProvider.resolvedLocation
 
     fun addMessage(msg: ChatMessage) {
