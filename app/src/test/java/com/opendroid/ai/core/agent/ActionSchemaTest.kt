@@ -65,7 +65,7 @@ class ActionSchemaTest {
             "CHECK_BALANCE",
             mapOf("app" to "paypal")
         )
-        assertTrue(invalidResult is ActionSchema.ValidationResult.MissingParams)
+        assertTrue(invalidResult is ActionSchema.ValidationResult.InvalidParam)
     }
 
     @Test
@@ -77,10 +77,31 @@ class ActionSchemaTest {
     }
 
     @Test
-    fun `unrecognized enum value with no synonym is reported as missing`() {
+    fun `unrecognized enum value with no synonym is reported as invalid, with its options`() {
         val (result, _) = ActionSchema.validateParams("SET_RINGER_MODE", mapOf("mode" to "banana"))
-        assertTrue(result is ActionSchema.ValidationResult.MissingParams)
-        assertTrue((result as ActionSchema.ValidationResult.MissingParams).params.contains("mode"))
+        val invalid = result as ActionSchema.ValidationResult.InvalidParam
+        assertEquals("mode", invalid.param)
+        assertEquals("banana", invalid.value)
+        assertEquals(ActionSchema.getAction("SET_RINGER_MODE")!!.params.first { it.name == "mode" }.enumValues, invalid.options)
+    }
+
+    @Test
+    fun `an invalid value for a param with a default is not treated as missing`() {
+        // Folding it into "missing" let the dispatcher apply defaults to the original
+        // params, so the bad value reached a handler that reads anything but "off" as flip.
+        val (result, _) = ActionSchema.validateParams("AUTO_REPLY_TOGGLE", mapOf("state" to "banana"))
+        assertTrue(result is ActionSchema.ValidationResult.InvalidParam)
+    }
+
+    @Test
+    fun `enabled and disabled are synonyms for on and off`() {
+        val (disabled, offParams) = ActionSchema.validateParams("AUTO_REPLY_TOGGLE", mapOf("state" to "disabled"))
+        assertTrue(disabled is ActionSchema.ValidationResult.Valid)
+        assertEquals("off", offParams["state"])
+
+        val (enabled, onParams) = ActionSchema.validateParams("AUTO_REPLY_TOGGLE", mapOf("state" to "Enabled"))
+        assertTrue(enabled is ActionSchema.ValidationResult.Valid)
+        assertEquals("on", onParams["state"])
     }
 
     @Test

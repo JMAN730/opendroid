@@ -1490,6 +1490,9 @@ object ActionSchema {
 
         val enrichedParams = params.toMutableMap()
         val missingRequired = mutableListOf<String>()
+        // Kept apart from missing params: a default must never stand in for a value
+        // the model did give, because the handler would still receive the bad value.
+        val invalid = mutableListOf<ValidationResult.InvalidParam>()
 
         definition.params.forEach { paramDef ->
             val value = enrichedParams[paramDef.name]
@@ -1506,7 +1509,9 @@ object ActionSchema {
                             if (fixed != null) {
                                 enrichedParams[paramDef.name] = fixed
                             } else {
-                                missingRequired.add(paramDef.name)
+                                invalid.add(
+                                    ValidationResult.InvalidParam(paramDef.name, value.toString(), paramDef.enumValues)
+                                )
                             }
                         }
                     }
@@ -1527,10 +1532,10 @@ object ActionSchema {
             }
         }
 
-        return if (missingRequired.isEmpty()) {
-            Pair(ValidationResult.Valid, enrichedParams)
-        } else {
-            Pair(ValidationResult.MissingParams(missingRequired), enrichedParams)
+        return when {
+            invalid.isNotEmpty() -> Pair(invalid.first(), enrichedParams)
+            missingRequired.isEmpty() -> Pair(ValidationResult.Valid, enrichedParams)
+            else -> Pair(ValidationResult.MissingParams(missingRequired), enrichedParams)
         }
     }
 
@@ -1541,9 +1546,9 @@ object ActionSchema {
 
         // Common synonyms
         val synonyms = mapOf(
-            "yes" to "on", "enable" to "on", "activate" to "on",
+            "yes" to "on", "enable" to "on", "enabled" to "on", "activate" to "on",
             "true" to "on", "start" to "on",
-            "no" to "off", "disable" to "off", "deactivate" to "off",
+            "no" to "off", "disable" to "off", "disabled" to "off", "deactivate" to "off",
             "false" to "off", "stop" to "off",
             "switch" to "toggle", "flip" to "toggle", "change" to "toggle"
         )
@@ -1568,5 +1573,6 @@ object ActionSchema {
         object Valid : ValidationResult()
         data class InvalidAction(val name: String) : ValidationResult()
         data class MissingParams(val params: List<String>) : ValidationResult()
+        data class InvalidParam(val param: String, val value: String, val options: List<String>) : ValidationResult()
     }
 }

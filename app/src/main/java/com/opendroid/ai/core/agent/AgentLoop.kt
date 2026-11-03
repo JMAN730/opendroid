@@ -24,9 +24,11 @@ import com.opendroid.ai.data.models.approvalSettings
 import com.opendroid.ai.data.repository.ConversationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -123,6 +125,58 @@ internal fun claimProposedPlan(state: MutableStateFlow<AgentState>, planId: Stri
 internal fun isAwaitingApproval(plan: Plan?, planId: String): Boolean =
     plan?.planId == planId && plan.status == PlanStatus.PROPOSED
 
+/**
+ * Runs an approved plan's [body] so a failure in it ends there. Escaping the launch
+ * would crash the app and leave the plan RUNNING in the database, so the plan is
+ * failed through [failPlan] and [state] shows the error instead. A cancel is rethrown.
+ */
+internal suspend fun runApprovedPlan(
+    state: MutableStateFlow<AgentState>,
+    failPlan: suspend () -> Unit,
+    body: suspend () -> Unit
+) {
+    try {
+        body()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        try {
+            failPlan()
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Exception) {
+            android.util.Log.e("AgentLoop", "Failed to mark the approved plan failed: ${failure.localizedMessage}")
+        }
+        state.value = AgentState.Error(e.localizedMessage ?: "Unknown processing error")
+    }
+}
+
+/**
+ * Fills in what a model-written plan left blank. Step ids are made unique, since
+ * PlanManager updates every step sharing an id, and status, result and error are
+ * reset: they are execution state, so the model cannot mark its own steps done.
+ */
+internal fun normalizePlan(plan: Plan): Plan {
+    val usedIds = mutableSetOf<String>()
+    val filled = plan.steps.map { step -> step.copy(stepId = step.stepId.ifBlank { "s${step.order}" }) }
+    val explicitIds = filled.map { it.stepId }.toSet()
+    return plan.copy(
+        planId = plan.planId.ifBlank { UUID.randomUUID().toString() },
+        goal = plan.goal.ifBlank { "User request" },
+        estimatedSteps = if (plan.estimatedSteps > 0) plan.estimatedSteps else plan.steps.size.coerceAtLeast(1),
+        steps = filled.map { step ->
+            val stepId = if (usedIds.add(step.stepId)) {
+                step.stepId
+            } else {
+                generateSequence(2) { it + 1 }
+                    .map { "${step.stepId}_$it" }
+                    .first { it !in explicitIds && usedIds.add(it) }
+            }
+            step.copy(stepId = stepId, status = StepStatus.PENDING, result = null, error = null)
+        }
+    )
+}
+
 sealed interface AgentState {
     object Idle : AgentState
     object Listening : AgentState
@@ -170,7 +224,13 @@ class AgentLoop @Inject constructor(
     private val settingsRepository: com.opendroid.ai.data.repository.SettingsRepository,
     private val reEvalEngine: dagger.Lazy<ReEvaluationEngine>
 ) : ChatAgent {
-    private val scope = CoroutineScope(Dispatchers.Default)
+    // SupervisorJob so one failed task can't cancel the scope for every later one, and
+    // a handler so anything that still escapes a launch is logged rather than fatal.
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            android.util.Log.e("AgentLoop", "Uncaught agent task failure: ${e.localizedMessage}", e)
+        }
+    )
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
     private val queryMutex = Mutex()
 
@@ -892,39 +952,53 @@ class AgentLoop @Inject constructor(
         if (!claimProposedPlan(_agentState, planId)) return
         currentJob?.cancel()
         val job = scope.launch {
-            queryMutex.withLock {
-                val plan = planManager.currentPlan.value
-                if (plan == null || !isAwaitingApproval(plan, planId)) {
-                    _proposedPlanSessionId.value = null
-                    _agentState.compareAndSet(AgentState.Thinking, AgentState.Idle)
-                    return@withLock
-                }
-                // "Always allow" checkboxes from the approval modal: persist BEFORE
-                // executing so a crash mid-plan can't lose an explicit user grant.
-                // Filter through isGrantable - neverAutoApprove actions can never
-                // enter the allowlist no matter what the UI sends.
-                val toGrant = grantActions.filter { AutoApprovalPolicy.isGrantable(it) }
-                if (toGrant.isNotEmpty()) {
-                    val grantedAt = System.currentTimeMillis()
-                    settingsRepository.updateConfig { current ->
-                        current.copy(
-                            grantedActions = current.effectiveGrantedActions() + toGrant.associateWith { grantedAt }
-                        )
+            runApprovedPlan(
+                state = _agentState,
+                failPlan = {
+                    // Only the plan this approval ran: never relabel one that replaced it.
+                    if (planManager.currentPlan.value?.planId == planId) {
+                        planManager.updatePlanStatus(PlanStatus.FAILED)
                     }
                 }
-                // Approving a proposed plan starts a new task in its own right (the plan may
-                // have been proposed in an earlier, now-idle turn), so pin its session here too -
-                // same rationale as processQuery, see activeTaskSessionId. Executes in the
-                // session the plan was actually PROPOSED for, never wherever the user happens
-                // to be looking right now - falls back to "current" only if somehow nothing
-                // was pinned (there is no proposal to misattribute in that case anyway).
-                val sessionId = (_proposedPlanSessionId.value ?: conversationRepository.ensureCurrentSessionId())
-                    .also { _activeTaskSessionId.value = it }
-                _proposedPlanSessionId.value = null
-                executePlanLoop(plan, context, sessionId)
+            ) {
+                runApproved(context, planId, grantActions)
             }
         }
         currentJob = job
+    }
+
+    private suspend fun runApproved(context: Context, planId: String, grantActions: Set<String>) {
+        queryMutex.withLock {
+            val plan = planManager.currentPlan.value
+            if (plan == null || !isAwaitingApproval(plan, planId)) {
+                _proposedPlanSessionId.value = null
+                _agentState.compareAndSet(AgentState.Thinking, AgentState.Idle)
+                return@withLock
+            }
+            // "Always allow" checkboxes from the approval modal: persist BEFORE
+            // executing so a crash mid-plan can't lose an explicit user grant.
+            // Filter through isGrantable - neverAutoApprove actions can never
+            // enter the allowlist no matter what the UI sends.
+            val toGrant = grantActions.filter { AutoApprovalPolicy.isGrantable(it) }
+            if (toGrant.isNotEmpty()) {
+                val grantedAt = System.currentTimeMillis()
+                settingsRepository.updateConfig { current ->
+                    current.copy(
+                        grantedActions = current.effectiveGrantedActions() + toGrant.associateWith { grantedAt }
+                    )
+                }
+            }
+            // Approving a proposed plan starts a new task in its own right (the plan may
+            // have been proposed in an earlier, now-idle turn), so pin its session here too -
+            // same rationale as processQuery, see activeTaskSessionId. Executes in the
+            // session the plan was actually PROPOSED for, never wherever the user happens
+            // to be looking right now - falls back to "current" only if somehow nothing
+            // was pinned (there is no proposal to misattribute in that case anyway).
+            val sessionId = (_proposedPlanSessionId.value ?: conversationRepository.ensureCurrentSessionId())
+                .also { _activeTaskSessionId.value = it }
+            _proposedPlanSessionId.value = null
+            executePlanLoop(plan, context, sessionId)
+        }
     }
 
     override fun rejectProposedPlan() {
@@ -1153,7 +1227,7 @@ class AgentLoop @Inject constructor(
                 planManager.updateStepStatus(
                     stepToExecute.stepId,
                     StepStatus.COMPLETED,
-                    result = actionResult.data ?: "Completed successfully."
+                    result = completedStepResult(actionResult)
                 )
             } else if (actionResult is ActionResult.PendingUserAction) {
                 // The action handed control to the user (e.g. the dialer is open awaiting a
@@ -1265,6 +1339,9 @@ class AgentLoop @Inject constructor(
             } else {
                 // Try fallback action
                 if (actionSequenceExecutor.shouldAttemptFallback(actionResult, stepToExecute)) {
+                    // A cancel during the primary must not fire the fallback, which can be
+                    // a SEND_SMS or MAKE_CALL the user just stopped.
+                    currentCoroutineContext().ensureActive()
                     val fallbackResult = try {
                         actionSequenceExecutor.dispatch(stepToExecute.fallback, resolvedParams, context)
                     } catch (e: CancellationException) {
@@ -1277,10 +1354,18 @@ class AgentLoop @Inject constructor(
                         return
                     }
                     if (fallbackResult.success) {
+                        // The result is what later steps read as $sN and the summary
+                        // speaks, so it holds only the fallback's data. The primary's
+                        // error goes to the log.
+                        android.util.Log.w(
+                            "AgentLoop",
+                            "Step ${stepToExecute.stepId} primary failed, fallback succeeded: " +
+                                actionResult.error?.let(com.opendroid.ai.core.crash.CrashLogRedactor::redact)
+                        )
                         planManager.updateStepStatus(
                             stepToExecute.stepId,
                             StepStatus.COMPLETED,
-                            result = "Primary failed: ${actionResult.error}. Fallback execution succeeded: ${fallbackResult.data}"
+                            result = completedStepResult(fallbackResult)
                         )
                     } else {
                         planManager.updateStepStatus(
@@ -1796,20 +1881,6 @@ class AgentLoop @Inject constructor(
         }
 
         throw IllegalArgumentException("Could not parse a valid plan from LLM response")
-    }
-
-    private fun normalizePlan(plan: Plan): Plan {
-        return plan.copy(
-            planId = plan.planId.ifBlank { UUID.randomUUID().toString() },
-            goal = plan.goal.ifBlank { "User request" },
-            estimatedSteps = if (plan.estimatedSteps > 0) plan.estimatedSteps else plan.steps.size.coerceAtLeast(1),
-            steps = plan.steps.map { step ->
-                step.copy(
-                    stepId = step.stepId.ifBlank { "s${step.order}" },
-                    fallback = step.fallback
-                )
-            }
-        )
     }
 
     private fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
