@@ -112,7 +112,14 @@ object PlanPrivacy {
         return definition.params.map { it.name }.toSet() - definition.sensitiveParams
     }
 
-    private fun scrub(text: String, secrets: List<String>): String =
-        secrets.sortedByDescending { it.length }
-            .fold(text) { current, secret -> current.replace(secret, ExecutionHistoryPrivacy.REDACTED) }
+    /**
+     * Placeholders already in [text] are skipped, so a secret that is a substring of the
+     * placeholder (such as "ED") can't mangle it into something the guards don't recognise.
+     */
+    private fun scrub(text: String, secrets: List<String>): String {
+        val ordered = secrets.sortedByDescending { it.length }
+        return text.split(ExecutionHistoryPrivacy.REDACTED).joinToString(ExecutionHistoryPrivacy.REDACTED) { part ->
+            ordered.fold(part) { current, secret -> current.replace(secret, ExecutionHistoryPrivacy.REDACTED) }
+        }
+    }
 }

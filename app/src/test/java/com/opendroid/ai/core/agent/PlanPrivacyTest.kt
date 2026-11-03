@@ -112,6 +112,21 @@ class PlanPrivacyTest {
         assertEquals(params, PlanPrivacy.redactParams("SEND_SMS", params))
     }
 
+    @Test
+    fun `secret that is a substring of the placeholder does not mangle it`() {
+        val plan = planWithSecret().let { base ->
+            base.copy(
+                steps = base.steps.map { step ->
+                    if (step.stepId == "s1") step.copy(params = mapOf("key" to "locker", "secret" to "ED")) else step
+                }
+            )
+        }
+
+        val redacted = PlanPrivacy.redactPlan(plan)
+
+        assertEquals(ExecutionHistoryPrivacy.REDACTED, redacted.steps.first { it.stepId == "s1" }.params["secret"])
+    }
+
     private fun planWithSecret() = Plan(
         planId = "p1",
         goal = "Remember my locker combination is $SECRET",
