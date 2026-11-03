@@ -12,6 +12,7 @@ import com.opendroid.ai.core.agent.ReplyConversation
 import com.opendroid.ai.core.agent.SMS_PACKAGES
 import com.opendroid.ai.core.agent.TELEGRAM_PACKAGES
 import com.opendroid.ai.core.agent.WHATSAPP_PACKAGES
+import com.opendroid.ai.core.agent.isGroupConversation
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
@@ -225,7 +226,14 @@ class OpenDroidNotificationListener : NotificationListenerService() {
     /**
      * Check if this is a message notification that could receive an auto-reply.
      */
-    private fun isMessageNotification(sbn: StatusBarNotification): Boolean {
+    internal fun isMessageNotification(sbn: StatusBarNotification): Boolean {
+        val notification = sbn.notification
+        if (notification != null) {
+            // A reply here would reach every member, written as if by the user
+            if (isGroupConversation(notification)) return false
+            // A summary stands for its child notifications, which get their own check
+            if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
+        }
         val pkg = sbn.packageName
         if (WHATSAPP_PACKAGES.contains(pkg)) return true
         if (TELEGRAM_PACKAGES.contains(pkg)) return true
