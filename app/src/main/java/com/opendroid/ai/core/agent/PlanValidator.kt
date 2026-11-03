@@ -180,7 +180,7 @@ class PlanValidator internal constructor(
                         // Stays a name: a number here would stop the action showing the picker.
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else if (updatedStep.action.uppercase() == "SEND_TELEGRAM") {
-                        // For Telegram, a contact name could also be a Telegram username directly
+                        // SendTelegramAction resolves the name itself and asks for a number or @username if it can't
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else {
                         val question = "I couldn't find a contact named '$contactName'. What is their phone number?"
