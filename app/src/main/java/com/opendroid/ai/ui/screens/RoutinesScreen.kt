@@ -36,8 +36,9 @@ fun RoutinesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val suggestedRoutines by viewModel.suggestedRoutines.collectAsState()
-    val activeRoutines by viewModel.activeRoutines.collectAsState()
+    val routinesUiState by viewModel.routinesUiState.collectAsState()
+    val suggestedRoutines = routinesUiState.suggested
+    val activeRoutines = routinesUiState.active
     val recentEvents by viewModel.recentEvents.collectAsState()
 
     var isExecuting by remember { mutableStateOf<String?>(null) }
@@ -104,7 +105,7 @@ fun RoutinesScreen(
                     )
                 }
 
-                items(suggestedRoutines, key = { it.id }) { routine ->
+                items(suggestedRoutines, key = { "s-${it.id}" }) { routine ->
                     SuggestedRoutineCard(
                         routine = routine,
                         onApprove = {
@@ -168,7 +169,7 @@ fun RoutinesScreen(
                     }
                 }
             } else {
-                items(activeRoutines, key = { it.id }) { routine ->
+                items(activeRoutines, key = { "a-${it.id}" }) { routine ->
                     ActiveRoutineCard(
                         routine = routine,
                         isExecuting = isExecuting == routine.id,

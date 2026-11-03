@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Address
 import android.location.Geocoder
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -16,10 +17,32 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+
+/**
+ * Turns coordinates into a place name such as "London, United Kingdom", or null when it can't.
+ * May wait on the network, so callers keep it off the main thread.
+ */
+internal fun interface ReverseGeocoder {
+    suspend fun lookup(lat: Double, lng: Double): String?
+}
 
 /**
  * Reads REAL device sensor state for WiFi, connectivity, battery,
@@ -29,12 +52,36 @@ import javax.inject.Singleton
  * Includes network change listener for real-time state updates.
  */
 @Singleton
-class DeviceStateProvider @Inject constructor(
-    @ApplicationContext private val context: Context
+class DeviceStateProvider internal constructor(
+    private val context: Context,
+    private val reverseGeocoder: ReverseGeocoder,
+    private val geocodeTimeoutMs: Long = GEOCODE_TIMEOUT_MS
 ) {
+    @Inject
+    constructor(@ApplicationContext context: Context) :
+        this(context, AndroidReverseGeocoder(context))
+
     companion object {
         private const val TAG = "DeviceStateProvider"
+        private const val GEOCODE_TIMEOUT_MS = 3000L
     }
+
+    // Last place name, keyed by coordinates rounded to ~1 km so small GPS jitter reuses it
+    @Volatile
+    private var cachedLocation: Pair<String, String>? = null
+    private val _resolvedLocation = MutableStateFlow<Pair<String, String>?>(null)
+
+    /**
+     * The last cache key and place name a lookup found; changes whenever a background lookup lands,
+     * even when a new cache cell resolves to the same place name.
+     */
+    val resolvedLocation: StateFlow<Pair<String, String>?> = _resolvedLocation.asStateFlow()
+    private val locationRefreshInFlight = AtomicBoolean(false)
+    private val locationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "Location refresh failed: ${e.message}")
+        }
+    )
 
     // Callback reference for cleanup
     private var registeredNetworkCallback: ConnectivityManager.NetworkCallback? = null
@@ -269,15 +316,8 @@ class DeviceStateProvider @Inject constructor(
                 return "Locating..."
             }
 
-            // Reverse geocode to get city name
-            return try {
-                reverseGeocode(location.latitude, location.longitude)
-            } catch (e: Exception) {
-                // Geocoder failed — return coordinates
-                val lat = String.format(Locale.US, "%.2f", location.latitude)
-                val lng = String.format(Locale.US, "%.2f", location.longitude)
-                "$lat, $lng"
-            }
+            // Reading the cache only: this runs during composition and prompt building
+            cachedLocationContext(location.latitude, location.longitude)
         } catch (e: SecurityException) {
             Log.e(TAG, "Location permission denied: ${e.message}")
             "Permission denied"
@@ -293,28 +333,47 @@ class DeviceStateProvider @Inject constructor(
     // Keep old method name for backward compatibility
     fun getConnectivity(): String = getConnectivityState()
 
-    private fun reverseGeocode(lat: Double, lng: Double): String {
-        return try {
-            val geocoder = Geocoder(context, Locale.getDefault())
-            @Suppress("DEPRECATION")
-            val addresses = geocoder.getFromLocation(lat, lng, 1)
-            if (!addresses.isNullOrEmpty()) {
-                val addr = addresses[0]
-                val city = addr.locality ?: addr.subAdminArea ?: addr.adminArea
-                val country = addr.countryName
-                when {
-                    city != null && country != null -> "$city, $country"
-                    city != null -> city
-                    country != null -> country
-                    else -> String.format(Locale.US, "%.4f, %.4f", lat, lng)
+    /**
+     * Returns the place name cached for these coordinates, or the coordinates themselves while
+     * a background lookup fills the cache. Never waits on the geocoder.
+     */
+    private fun cachedLocationContext(lat: Double, lng: Double): String {
+        val key = locationCacheKey(lat, lng)
+        cachedLocation?.let { (cachedKey, name) -> if (cachedKey == key) return name }
+        if (locationRefreshInFlight.compareAndSet(false, true)) {
+            locationScope.launch {
+                try {
+                    refreshLocationContext(lat, lng)
+                } finally {
+                    locationRefreshInFlight.set(false)
                 }
-            } else {
-                String.format(Locale.US, "%.4f, %.4f", lat, lng)
             }
-        } catch (e: Exception) {
-            String.format(Locale.US, "%.4f, %.4f", lat, lng)
         }
+        return formatCoordinates(lat, lng)
     }
+
+    /**
+     * Looks the place name up on [Dispatchers.IO] and caches it. Gives up after
+     * [geocodeTimeoutMs] and returns the coordinates instead.
+     */
+    internal suspend fun refreshLocationContext(lat: Double, lng: Double): String =
+        withContext(Dispatchers.IO) {
+            val name = withTimeoutOrNull(geocodeTimeoutMs) { reverseGeocoder.lookup(lat, lng) }
+            if (name != null) {
+                val resolved = locationCacheKey(lat, lng) to name
+                cachedLocation = resolved
+                _resolvedLocation.value = resolved
+                name
+            } else {
+                formatCoordinates(lat, lng)
+            }
+        }
+
+    private fun locationCacheKey(lat: Double, lng: Double): String =
+        String.format(Locale.US, "%.2f,%.2f", lat, lng)
+
+    private fun formatCoordinates(lat: Double, lng: Double): String =
+        String.format(Locale.US, "%.2f, %.2f", lat, lng)
 
     // ── Network Change Listener ─────────────────────────
 
@@ -405,6 +464,39 @@ class DeviceStateProvider @Inject constructor(
             append("Internet: $internetStr, ")
             append("Bluetooth: $bluetooth, ")
             append("Location: $location")
+        }
+    }
+}
+
+private class AndroidReverseGeocoder(private val context: Context) : ReverseGeocoder {
+
+    override suspend fun lookup(lat: Double, lng: Double): String? {
+        if (!Geocoder.isPresent()) return null
+        val geocoder = Geocoder(context, Locale.getDefault())
+        val addresses = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                suspendCancellableCoroutine<List<Address>?> { cont ->
+                    geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<Address>) = cont.resume(addresses)
+                        override fun onError(errorMessage: String?) = cont.resume(null)
+                    })
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocation(lat, lng, 1)
+            }
+        } catch (e: IOException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+        val addr = addresses?.firstOrNull() ?: return null
+        val city = addr.locality ?: addr.subAdminArea ?: addr.adminArea
+        val country = addr.countryName
+        return when {
+            city != null && country != null -> "$city, $country"
+            city != null -> city
+            else -> country
         }
     }
 }

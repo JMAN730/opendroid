@@ -8,12 +8,34 @@ import com.opendroid.ai.data.db.dao.HabitDao
 import com.opendroid.ai.data.models.HabitEvent
 import com.opendroid.ai.data.models.HabitRoutine
 import com.opendroid.ai.data.models.PlanStep
+import com.opendroid.ai.data.models.RoutineStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Both sections of the Routines screen, always taken from the same database read. */
+data class RoutinesUiState(
+    val suggested: List<HabitRoutine> = emptyList(),
+    val active: List<HabitRoutine> = emptyList()
+)
+
+/**
+ * Splits one snapshot of every routine into the screen's two sections, so a routine can never
+ * sit in both while its status changes. Orders match the DAO's suggested and active queries.
+ */
+internal fun partitionRoutines(all: List<HabitRoutine>): RoutinesUiState = RoutinesUiState(
+    suggested = all.filter { it.status == RoutineStatus.SUGGESTED }
+        .sortedWith(compareByDescending<HabitRoutine> { it.confidence }.thenByDescending { it.lastDetectedAt }),
+    active = all.filter { it.status in ACTIVE_SECTION_STATUSES }
+        .sortedByDescending { it.lastDetectedAt }
+)
+
+// PAUSED stays listed so a routine the user switched off can be switched back on or deleted
+private val ACTIVE_SECTION_STATUSES = setOf(RoutineStatus.APPROVED, RoutineStatus.ACTIVE, RoutineStatus.PAUSED)
 
 @HiltViewModel
 class RoutineViewModel @Inject constructor(
@@ -21,11 +43,11 @@ class RoutineViewModel @Inject constructor(
     private val habitDao: HabitDao
 ) : ViewModel() {
 
-    val suggestedRoutines: StateFlow<List<HabitRoutine>> = habitRoutineEngine.suggestedRoutinesFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val activeRoutines: StateFlow<List<HabitRoutine>> = habitRoutineEngine.activeRoutinesFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // One flow for both sections: two separate Room queries can publish an approved routine
+    // in the active list before the suggested list drops it, which duplicates its LazyColumn key.
+    val routinesUiState: StateFlow<RoutinesUiState> = habitRoutineEngine.allRoutinesFlow
+        .map(::partitionRoutines)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutinesUiState())
 
     val allRoutines: StateFlow<List<HabitRoutine>> = habitRoutineEngine.allRoutinesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
