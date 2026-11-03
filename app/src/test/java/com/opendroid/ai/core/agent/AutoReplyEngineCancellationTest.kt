@@ -11,9 +11,12 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.actions.ShadowSmsManagerWithSubscription
 import com.opendroid.ai.core.security.CredentialStoreResult
+import com.opendroid.ai.core.security.ProfileStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.security.UserProfile
+import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.data.db.MigrationTestApplication
 import com.opendroid.ai.data.db.OpenDroidDatabase
 import com.opendroid.ai.data.db.dao.NotificationDao
@@ -28,12 +31,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,8 +51,8 @@ import org.robolectric.shadows.ShadowSmsManager
 import org.robolectric.util.ReflectionHelpers
 
 /**
- * A second text from the same contact cancels the job of the first reply, even while that
- * reply is with the radio.
+ * A second text from the same contact arriving while the first reply is with the radio leaves
+ * that send alone: it is recorded, and the newer reply stays pending and cancellable.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -84,10 +89,9 @@ class AutoReplyEngineCancellationTest {
         engine = AutoReplyEngine(
             notificationDao = CancellationHonouringDao(database.notificationDao()),
             llmProviderFactory = unused(),
-            memoryManager = unused(),
-            notificationIntelligence = unused(),
             replyDispatcher = ReplyDispatcher(context),
-            settingsRepository = settings
+            settingsRepository = settings,
+            userProfileStore = NoProfile
         )
     }
 
@@ -98,7 +102,7 @@ class AutoReplyEngineCancellationTest {
     }
 
     @Test
-    fun `reply the radio confirms is recorded even if a newer message cancelled its job`() = runBlocking {
+    fun `reply the radio confirms is recorded when a newer message arrives during the send`() = runBlocking {
         val firstId = insertMessage("first")
         val inFlight = startReplyThenReceiveNewerMessage(firstId)
 
@@ -106,8 +110,8 @@ class AutoReplyEngineCancellationTest {
         withTimeout(WAIT_MS) { inFlight.firstJob.join() }
 
         val dao = database.notificationDao()
-        assertEquals(1, dao.getAutoReplyCountForContact(PHONE, 0L))
-        val first = dao.getNotificationsForContact(PHONE).first { it.id == firstId }
+        assertEquals(1, dao.getAutoReplyCountForContact(MESSAGES_PACKAGE, PHONE, 0L))
+        val first = dao.getNotificationsForContactInApp(MESSAGES_PACKAGE, PHONE).first { it.id == firstId }
         assertEquals(REPLY, first.autoReplyText)
     }
 
@@ -118,7 +122,7 @@ class AutoReplyEngineCancellationTest {
         confirmSend(inFlight.sentIntents)
         withTimeout(WAIT_MS) { inFlight.firstJob.join() }
 
-        assertSame(inFlight.newerJob, pendingReplies()[CONTACT_KEY])
+        assertSame(inFlight.newerJob, pendingReplies().registered(CONTACT_KEY))
         engine.cancelPendingReply(OutgoingMessage(MESSAGES_PACKAGE, PHONE, null, null))
         assertTrue(inFlight.newerJob.isCancelled)
     }
@@ -133,14 +137,16 @@ class AutoReplyEngineCancellationTest {
         settings.updateAutoReplyConfig(config(replyDelayMinutes = 0))
         engine.scheduleAutoReply(message("first", firstId), null, context)
         val sentIntents = awaitSentIntents()
-        val firstJob = pendingReplies().getValue(CONTACT_KEY)
+        // A reply with the radio has already left the pending map, so take it from the engine's scope.
+        val firstJob = ReflectionHelpers.getField<CoroutineScope>(engine, "scope")
+            .coroutineContext.job.children.single()
 
         // The newer reply sits out a long delay, so the first is the only one with the radio.
         settings.updateAutoReplyConfig(config(replyDelayMinutes = 15))
         engine.scheduleAutoReply(message("second", insertMessage("second")), null, context)
-        assertTrue(firstJob.isCancelled)
+        assertFalse(firstJob.isCancelled)
 
-        return InFlightReply(firstJob, pendingReplies().getValue(CONTACT_KEY), sentIntents)
+        return InFlightReply(firstJob, pendingReplies().registered(CONTACT_KEY)!!, sentIntents)
     }
 
     private suspend fun awaitSentIntents(): List<PendingIntent> = withTimeout(WAIT_MS) {
@@ -173,7 +179,7 @@ class AutoReplyEngineCancellationTest {
         customReplyText = REPLY
     )
 
-    private fun pendingReplies(): Map<String, Job> =
+    private fun pendingReplies(): PendingReplies =
         ReflectionHelpers.getField(engine, "pendingReplies")
 
     /** An instance that fails on first use, for final collaborators a test never reaches. */
@@ -196,6 +202,14 @@ class AutoReplyEngineCancellationTest {
             currentCoroutineContext().ensureActive()
             room.markAsAutoReplied(id, replyText)
         }
+    }
+
+    /** The custom reply text means the profile is never read. */
+    private object NoProfile : UserProfileStore {
+        override fun read(): ProfileStoreResult<UserProfile?> = error("profile is not read")
+        override fun write(profile: UserProfile): ProfileStoreResult<Unit> = error("profile is not written")
+        override fun migrateLegacyProfile(): ProfileStoreResult<Unit> = error("profile is not migrated")
+        override fun resetForReentry(): ProfileStoreResult<Unit> = error("profile is not reset")
     }
 
     private object NoCredentials : ProviderCredentialStore {
