@@ -165,6 +165,14 @@ class ChatViewModel @Inject constructor(
         agentLoop.processQuery(query, context, sessionId)
     }
 
+    /** Id of the contact picker message the agent is waiting on; only its card is active. */
+    val pendingContactPickerMessageId: StateFlow<String?> = agentLoop.pendingContactPickerMessageId
+
+    fun selectContact(pickerMessageId: String, contact: Map<String, String>, context: Context) {
+        val sessionId = sessions.value.firstOrNull { it.isCurrent }?.id
+        agentLoop.answerContactPicker(pickerMessageId, contact, context, sessionId)
+    }
+
     /**
      * Edits a previously sent user message and resends it, DeepSeek-style: cancels any
      * in-flight agent task first (so a running/awaiting-input task can never race with
