@@ -82,6 +82,21 @@ class LLMErrorMapperTest {
     }
 
     @Test
+    fun `retry after treats non-finite and out-of-range values as malformed`() {
+        listOf("Infinity", "+Infinity", "NaN", "1e30", "1e400", "99999999999999999999h").forEach { value ->
+            val exception = LLMErrorMapper.fromHttpFailure(
+                provider = ProviderErrorDetail.Provider.OPENAI,
+                model = "gpt-4o",
+                httpStatus = 429,
+                headers = mapOf("Retry-After" to value),
+                rawBody = """{"error":{"type":"rate_limit_error"}}"""
+            )
+
+            assertNull("Retry-After=$value", exception.retryAfterMillis)
+        }
+    }
+
+    @Test
     fun `malformed non-json error retains no body text or secrets`() {
         val key = "sk-secret-value-ABCD6789"
         val raw = "<html>Bearer $key at https://user:password@example.test?key=$key</html>"
