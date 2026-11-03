@@ -114,6 +114,31 @@ class SmartHomeActionsTest {
     }
 
     @Test
+    fun `toggle light reads the on and off words the schema documents`() = runBlocking {
+        val context = RecordingContext(baseContext)
+        val expected = mapOf(
+            "on" to "on",
+            "ON" to "on",
+            "yes" to "on",
+            "true" to "on",
+            "off" to "off",
+            "OFF" to "off",
+            "no" to "off",
+            "false" to "off"
+        )
+
+        expected.forEach { (word, state) ->
+            val result = execute("TOGGLE_LIGHT", mapOf("room" to "bedroom", "on" to word), context)
+
+            assertEquals("Turning the bedroom light $state!", result.data)
+            assertEquals(
+                "turn light $state in bedroom ",
+                context.lastStartedIntent?.getStringExtra("query")
+            )
+        }
+    }
+
+    @Test
     fun `set thermostat reports missing temperature without launching`() = runBlocking {
         val context = RecordingContext(baseContext)
 
