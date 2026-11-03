@@ -942,14 +942,19 @@ object ActionSchema {
 
         ActionDefinition(
             name = "PAY_UPI",
-            description = "Makes UPI payment via GPay/PhonePe/Paytm",
+            description = "Opens a UPI payment in GPay/PhonePe/Paytm for the user to confirm with their UPI PIN",
             params = listOf(
-                ParamDefinition("to", ParamType.STRING, true, "Recipient UPI ID or contact"),
-                ParamDefinition("amount", ParamType.STRING, true, "Amount to pay"),
+                ParamDefinition(
+                    "to",
+                    ParamType.STRING,
+                    true,
+                    "Recipient UPI ID as name@bank, exactly as the user gave it. Never guess one from a person's name"
+                ),
+                ParamDefinition("amount", ParamType.STRING, true, "Amount to pay, as a number like 500 or 500.50"),
                 ParamDefinition("note", ParamType.STRING, false, "Payment note", defaultValue = ""),
                 ParamDefinition("app", ParamType.ENUM, false, "Payment app", listOf("gpay", "phonepe", "paytm"), "gpay")
             ),
-            examples = listOf("pay 500 to John", "send 200 rupees to dad"),
+            examples = listOf("pay 500 to alice@okaxis", "send 200 rupees to dad@ybl"),
             category = ActionCategory.FINANCE,
             isSimple = false,
             neverAutoApprove = true
