@@ -7,7 +7,7 @@ import com.opendroid.ai.core.crash.DeviceMetadata
 import com.opendroid.ai.core.crash.OpenDroidCrashHandler
 import com.opendroid.ai.core.llm.OnDeviceEngineReleaseMonitor
 import com.opendroid.ai.core.llm.providers.LiteRTLMProvider
-import com.opendroid.ai.core.memory.MemoryManager
+import com.opendroid.ai.core.memory.LegacyPoisonedMemoryCleanup
 import com.opendroid.ai.core.security.LegacyPreferenceMigration
 import com.opendroid.ai.data.crash.CrashLogRepository
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -23,7 +23,7 @@ import javax.inject.Inject
 class OpenDroidApp : Application() {
 
     @Inject
-    lateinit var memoryManager: MemoryManager
+    lateinit var legacyPoisonedMemoryCleanup: LegacyPoisonedMemoryCleanup
 
     @Inject
     lateinit var crashLogRepository: CrashLogRepository
@@ -55,11 +55,11 @@ class OpenDroidApp : Application() {
         // onboarding await it before reading. It is a no-op once every value has been imported.
         legacyPreferenceMigration.start()
 
-        // One-time startup cleanup: remove any poisoned memory entries
-        // that may have been stored by previous versions of the app
+        // One-time startup cleanup: remove the invalid-action entries that
+        // previous versions of the app stored in semantic memory
         appScope.launch {
             try {
-                memoryManager.cleanPoisonedMemories()
+                legacyPoisonedMemoryCleanup.cleanPoisonedMemories()
             } catch (e: Exception) {
                 // Silently ignore cleanup errors to not block app startup
             }

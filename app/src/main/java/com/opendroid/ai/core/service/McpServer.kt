@@ -90,7 +90,15 @@ class McpServer @Inject constructor(
             }
         }
 
-        if (!tokensMatch(headers["x-opendroid-token"].orEmpty(), configStore.accessToken())) {
+        // A token that no longer decrypts is never replaced behind the user's back; say why
+        // requests fail instead of answering 401 to a client that holds the right token.
+        val accessToken = try {
+            configStore.accessToken()
+        } catch (error: McpSecretsMustBeReenteredException) {
+            writeResponse(socket.getOutputStream(), 503, JSONObject().put("error", error.message))
+            return
+        }
+        if (!tokensMatch(headers["x-opendroid-token"].orEmpty(), accessToken)) {
             writeResponse(socket.getOutputStream(), 401, JSONObject().put("error", "Unauthorized"))
             return
         }
@@ -291,7 +299,7 @@ class McpServer @Inject constructor(
 
     private fun writeResponse(output: OutputStream, status: Int, body: JSONObject) {
         val bytes = body.toString().toByteArray(StandardCharsets.UTF_8)
-        val reason = when (status) { 200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; else -> "Error" }
+        val reason = when (status) { 200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; 503 -> "Service Unavailable"; else -> "Error" }
         val header = "HTTP/1.1 $status $reason\r\nContent-Type: application/json\r\n" +
             "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
         output.write(header.toByteArray(StandardCharsets.UTF_8))
