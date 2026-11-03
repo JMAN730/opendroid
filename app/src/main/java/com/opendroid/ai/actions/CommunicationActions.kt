@@ -670,7 +670,9 @@ class CommunicationActions internal constructor(
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val digits = phoneLinkDigits(phone, context) ?: return askForCountryCode(contact)
+                        // Post-dial digits (an extension after #, ; or ,) are not part of the chat's number.
+                        val primary = phone.substringBefore('#').substringBefore(';').substringBefore(',')
+                        val digits = phoneLinkDigits(primary, context) ?: return askForCountryCode(contact)
                         val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=$digits".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

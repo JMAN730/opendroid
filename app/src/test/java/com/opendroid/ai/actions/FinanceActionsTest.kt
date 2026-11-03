@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ActionSchema
 import com.opendroid.ai.core.agent.isUserFacingStepError
+import com.opendroid.ai.core.agent.selectUserFacingFailure
 import com.opendroid.ai.core.agent.stopsPlanAfterUserHandOff
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -79,6 +80,15 @@ class FinanceActionsTest {
         assertTrue(isUserFacingStepError(result.error!!))
         assertTrue(stopsPlanAfterUserHandOff("PAY_UPI"))
         assertFalse(stopsPlanAfterUserHandOff("SEND_EMAIL"))
+    }
+
+    @Test
+    fun `the payment hand-off is spoken ahead of an earlier step's hand-off`() = runBlocking {
+        val payment = payUpi(recordingContext(GPAY_PACKAGE)).error!!
+        val earlier = "I've opened Telegram - please tap send."
+
+        assertEquals(payment, selectUserFacingFailure(payment, listOf(earlier, payment)))
+        assertEquals(earlier, selectUserFacingFailure(null, listOf(earlier, payment)))
     }
 
     @Test

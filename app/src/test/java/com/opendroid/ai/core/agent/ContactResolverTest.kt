@@ -44,8 +44,8 @@ class ContactResolverTest {
 
     @Test
     fun `alias does not match inside another name`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Joanna Reed", "5550101", "key-joanna")
-        LookupKeyContactsProvider.rows += FakeContactRow("Sirisha Rao", "5550102", "key-sirisha")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Joanna Reed", "5550101", "key-joanna")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Sirisha Rao", "5550102", "key-sirisha")
 
         assertTrue(resolver().resolveWithDisambiguation("brother") is ContactResolution.NotFound)
         assertTrue(resolver().resolveWithDisambiguation("boss") is ContactResolution.NotFound)
@@ -53,7 +53,7 @@ class ContactResolverTest {
 
     @Test
     fun `alias matches a whole word of the name`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Anna (Chennai)", "5550101", "key-anna")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Anna (Chennai)", "5550101", "key-anna")
 
         val resolved = resolver().resolveWithDisambiguation("brother")
 
@@ -69,7 +69,7 @@ class ContactResolverTest {
 
     @Test
     fun `saved pick uses the current number of the contact`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Dad", "5550199", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "5550199", "key-dad")
         val resolver = resolver(saved = Contact("Dad", "5550100", lookupKey = "key-dad"))
 
         val contact = (resolver.resolveWithDisambiguation("dad") as ContactResolution.Found).contact
@@ -81,8 +81,8 @@ class ContactResolverTest {
 
     @Test
     fun `saved pick keeps the chosen number when the contact has several`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Dad", "5550111", "key-dad")
-        LookupKeyContactsProvider.rows += FakeContactRow("Dad", "5550100", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "5550111", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "5550100", "key-dad")
         val resolver = resolver(saved = Contact("Dad", "5550100", lookupKey = "key-dad"))
 
         val contact = (resolver.resolveWithDisambiguation("dad") as ContactResolution.Found).contact
@@ -92,7 +92,7 @@ class ContactResolverTest {
 
     @Test
     fun `saved pick of a deleted contact is dropped and resolved normally`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Daddy Cool", "5550123", "key-other")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Daddy Cool", "5550123", "key-other")
         val resolver = resolver(saved = Contact("Dad", "5550100", lookupKey = "key-gone"))
 
         val contact = (resolver.resolveWithDisambiguation("dad") as ContactResolution.Found).contact
@@ -103,8 +103,8 @@ class ContactResolverTest {
 
     @Test
     fun `saved pick is dropped when its number is gone and several remain`() = runBlocking {
-        LookupKeyContactsProvider.rows += FakeContactRow("Dad", "5550111", "key-dad")
-        LookupKeyContactsProvider.rows += FakeContactRow("Dad", "5550122", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "5550111", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "5550122", "key-dad")
         val resolver = resolver(saved = Contact("Dad", "5550100", lookupKey = "key-dad"))
 
         val contact = (resolver.resolveWithDisambiguation("dad") as ContactResolution.Found).contact
@@ -194,12 +194,12 @@ class ContactsContext(
     }
 }
 
-data class FakeContactRow(val name: String, val number: String, val lookupKey: String)
+data class LookupKeyContactRow(val name: String, val number: String, val lookupKey: String)
 
 /** Answers the phone-number queries ContactResolver makes, including SQL LIKE matching. */
 class LookupKeyContactsProvider : ContentProvider() {
     companion object {
-        val rows = mutableListOf<FakeContactRow>()
+        val rows = mutableListOf<LookupKeyContactRow>()
 
         fun install() {
             Robolectric.setupContentProvider(LookupKeyContactsProvider::class.java, ContactsContract.AUTHORITY)
