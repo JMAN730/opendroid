@@ -38,6 +38,16 @@ object EventTimeParser {
     private val DAY_LIST_FILLER = setOf("every", "on")
     private val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
 
+    /**
+     * Seconds for an event length, or null when any part of [input] is unreadable.
+     * DurationParser skips words it cannot read, so "1 day and 2 hours" must not reach it as two hours.
+     */
+    fun parseDurationSeconds(input: String): Int? {
+        val text = input.trim().lowercase()
+        if (text.toIntOrNull() == null && !RELATIVE_DURATION.matches(text)) return null
+        return DurationParser.parseToSeconds(text)
+    }
+
     fun parseMoment(input: String, now: ZonedDateTime): EventMoment? {
         val raw = input.trim()
         if (raw.isEmpty()) return null
