@@ -42,7 +42,9 @@ interface HabitDao {
     @Query("SELECT * FROM habit_routines WHERE status = 'SUGGESTED' ORDER BY confidence DESC, lastDetectedAt DESC")
     fun getSuggestedRoutinesFlow(): Flow<List<HabitRoutineEntity>>
 
-    @Query("SELECT * FROM habit_routines WHERE status IN ('APPROVED', 'ACTIVE') ORDER BY lastDetectedAt DESC")
+    // PAUSED is listed too: the Routines screen renders this list, and a routine the user
+    // switched off has to stay there so it can be switched back on or deleted.
+    @Query("SELECT * FROM habit_routines WHERE status IN ('APPROVED', 'ACTIVE', 'PAUSED') ORDER BY lastDetectedAt DESC")
     fun getActiveRoutinesFlow(): Flow<List<HabitRoutineEntity>>
 
     @Query("SELECT * FROM habit_routines WHERE id = :id LIMIT 1")

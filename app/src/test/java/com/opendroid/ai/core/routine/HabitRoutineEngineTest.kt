@@ -299,7 +299,7 @@ class FakeHabitDao : HabitDao {
         MutableStateFlow(routines.values.filter { it.status == "SUGGESTED" })
 
     override fun getActiveRoutinesFlow(): Flow<List<HabitRoutineEntity>> =
-        MutableStateFlow(routines.values.filter { it.status == "APPROVED" || it.status == "ACTIVE" })
+        MutableStateFlow(routines.values.filter { it.status == "APPROVED" || it.status == "ACTIVE" || it.status == "PAUSED" })
 
     override suspend fun getRoutineById(id: String): HabitRoutineEntity? = routines[id]
 
