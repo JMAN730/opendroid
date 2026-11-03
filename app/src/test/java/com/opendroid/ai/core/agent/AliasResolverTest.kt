@@ -374,4 +374,77 @@ class AliasResolverTest {
         assertEquals("friday meeting", AliasResolver.extractRecallQuery("what did i save about friday meeting"))
         assertEquals("doctor appointment", AliasResolver.extractRecallQuery("what do you remember about doctor appointment?"))
     }
+
+    // ── Negated and questioning follow-ups ─────────────────────────────
+
+    @Test
+    fun `negated or questioning follow-ups do not flip the last toggle`() {
+        val inputs = listOf(
+            "don't turn it off", "don't stop it", "leave it, don't switch it off",
+            "do not turn it off", "never turn it off",
+            "should I turn it off?", "did you turn it off?", "did you turn it off",
+            "how do I disable it permanently", "why did you turn it on", "can I turn it off"
+        )
+        for (input in inputs) {
+            assertNull(input, AliasResolver.resolveContextual(input, "TOGGLE_FLASHLIGHT", mapOf("state" to "on")))
+            assertNull(input, AliasResolver.resolveContextual(input, "SET_VOLUME", mapOf("type" to "media")))
+        }
+    }
+
+    @Test
+    fun `plain follow-ups still flip the last toggle`() {
+        for (input in listOf("turn it off", "stop it", "Turn it off.", "ok, turn it off", "no, stop it", "please switch it off")) {
+            val hint = AliasResolver.resolveContextual(input, "TOGGLE_FLASHLIGHT", mapOf("state" to "on"))
+            assertEquals(input, "off", hint?.baseParams?.get("state"))
+        }
+        assertEquals("on", AliasResolver.resolveContextual("turn it on", "TOGGLE_DND", null)?.baseParams?.get("state"))
+        assertEquals("0", AliasResolver.resolveContextual("turn it off", "SET_VOLUME", mapOf("type" to "media"))?.baseParams?.get("level"))
+    }
+
+    @Test
+    fun `contextual phrase inside a longer sentence does not match`() {
+        assertNull(AliasResolver.resolveContextual("turn it off and on again later", "TOGGLE_WIFI", null))
+    }
+
+    // ── Facts dictated after "remember this" ───────────────────────────
+
+    @Test
+    fun `remember this with a dictated fact does not read the screen`() {
+        val inputs = listOf(
+            "remember this: my locker code is 4512",
+            "save this information: parking spot B12",
+            "add this to my notes: buy milk",
+            "remember this and then text mom"
+        )
+        for (input in inputs) {
+            assertNull(input, AliasResolver.resolve(input))
+            org.junit.Assert.assertFalse(input, AliasResolver.isReadAndRememberRequest(input))
+        }
+    }
+
+    @Test
+    fun `bare remember this phrases still read the screen`() {
+        for (input in listOf("remember this screen", "remember this", "remember this for me", "save this information", "add this to my notes")) {
+            assertEquals(input, "READ_AND_REMEMBER_SCREEN", AliasResolver.resolve(input)?.action)
+            assertTrue(input, AliasResolver.isReadAndRememberRequest(input))
+        }
+    }
+
+    // ── Alarm time extraction ──────────────────────────────────────────
+
+    @Test
+    fun `extractAlarmTime keeps letters inside words`() {
+        assertEquals("quarter to 8", AliasResolver.extractAlarmTime("set alarm for quarter to 8"))
+        assertEquals("7", AliasResolver.extractAlarmTime("set alarm for 7 tomorrow"))
+        assertEquals("7:30 am", AliasResolver.extractAlarmTime("set an alarm at 7:30 am"))
+        assertEquals("6", AliasResolver.extractAlarmTime("set alarm to 6"))
+    }
+
+    @Test
+    fun `extractAlarmTime falls through when the remainder is not a time`() {
+        assertNull(AliasResolver.extractAlarmTime("set alarm for saturday at 7"))
+        assertNull(AliasResolver.extractAlarmTime("set alarm for 9 later today"))
+        assertNull(AliasResolver.extractAlarmTime("set alarm for 7 tonight"))
+        assertNull(AliasResolver.extractAlarmTime("set alarm for quarter to 8 tonight"))
+    }
 }
