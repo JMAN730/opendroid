@@ -82,14 +82,34 @@ class PlanModificationTest {
     }
 
     @Test
-    fun `settled steps cannot be overwritten or re-run`() {
+    fun `settled steps cannot be overwritten`() {
         val rerun = step("s1", "SEND_SMS")
 
         val result = PlanModification.merge(current, listOf(rerun))
 
         assertEquals("TOGGLE_DND", result.steps[0].action)
         assertEquals(StepStatus.COMPLETED, result.steps[0].status)
-        assertEquals(2, result.steps.size)
+    }
+
+    @Test
+    fun `a settled step revised under its own id is not run again`() {
+        val revised = done.copy(status = StepStatus.PENDING, params = mapOf("state" to "on"))
+
+        val result = PlanModification.merge(current, listOf(revised))
+
+        assertEquals(current, result.steps)
+    }
+
+    @Test
+    fun `a settled step echoed back is not run again`() {
+        val failed = step("s3", "GET_WEATHER", status = StepStatus.FAILED)
+        val settled = listOf(done, failed)
+        val echoes = listOf(done.copy(description = "reworded"), failed.copy(status = StepStatus.PENDING))
+
+        val result = PlanModification.merge(settled, echoes)
+
+        assertEquals(settled, result.steps)
+        assertFalse(result.revisionLost)
     }
 
     @Test
@@ -127,6 +147,255 @@ class PlanModificationTest {
         val merged = PlanModification.merge(current, listOf(first, second)).steps
 
         assertEquals(1, merged.count { it.stepId == "s3" })
+    }
+
+    // --- Revisions that reuse a settled stepId (#142) ---
+
+    private val search = step("s1", "WEB_SEARCH", status = StepStatus.COMPLETED)
+    private val queuedSms = step("s2", "SEND_SMS", params = mapOf("contact" to "Mom", "message" to "\$\$s1"))
+    private fun pendingOf(steps: List<PlanStep>) = steps.filter { it.status == StepStatus.PENDING }
+
+    @Test
+    fun `pending step revised under its own id is replaced`() {
+        val revised = queuedSms.copy(params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, queuedSms), listOf(revised)).steps
+
+        assertEquals(listOf("s2"), pendingOf(merged).map { it.stepId })
+        assertEquals("22C", pendingOf(merged).single().params["message"])
+    }
+
+    @Test
+    fun `renumbered revision replaces the matching pending step instead of sending twice`() {
+        val renumbered = step("s1", "SEND_SMS", params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, queuedSms), listOf(renumbered)).steps
+
+        val pending = pendingOf(merged).single()
+        assertEquals("s2", pending.stepId)
+        assertEquals("22C", pending.params["message"])
+        assertEquals(search, merged[0])
+    }
+
+    @Test
+    fun `a fully renumbered remainder lines up with its pending steps`() {
+        val alarm = step("s3", "SET_ALARM", params = mapOf("time" to "07:00"))
+        val renumbered = listOf(
+            step("s1", "SEND_SMS", params = mapOf("message" to "22C")),
+            step("s2", "SET_ALARM", params = mapOf("time" to "08:00"))
+        )
+
+        val merged = PlanModification.merge(listOf(search, queuedSms, alarm), renumbered).steps
+
+        assertEquals(listOf("SEND_SMS", "SET_ALARM"), pendingOf(merged).map { it.action })
+        assertEquals(listOf("s2", "s3"), pendingOf(merged).map { it.stepId })
+        assertEquals("08:00", pendingOf(merged)[1].params["time"])
+    }
+
+    @Test
+    fun `colliding revision with no matching pending step is re-identified`() {
+        val added = step("s1", "SET_ALARM")
+
+        val merged = PlanModification.merge(listOf(search, queuedSms), listOf(added)).steps
+
+        assertEquals(listOf("s1", "s2", "s1_r1"), merged.map { it.stepId })
+        assertEquals(StepStatus.PENDING, merged[2].status)
+        assertEquals(search, merged[0])
+    }
+
+    @Test
+    fun `re-identified id avoids ids already in use`() {
+        val earlierRetry = step("s1_r1", "GET_WEATHER", status = StepStatus.COMPLETED)
+
+        val merged = PlanModification.merge(listOf(search, earlierRetry), listOf(step("s1", "SET_ALARM"))).steps
+
+        assertEquals("s1_r2", merged.last().stepId)
+    }
+
+    @Test
+    fun `a takeover cannot leave a step depending on itself`() {
+        val renumbered = step("s1", "SEND_SMS").copy(dependsOn = listOf("s2"))
+
+        val merged = PlanModification.merge(listOf(search, queuedSms), listOf(renumbered)).steps
+
+        assertTrue(pendingOf(merged).single().dependsOn.isEmpty())
+    }
+
+    @Test
+    fun `references between renumbered steps follow them to their new ids`() {
+        val weather = step("s2", "GET_WEATHER")
+        val sms = step("s3", "SEND_SMS", params = mapOf("message" to "\$\$s2"))
+        val renumbered = listOf(
+            step("s1", "GET_WEATHER", params = mapOf("city" to "Oslo")),
+            step("s2", "SEND_SMS", params = mapOf("message" to "Weather: \$\$s1 (\$s1)")).copy(dependsOn = listOf("s1"))
+        )
+
+        val merged = PlanModification.merge(listOf(search, weather, sms), renumbered).steps
+
+        val newSms = merged.single { it.action == "SEND_SMS" }
+        assertEquals("s3", newSms.stepId)
+        assertEquals(listOf("s2"), newSms.dependsOn)
+        assertEquals("Weather: \$\$s2 (\$s2)", newSms.params["message"])
+    }
+
+    @Test
+    fun `references to a re-identified step follow it to its new id`() {
+        val renumbered = listOf(
+            step("s1", "SET_ALARM"),
+            step("s3", "SEND_SMS", params = mapOf("message" to "\$\$s1")).copy(dependsOn = listOf("s1"))
+        )
+
+        val merged = PlanModification.merge(listOf(search), renumbered).steps
+
+        val sms = merged.single { it.action == "SEND_SMS" }
+        assertEquals(listOf("s1_r1"), sms.dependsOn)
+        assertEquals("\$\$s1_r1", sms.params["message"])
+    }
+
+    @Test
+    fun `renumbered revision does not undo a step the user changed during the call`() {
+        val edited = queuedSms.copy(params = mapOf("contact" to "Dad", "message" to "hi"))
+        val renumbered = step("s1", "SEND_SMS", params = mapOf("message" to "22C"))
+        val asked = listOf(search, queuedSms)
+
+        assertEquals(
+            listOf(edited),
+            pendingOf(PlanModification.merge(listOf(search, edited), listOf(renumbered), asked).steps)
+        )
+        assertTrue(pendingOf(PlanModification.merge(listOf(search), listOf(renumbered), asked).steps).isEmpty())
+    }
+
+    @Test
+    fun `a sent message echoed with its reference resolved is not queued again`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val alarm = step("s3", "SET_ALARM")
+        val resolved = sent.copy(status = StepStatus.PENDING, params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, sent, alarm), listOf(resolved, alarm)).steps
+
+        assertEquals(listOf(search, sent, alarm), merged)
+        assertFalse(needsApproval(AutoMode.OFF, listOf(resolved, alarm), before = listOf(search, sent, alarm)))
+    }
+
+    @Test
+    fun `a sent message echoed under its own id does not take over another recipient's step`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val toDad = step("s3", "SEND_SMS", params = mapOf("contact" to "Dad", "message" to "hi"))
+        val resolved = sent.copy(status = StepStatus.PENDING, params = mapOf("contact" to "Mom", "message" to "22C"))
+
+        val merged = PlanModification.merge(listOf(search, sent, toDad), listOf(resolved, toDad)).steps
+
+        assertEquals(listOf(search, sent, toDad), merged)
+    }
+
+    @Test
+    fun `a renumbered echo of a sent message is not queued again`() {
+        val sent = queuedSms.copy(status = StepStatus.COMPLETED)
+        val alarm = step("s3", "SET_ALARM")
+        val renumbered = listOf(
+            step("s1", "SEND_SMS", params = mapOf("contact" to "Mom", "message" to "22C")),
+            alarm.copy(stepId = "s2")
+        )
+
+        val merged = PlanModification.merge(listOf(search, sent, alarm), renumbered).steps
+
+        assertEquals(listOf(search, sent, alarm), merged)
+    }
+
+    @Test
+    fun `re-identified and taken-over steps still go through approval`() {
+        val before = listOf(search, queuedSms)
+
+        assertTrue(needsApproval(AutoMode.OFF, listOf(step("s1", "SET_ALARM")), before = before, autoApproved = false))
+        assertTrue(
+            needsApproval(
+                AutoMode.OFF,
+                listOf(step("s1", "SEND_SMS", params = mapOf("message" to "22C"))),
+                before = before,
+                autoApproved = false
+            )
+        )
+    }
+
+    // --- Repairing the step whose action was unknown (#142) ---
+
+    private val bogus = step("s2", "BOGUS", status = StepStatus.FAILED)
+    private val afterBogus = step("s3", "SET_ALARM")
+    private val failedPlan = listOf(search, bogus, afterBogus)
+
+    @Test
+    fun `revision reusing the failed step's id becomes its replacement in place`() {
+        val corrected = step("s2", "SUMMARIZE_URL")
+
+        val merged = PlanModification.merge(failedPlan, listOf(corrected, afterBogus), repairing = "s2").steps
+
+        assertEquals(listOf("s1", "s2", "s3"), merged.map { it.stepId })
+        assertEquals("SUMMARIZE_URL", merged[1].action)
+        assertEquals(StepStatus.PENDING, merged[1].status)
+        assertNull(merged[1].error)
+    }
+
+    @Test
+    fun `repair goes through approval`() {
+        val corrected = listOf(step("s2", "SEND_SMS"))
+        val after = planOf(PlanModification.merge(failedPlan, corrected, repairing = "s2").steps)
+
+        assertTrue(PlanModification.requiresApproval(AutoMode.OFF, AutoMode.DEFAULT_GRANTS, failedPlan, after, false))
+        assertTrue(PlanModification.requiresApproval(AutoMode.AUTO, AutoMode.DEFAULT_GRANTS, failedPlan, after, false))
+    }
+
+    @Test
+    fun `repair keeping the failed action does not requeue it`() {
+        val unregistered = step("s2", "SET_ALARM", status = StepStatus.FAILED)
+        val retried = step("s2", "SET_ALARM", params = mapOf("time" to "07:00"))
+
+        val merged = PlanModification.merge(listOf(search, unregistered), listOf(retried), repairing = "s2").steps
+
+        assertEquals(listOf(search, unregistered), merged)
+    }
+
+    @Test
+    fun `only a failed step can be repaired`() {
+        val completedId = step("s1", "SUMMARIZE_URL")
+
+        val merged = PlanModification.merge(listOf(search, afterBogus), listOf(completedId), repairing = "s1").steps
+
+        assertEquals(search, merged[0])
+        assertEquals("s1_r1", merged.last().stepId)
+    }
+
+    // --- A revision with nothing left in it (#142) ---
+
+    @Test
+    fun `revision whose every step was rejected is reported lost`() {
+        val result = PlanModification.merge(listOf(search, queuedSms), listOf(step("s2", "NOT_A_REAL_ACTION")))
+
+        assertTrue(result.revisionLost)
+        assertEquals(listOf(search, queuedSms), result.steps)
+    }
+
+    @Test
+    fun `failed repair that names another unknown action is reported lost`() {
+        val result = PlanModification.merge(failedPlan, listOf(step("s2", "ALSO_BOGUS")), repairing = "s2")
+
+        assertTrue(result.revisionLost)
+    }
+
+    @Test
+    fun `revision is not lost when any step survives or nothing was asked`() {
+        val mixed = listOf(step("s3", "GET_WEATHER"), step("s4", "NOT_A_REAL_ACTION"))
+
+        assertFalse(PlanModification.merge(current, mixed).revisionLost)
+        assertFalse(PlanModification.merge(current, emptyList()).revisionLost)
+    }
+
+    @Test
+    fun `dropping an answer about a step the user changed is not a lost revision`() {
+        val rewritten = queuedSms.copy(params = mapOf("message" to "22C"))
+
+        val result = PlanModification.merge(listOf(search), listOf(rewritten), asked = listOf(search, queuedSms))
+
+        assertFalse(result.revisionLost)
     }
 
     // --- Plan-tab changes made while the re-evaluation call was in flight ---
@@ -338,6 +607,18 @@ class PlanModificationTest {
             ReEvaluationEngine.ReEvalResult("ok", "modify", plan).proposedActionNames().toSet()
         )
         assertTrue(ReEvaluationEngine.ReEvalResult("ok", "CONTINUE", plan).proposedActionNames().isEmpty())
+    }
+
+    @Test
+    fun `reference to a completed step is kept when its id is reused by the revised step`() {
+        val search = step("s1", "WEB_SEARCH", status = StepStatus.COMPLETED)
+        val sms = step("s2", "SEND_SMS", params = mapOf("contact" to "+15550100", "message" to "\$\$s1"))
+        val revised = step("s1", "SEND_SMS", params = mapOf("contact" to "+15550100", "message" to "\$\$s1"))
+
+        val merged = PlanModification.merge(listOf(search, sms), listOf(revised)).steps
+
+        assertEquals("s2", merged[1].stepId)
+        assertEquals("\$\$s1", merged[1].params["message"])
     }
 
     @Test
