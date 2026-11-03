@@ -21,6 +21,8 @@ import com.opendroid.ai.core.agent.ContactResolution
 import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.maskPhone
 import com.opendroid.ai.core.util.DeviceCapabilities
+import com.opendroid.ai.core.util.SmsSendOutcome
+import com.opendroid.ai.core.util.SmsSender
 import android.provider.ContactsContract
 import android.provider.Telephony
 import kotlinx.serialization.json.Json
@@ -486,8 +488,14 @@ class CommunicationActions internal constructor(
                 try {
                     val smsManager = context.getSystemService(SmsManager::class.java)
                     if (smsManager != null) {
-                        smsManager.sendTextMessage(phone, null, message, null, null)
-                        return ActionResult(true, "Text sent to $contactLabel!", null)
+                        // Not falling back to the compose screen after this point: some
+                        // parts may already be out, and auto-send would text them again.
+                        return when (SmsSender.send(context, smsManager, phone, message)) {
+                            SmsSendOutcome.SENT -> ActionResult(true, "Text sent to $contactLabel!", null)
+                            SmsSendOutcome.FAILED -> ActionResult(false, null, "The text to $contactLabel didn't send. Check that the phone has service and try again.")
+                            SmsSendOutcome.PARTLY_FAILED -> ActionResult(false, null, "Part of the text to $contactLabel failed, so some of it may already have gone through. Check your messages before sending it again.")
+                            SmsSendOutcome.UNCONFIRMED -> ActionResult(false, null, "I couldn't confirm the text to $contactLabel went through. Check your messages before sending it again.")
+                        }
                     }
                 } catch (_: Exception) {
                     // SmsManager failed — fall through to intent
