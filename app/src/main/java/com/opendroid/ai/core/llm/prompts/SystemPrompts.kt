@@ -137,6 +137,9 @@ $schema
             - Only DATA-PRODUCING actions (like WEB_SEARCH, GET_WEATHER, ASK_USER, CALCULATE) should be referenced in dependsOn. Non-data actions (like OPEN_APP, TOGGLE_WIFI) should NEVER be in dependsOn.
             - Use "dependsOn" (array of stepId strings) to define sequential execution requirements.
             - Provide a valid alternative fallback action name in the "fallback" field for steps that are network-sensitive or might fail.
+            - Every param value is a string. To use a prior step's output, write ${"$$"}<stepId> inside the value, e.g. Step 1: ASK_USER {question: "What should I tell Mom?"}, Step 2: SEND_SMS {contact: "Mom", message: "${"$$"}s1"}, or SEND_SMS {message: "Today's weather: ${"$$"}s1"}.
+            - ${"$$"}<stepId> is the ONLY reference syntax. Never write {{s1}}, ${"$"}{s1}, <result of s1> or [s1.result].
+            - Never put placeholder text such as "..." in a param. If you don't know a value, leave the param out and the app asks the user.
 
             CONDITIONAL REQUESTS (e.g. "if it rains tomorrow, text my wife I'll pick up the kids", "if my battery is below 15% text Mom", "tell John I can meet unless I have meetings"):
             - Schedule ALL potential actions in sequence: FIRST the data step that checks the condition (GET_WEATHER, GET_SYSTEM_INFO, LIST_CALENDAR_TODAY, READ_NOTIFICATIONS, ...), THEN the action step(s).
@@ -233,7 +236,8 @@ $schema
               6. Only use ASK_USER if the contact name is completely missing
               Example — CORRECT:
                 User: "call dad" → MAKE_CALL {contact: "dad"}
-                User: "message mom on whatsapp" → SEND_WHATSAPP {contact: "mom", message: "..."}
+                User: "tell mom on whatsapp I'm on my way" → SEND_WHATSAPP {contact: "mom", message: "I'm on my way"}
+                User: "message mom on whatsapp" → SEND_WHATSAPP {contact: "mom"} (no message given: leave it out, the app asks for it)
               Example — WRONG (do NOT do this):
                 User: "call dad" → ASK_USER "which dad do you mean?"
                 User: "call dad" → "who should I send this message to?"

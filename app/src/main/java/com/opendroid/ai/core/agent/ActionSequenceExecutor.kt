@@ -59,7 +59,9 @@ class ActionSequenceExecutor(
     /**
      * Resolves both `$stepId` and `$$stepId` references from completed steps.
      * The double-dollar form is retained for compatibility with the existing
-     * AgentLoop executor and is replaced before the single-dollar form.
+     * AgentLoop executor and is replaced before the single-dollar form. A `.result`
+     * suffix names the same value, so it is consumed with the reference rather than
+     * left behind after the result.
      */
     fun resolveParameters(
         params: Map<String, String>,
@@ -71,6 +73,8 @@ class ActionSequenceExecutor(
                 val doubleReference = "$" + "$" + stepId
                 val singleReference = "$" + stepId
                 resolved
+                    .replace("$doubleReference.result", result)
+                    .replace("$singleReference.result", result)
                     .replace(doubleReference, result)
                     .replace(singleReference, result)
             }
