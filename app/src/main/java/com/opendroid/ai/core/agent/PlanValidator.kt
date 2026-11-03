@@ -24,7 +24,7 @@ class PlanValidator internal constructor(
     ) : this({ actionDispatcher.get().isRegistered(it) }, unknownActionDao, contactResolver)
 
     companion object {
-        private val DATA_PRODUCING_ACTIONS = setOf(
+        internal val DATA_PRODUCING_ACTIONS = setOf(
             "GET_DIRECTIONS", "GET_WEATHER", "GET_NEWS", "CALCULATE",
             "CURRENCY_CONVERT", "TRANSLATE", "WEB_SEARCH", "SUMMARIZE_URL",
             "CHECK_STOCK", "DEFINE_WORD", "CONVERT_UNITS", "FACT_CHECK",

@@ -90,6 +90,26 @@ class IntentClassifier @Inject constructor(
     fun classifyComplexity(query: String): QueryComplexity {
         val lowercaseQuery = query.lowercase()
 
+        val compoundIndicators = listOf(
+            " and then ", " then ", " after that ", " after ",
+            " also ", " plus ", "and send", "and message",
+            "and call", "and tell", "and notify", "and text",
+            "and book", "and set", "and create", "and open",
+            "then send", "then call", "then message",
+            "then open", "then set", "then play",
+            "and also ", "followed by", "afterwards"
+        )
+        val compoundCount = compoundIndicators.count { lowercaseQuery.contains(it) }
+
+        // A conditional ("if it rains, text my wife …") needs a step that checks the
+        // condition before the action, so it never gets the 1-step SIMPLE cap or a
+        // single-action shortcut. Checked before every SIMPLE fast-path below.
+        // MEDIUM is a floor: several actions behind the condition still score COMPLEX.
+        if (hasConditionalMarker(lowercaseQuery)) {
+            if (compoundCount >= 2) return QueryComplexity.COMPLEX
+            return maxOf(QueryComplexity.MEDIUM, scoreComplexity(query, lowercaseQuery))
+        }
+
         // ── Fast-path: "open youtube and search X" / "youtube search X" /
         //    "search X on youtube" style phrasings. These LOOK compound (an "and"
         //    with an action verb on both sides, e.g. "open" + "search") and would
@@ -107,17 +127,7 @@ class IntentClassifier @Inject constructor(
         }
 
         // Check for compound indicators FIRST — these always indicate multi-step tasks
-        val compoundIndicators = listOf(
-            " and then ", " then ", " after that ", " after ",
-            " also ", " plus ", "and send", "and message",
-            "and call", "and tell", "and notify", "and text",
-            "and book", "and set", "and create", "and open",
-            "then send", "then call", "then message",
-            "then open", "then set", "then play",
-            "and also ", "followed by", "afterwards"
-        )
-
-        val isCompound = compoundIndicators.any { lowercaseQuery.contains(it) }
+        val isCompound = compoundCount > 0
 
         // Additionally check for " and " with action verbs on both sides
         val andWithActions = hasActionsAroundAnd(lowercaseQuery)
@@ -125,7 +135,6 @@ class IntentClassifier @Inject constructor(
         if (isCompound || andWithActions) {
             // Compound tasks are ALWAYS at least MEDIUM
             // Check if it's complex (3+ actions)
-            val compoundCount = compoundIndicators.count { lowercaseQuery.contains(it) }
             return if (compoundCount >= 2) QueryComplexity.COMPLEX else QueryComplexity.MEDIUM
         }
 
@@ -157,6 +166,10 @@ class IntentClassifier @Inject constructor(
         }
 
         // ONLY then check for complexity scoring using original logic
+        return scoreComplexity(query, lowercaseQuery)
+    }
+
+    private fun scoreComplexity(query: String, lowercaseQuery: String): QueryComplexity {
         val actionTriggers = listOf(
             "open", "launch", "start", "turn", "toggle", "enable", "disable", "set", "lock", "restart",
             "take", "record", "send", "make", "play", "pause", "resume", "next", "prev", "order", "search",
@@ -207,5 +220,22 @@ class IntentClassifier @Inject constructor(
         val hasActionAfter = actionVerbs.any { after.contains(it) }
 
         return hasActionBefore && hasActionAfter
+    }
+
+    companion object {
+        private val CONDITIONAL_MARKER = Regex("""\b(if|unless|in case|when)\b""")
+        private val WHEN_QUESTION = Regex("""^\s*when\s+(is|are|was|were|do|does|did|will|should|can)\b""")
+
+        /**
+         * "If it rains, text my wife …" / "… unless I'm busy": the request's action
+         * depends on a condition something has to check first. A leading "when is …"
+         * question asks for information and is not a condition.
+         */
+        fun hasConditionalMarker(query: String): Boolean {
+            val lowercaseQuery = query.lowercase()
+            val markers = CONDITIONAL_MARKER.findAll(lowercaseQuery).map { it.value }.toList()
+            if (markers.isEmpty()) return false
+            return markers.any { it != "when" } || !WHEN_QUESTION.containsMatchIn(lowercaseQuery)
+        }
     }
 }
