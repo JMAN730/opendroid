@@ -109,6 +109,171 @@ class AliasResolverTest {
         assertNull(AliasResolver.resolve("what is the meaning of life"))
     }
 
+    // ── Questions and bystander words never run a device action ─────────
+
+    @Test
+    fun `ordinary sentences that contain an alias do not resolve`() {
+        listOf(
+            "check my flight status",
+            "what's the speed of light",
+            "is lightning dangerous",
+            "is it cloudy today?",
+            "the music is too loud",
+            "how long is my commute",
+            "how do I unlock my phone",
+            "block this number",
+            "I can't sleep",
+            "remember that my locker code is 4512",
+            "why is my wifi so slow",
+            "what is my wifi password",
+            "explain what a hotspot is",
+            "tell me about clipboard managers",
+            "is it safe to clear cache"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `generic single words only match as a command`() {
+        listOf("sleep tips", "silent night lyrics", "light is too bright", "set wifi password").forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `question-shaped input skips exact and dynamic matches`() {
+        listOf(
+            "flash?",
+            "lock?",
+            "volume 70?",
+            "how do i set brightness to 30",
+            "does clear cache delete my photos",
+            "can i lock my phone with my face",
+            "can you explain what a hotspot is",
+            "can you tell me about clipboard managers"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `imperative commands still resolve`() {
+        assertEquals("TOGGLE_FLASHLIGHT", AliasResolver.resolve("turn on my flashlight")?.action)
+        assertEquals("TOGGLE_WIFI", AliasResolver.resolve("toggle wifi")?.action)
+        assertEquals("GET_CLIPBOARD", AliasResolver.resolve("open clipboard")?.action)
+        assertEquals("LOCK_SCREEN", AliasResolver.resolve("lock screen")?.action)
+        assertEquals("LOCK_SCREEN", AliasResolver.resolve("lock my phone")?.action)
+        assertEquals("SET_VOLUME", AliasResolver.resolve("mute phone")?.action)
+        assertEquals("TAKE_SCREENSHOT", AliasResolver.resolve("screenshot now")?.action)
+    }
+
+    @Test
+    fun `polite requests are commands even with a question mark`() {
+        assertEquals("off", AliasResolver.resolve("can you turn off the flashlight?")?.baseParams?.get("state"))
+        assertEquals("TAKE_SCREENSHOT", AliasResolver.resolve("can you take a screenshot?")?.action)
+        assertEquals("LOCK_SCREEN", AliasResolver.resolve("would you lock my phone")?.action)
+    }
+
+    @Test
+    fun `aliases that are themselves questions still resolve`() {
+        assertEquals("GET_WEATHER", AliasResolver.resolve("what's the weather?")?.action)
+        assertEquals("GET_WEATHER", AliasResolver.resolve("what's the weather today")?.action)
+        assertEquals("ANALYZE_SCREENSHOT", AliasResolver.resolve("what's on my screen?")?.action)
+        assertEquals("TOGGLE_DND", AliasResolver.resolve("do not disturb")?.action)
+    }
+
+    @Test
+    fun `questions about do not disturb do not toggle it`() {
+        listOf(
+            "how do i turn on do not disturb",
+            "what is do not disturb",
+            "is do not disturb on?",
+            "do not disturb?"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `do not disturb still resolves as a command`() {
+        listOf(
+            "do not disturb",
+            "do not disturb mode",
+            "turn on do not disturb",
+            "can you turn on do not disturb?"
+        ).forEach { query ->
+            assertEquals("\"$query\" is a command", "TOGGLE_DND", AliasResolver.resolve(query)?.action)
+        }
+    }
+
+    @Test
+    fun `negated commands do not run the action they name`() {
+        assertNull(AliasResolver.resolve("do not turn on the flashlight"))
+    }
+
+    @Test
+    fun `a question alias must open the question`() {
+        listOf(
+            "how do i see what's in clipboard",
+            "is what's on my screen private"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `polite requests that are not commands stay questions`() {
+        listOf(
+            "can you check if silent mode is on?",
+            "could you see if do not disturb is on?",
+            "can you verify silent mode is on?",
+            "can you describe silent mode?",
+            "would you check silent mode"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `input with an if or whether clause never runs an alias`() {
+        listOf(
+            "check if silent mode is on",
+            "check whether do not disturb is on",
+            "let me know if silent mode is on",
+            "turn on wifi if i am home"
+        ).forEach { query ->
+            assertNull("\"$query\" must reach the LLM", AliasResolver.resolve(query))
+        }
+    }
+
+    @Test
+    fun `question words inside a youtube query do not block the youtube shortcut`() {
+        listOf(
+            "play what if on youtube" to "what if",
+            "youtube search whether to buy tesla" to "whether to buy tesla",
+            "open youtube and watch why we sleep" to "why we sleep"
+        ).forEach { (input, query) ->
+            val hint = AliasResolver.resolve(input)
+            assertEquals("\"$input\" is a youtube command", "PLAY_YOUTUBE", hint?.action)
+            assertEquals(query, hint?.baseParams?.get("query"))
+        }
+    }
+
+    @Test
+    fun `polite commands reach the dynamic and partial steps`() {
+        assertEquals("40", AliasResolver.resolve("can you set volume to 40?")?.baseParams?.get("level"))
+        assertEquals("CLEAR_BROWSER_DATA", AliasResolver.resolve("can you clear the cache for me")?.action)
+        assertEquals("on", AliasResolver.resolve("can you turn the flashlight on?")?.baseParams?.get("state"))
+        assertEquals("cats", AliasResolver.resolve("could you play cats on youtube")?.baseParams?.get("query"))
+    }
+
+    @Test
+    fun `multi-word aliases match on word boundaries`() {
+        assertEquals("CLEAR_BROWSER_DATA", AliasResolver.resolve("clear cache for me")?.action)
+        assertNull(AliasResolver.resolve("nuclear cachet"))
+    }
+
     // ── Alarm helpers ───────────────────────────────────────────────────
 
     @Test

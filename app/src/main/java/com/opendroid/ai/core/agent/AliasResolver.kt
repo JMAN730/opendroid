@@ -268,6 +268,39 @@ object AliasResolver {
         "play", "book", "order", "remind"
     )
 
+    /** "can you take a screenshot?" is a command, not a question about the device. */
+    private val politeRequestPrefix = Regex("""^(?:can|could|would|will)\s+you\s+""", RegexOption.IGNORE_CASE)
+
+    private val activationVerb = Regex("""(?:turn|switch|open|enable|disable|toggle|set|change)\b""")
+
+    /** "do not disturb" is the one command that opens like a question. "do not turn on X" stays a question. */
+    private val questionOpener = Regex(
+        """^(?:what|whats|how|hows|why|is|are|can|could|should|would|will|does|do(?!\s+not\s+disturb\b)|did|when|whens|where|wheres|who|whos|which|explain|tell\s+me)\b"""
+    )
+
+    /** "check if silent mode is on" asks, and "turn on wifi if i am home" needs a condition no alias can honor. */
+    private val conditionalClause = Regex("""\b(?:if|whether)\b""")
+
+    /**
+     * A whole cleaned input built around one word: "lock", "lock my phone", "toggle wifi",
+     * "turn on my flashlight", "screenshot now". Group 1 is the candidate alias.
+     */
+    private val singleWordCommand = Regex(
+        """(?:(?:turn|switch|open|enable|disable|toggle|set)\s+(?:(?:on|off)\s+)?(?:my\s+)?)?(\S+)(?:\s+(?:my\s+)?(?:phone|device|screen))?(?:\s+(?:now|for\s+me))?"""
+    )
+
+    private class AliasPhrase(val key: String, val hint: ActionHint) {
+        val pattern = Regex("\\b" + Regex.escape(key) + "\\b")
+    }
+
+    /** Multi-word aliases, longest first, so the most specific phrase wins. */
+    private val aliasPhrases: List<AliasPhrase> = aliases.entries
+        .filter { (key, _) -> key.contains(' ') }
+        .sortedByDescending { (key, _) -> key.length }
+        .map { (key, hint) -> AliasPhrase(key, hint) }
+
+    private val questionPhrases: List<AliasPhrase> = aliasPhrases.filter { isQuestionShaped(it.key) }
+
     /**
      * Resolve user input to an ActionHint.
      * Returns null if no alias matches.
@@ -314,20 +347,31 @@ object AliasResolver {
      * Returns null if no alias matches.
      */
     fun resolve(input: String): ActionHint? {
-        val lower = input.lowercase().trim()
-        val cleaned = cleanInput(input)
+        val request = stripPoliteRequest(input)
+        val lower = request.lowercase().trim()
+        val cleaned = cleanInput(request)
+
+        // 0a. YouTube search/play/watch extraction — routes straight to the working
+        //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
+        //     below (which would otherwise swallow this because it contains "search"
+        //     or "play") or the LLM planner's broken OPEN_APP + CLICK_TEXT/TYPE_TEXT plan.
+        //     Its patterns open with the command itself, so a question word or an
+        //     "if" here is part of the search query ("play what if on youtube").
+        extractYoutubeQuery(request)?.let { query ->
+            return ActionHint("PLAY_YOUTUBE", mapOf("query" to query))
+        }
+
+        // 0b. Questions go to the LLM, so "how do I unlock my phone" gets answered
+        //    instead of locking the phone. Only aliases that are themselves questions
+        //    ("what's the weather") can still match, and only by opening the input.
+        if (isQuestionShaped(lower)) {
+            if (compoundIntentWords.any { word -> lower.contains(word) }) return null
+            return questionPhrases.firstOrNull { it.pattern.matchesAt(lower, 0) }?.hint
+        }
 
         // 1. Exact match (always wins)
         aliases[cleaned]?.let { return it }
         aliases[lower]?.let { return it }
-
-        // 1b. YouTube search/play/watch extraction — routes straight to the working
-        //     single-shot PLAY_YOUTUBE action instead of the compound-intent guard
-        //     below (which would otherwise swallow this because it contains "search"
-        //     or "play") or the LLM planner's broken OPEN_APP + CLICK_TEXT/TYPE_TEXT plan.
-        extractYoutubeQuery(input)?.let { query ->
-            return ActionHint("PLAY_YOUTUBE", mapOf("query" to query))
-        }
 
         // 2. Dynamic brightness extraction — "set brightness to 30%", "brightness 60", etc.
         //    This runs BEFORE compound-intent guard so the LLM doesn't need to handle it.
@@ -360,11 +404,39 @@ object AliasResolver {
             return null
         }
 
-        // 5. Longest partial match — only for simple, single-intent inputs
-        return aliases.entries
-            .filter { (key, _) -> cleaned.contains(key) || lower.contains(key) }
-            .maxByOrNull { it.key.length }
-            ?.value
+        // 5. Longest multi-word alias, on word boundaries — only for simple, single-intent inputs
+        longestPhraseMatch(aliasPhrases, lower, cleaned)?.let { return it }
+
+        // 6. A single word is too generic to match inside a sentence ("the music is
+        //    too loud"), so it must be the whole command.
+        return singleWordCommand.matchEntire(cleaned)?.let { aliases[it.groupValues[1]] }
+    }
+
+    /** Only a command loses its "can you": "can you verify silent mode is on?" stays a question. */
+    private fun stripPoliteRequest(input: String): String {
+        val trimmed = input.trim()
+        if (!politeRequestPrefix.containsMatchIn(trimmed)) return input
+        val request = trimmed.replace(politeRequestPrefix, "").removeSuffix("?")
+        return if (startsWithCommand(request)) request else input
+    }
+
+    private fun startsWithCommand(request: String): Boolean {
+        val lower = request.lowercase().trim()
+        val cleaned = cleanInput(request)
+        return activationVerb.matchesAt(lower, 0) ||
+            aliasPhrases.any { it.pattern.matchesAt(cleaned, 0) } ||
+            singleWordCommand.matchEntire(cleaned)?.let { aliases[it.groupValues[1]] } != null ||
+            extractYoutubeQuery(request) != null
+    }
+
+    private fun isQuestionShaped(text: String): Boolean {
+        return text.endsWith("?") || questionOpener.containsMatchIn(text) || conditionalClause.containsMatchIn(text)
+    }
+
+    private fun longestPhraseMatch(phrases: List<AliasPhrase>, lower: String, cleaned: String): ActionHint? {
+        return phrases
+            .firstOrNull { it.pattern.containsMatchIn(cleaned) || it.pattern.containsMatchIn(lower) }
+            ?.hint
     }
 
     // ── Alarm shortcut helpers ──────────────────────────
