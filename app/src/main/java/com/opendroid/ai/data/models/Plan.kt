@@ -1,6 +1,7 @@
 package com.opendroid.ai.data.models
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import java.util.UUID
 
 @Serializable
@@ -12,7 +13,9 @@ data class Plan(
     val estimatedSteps: Int,
     val steps: List<PlanStep>,
     val status: PlanStatus = PlanStatus.PENDING,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Values of sensitive steps that have run; see [com.opendroid.ai.core.agent.PlanPrivacy]. */
+    @Transient val retiredSecrets: Set<String> = emptySet()
 ) {
     companion object {
         // Marks ids the app minted, so task history can tell them from the model-written

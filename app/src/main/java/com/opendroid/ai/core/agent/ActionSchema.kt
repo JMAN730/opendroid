@@ -15,7 +15,9 @@ data class ActionDefinition(
     // approval modal in Auto mode, never offer an "Always allow" grant.
     val neverAutoApprove: Boolean = false,
     /** Optional explicit routing risk; unspecified values use catalog policy. */
-    val risk: ActionRisk = ActionRisk.UNSPECIFIED
+    val risk: ActionRisk = ActionRisk.UNSPECIFIED,
+    /** Params that must never reach unencrypted storage; see [PlanPrivacy]. */
+    val sensitiveParams: Set<String> = emptySet()
 )
 
 data class ParamDefinition(
@@ -604,6 +606,7 @@ object ActionSchema {
                 ParamDefinition("secret", ParamType.STRING, true, "Sensitive value/secret to encrypt and protect"),
                 ParamDefinition("label", ParamType.STRING, false, "Human-readable label for reference", defaultValue = "")
             ),
+            sensitiveParams = setOf("secret"),
             examples = listOf(
                 "save sensitive note secret_wifi_code with value mypassword123",
                 "securely remember locker combination 4589",
@@ -1390,6 +1393,11 @@ object ActionSchema {
     /** Get action by name */
     fun getAction(name: String): ActionDefinition? =
         ALL_ACTIONS.find { it.name == name }
+
+    /** Every param name any action declares in [ActionDefinition.sensitiveParams]. */
+    val sensitiveParamNames: Set<String> by lazy {
+        ALL_ACTIONS.flatMapTo(mutableSetOf()) { it.sensitiveParams }
+    }
 
     fun riskForAction(actionName: String): ActionRisk =
         getAction(actionName)?.let(ActionRiskPolicy::forDefinition) ?: ActionRisk.SENSITIVE
