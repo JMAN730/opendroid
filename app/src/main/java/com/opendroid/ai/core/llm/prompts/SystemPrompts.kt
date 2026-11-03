@@ -138,6 +138,12 @@ $schema
             - Use "dependsOn" (array of stepId strings) to define sequential execution requirements.
             - Provide a valid alternative fallback action name in the "fallback" field for steps that are network-sensitive or might fail.
 
+            CONDITIONAL REQUESTS (e.g. "if it rains tomorrow, text my wife I'll pick up the kids", "if my battery is below 15% text Mom", "tell John I can meet unless I have meetings"):
+            - Schedule ALL potential actions in sequence: FIRST the data step that checks the condition (GET_WEATHER, GET_SYSTEM_INFO, LIST_CALENDAR_TODAY, READ_NOTIFICATIONS, ...), THEN the action step(s).
+            - NEVER plan the action step alone: nothing would check the condition before it runs.
+            - Do NOT build logic operators, code snippets, or control flow into the JSON plan. Keep the steps sequential and flat.
+            - The Re-Evaluation Engine runs at each step boundary. It inspects the data outputs of the completed steps and decides whether to CONTINUE with the remaining conditional steps or ABANDON them when the user's condition is not met.
+
             SECTION G: JSON RESPONSE FORMATS & TEMPLATES
             Always respond in valid JSON format matching one of these templates:
 

@@ -14,15 +14,31 @@ import com.opendroid.ai.data.models.PlanStep
  */
 object AutoApprovalPolicy {
 
-    fun shouldAutoApprove(mode: AutoMode, granted: Set<String>, plan: Plan): Boolean = when (mode) {
+    /**
+     * [userText] is the request the plan answers. In AUTO, a conditional request
+     * ("if it rains, text my wife …") whose plan acts before any step checks the
+     * condition is proposed instead: re-evaluation only runs after a step, so
+     * nothing could stop that first action.
+     */
+    fun shouldAutoApprove(mode: AutoMode, granted: Set<String>, plan: Plan, userText: String = ""): Boolean = when (mode) {
         AutoMode.OFF -> false
         AutoMode.YOLO -> true
         AutoMode.AUTO -> plan.steps
             .flatMap {
                 step -> listOfNotNull(step.action.takeIf { it.isNotBlank() }, step.fallback.takeIf { it.isNotBlank() })
             }
-            .none { ActionSchema.isNeverAutoApprove(it) || it !in granted }
+            .none { ActionSchema.isNeverAutoApprove(it) || it !in granted } &&
+            !(IntentClassifier.hasConditionalMarker(userText) && actsBeforeChecking(plan.steps))
     }
+
+    /** True when the plan's first step is an action rather than a step that reads data. */
+    internal fun actsBeforeChecking(steps: List<PlanStep>): Boolean {
+        val first = steps.sortedBy { it.order }.firstOrNull { it.action.isNotBlank() } ?: return false
+        return first.action.uppercase() !in CONDITION_CHECK_ACTIONS
+    }
+
+    /** Steps that can check a condition: data producers, plus the notification read rule 5 of the planning prompt names. */
+    private val CONDITION_CHECK_ACTIONS = PlanValidator.DATA_PRODUCING_ACTIONS + "READ_NOTIFICATIONS"
 
     /**
      * Distinct actions (in step order) that keep this plan from auto-running.
