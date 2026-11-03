@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.opendroid.ai.core.agent.ActiveConversation
 import com.opendroid.ai.core.agent.AutoReplyEngine
+import com.opendroid.ai.core.agent.ReplyConversation
 import com.opendroid.ai.core.memory.NotificationIntelligence
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
@@ -292,26 +294,14 @@ class OpenDroidNotificationListener : NotificationListenerService() {
     }
 
     /**
-     * Get a fresh active StatusBarNotification matching the given package and contact.
-     * This is needed because the original SBN's PendingIntent can go stale after the
-     * auto-reply delay period. Re-fetching ensures we have a valid reply action.
+     * Get a fresh active StatusBarNotification for the given conversation, or null if it
+     * has none. This is needed because the original SBN's PendingIntent can go stale after
+     * the auto-reply delay period. Re-fetching ensures we have a valid reply action.
      */
-    fun getActiveNotification(packageName: String, contactName: String?): StatusBarNotification? {
+    internal fun getActiveNotification(conversation: ReplyConversation): StatusBarNotification? {
         return try {
-            val activeNotifications = getActiveNotifications() ?: return null
-            // Try to find a matching notification by package and sender name
-            activeNotifications.firstOrNull { sbn ->
-                sbn.packageName == packageName &&
-                sbn.notification?.extras?.let { extras ->
-                    val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-                    val convTitle = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString() ?: ""
-                    contactName == null || title == contactName || convTitle == contactName
-                } == true &&
-                sbn.notification?.actions?.any { it.remoteInputs?.isNotEmpty() == true } == true
-            } ?: activeNotifications.firstOrNull { sbn ->
-                // Fallback: any notification from the same package that has reply actions
-                sbn.packageName == packageName &&
-                sbn.notification?.actions?.any { it.remoteInputs?.isNotEmpty() == true } == true
+            getActiveNotifications()?.firstOrNull { sbn ->
+                conversation.matches(ActiveConversation(sbn))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get active notifications: ${e.message}")
