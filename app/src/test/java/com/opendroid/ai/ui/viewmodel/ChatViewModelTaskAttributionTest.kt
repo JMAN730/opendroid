@@ -341,6 +341,13 @@ class ChatViewModelTaskAttributionTest {
         }
         override fun rejectProposedPlan() = Unit
         override fun forgetSession(sessionId: String) = Unit
+        override val pendingContactPickerMessageId = MutableStateFlow<String?>(null)
+        override fun answerContactPicker(
+            pickerMessageId: String,
+            contact: Map<String, String>,
+            context: Context,
+            explicitSessionId: String?
+        ): Boolean = false
 
         private fun plan() = Plan(
             planId = "p1",

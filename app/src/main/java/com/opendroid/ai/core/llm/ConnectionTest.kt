@@ -79,6 +79,26 @@ object ConnectionTestPlanner {
         return null
     }
 
+    /**
+     * [saved] with [providerName]'s key and endpoint taken from the on-screen [candidate].
+     * The provider under test reads the saved config, and those fields save on a debounce,
+     * so this is written before probing; otherwise a test started right after typing a
+     * key would run against the previous one.
+     */
+    fun withCandidateConnection(saved: LLMConfig, candidate: LLMConfig, providerName: String): LLMConfig {
+        val provider = ProviderCatalog.canonicalName(providerName)
+        val withKey = candidate.apiKeys[provider]
+            ?.let { key -> saved.copy(apiKeys = saved.apiKeys + (provider to key)) }
+            ?: saved
+        return when (provider) {
+            "Ollama" -> withKey.copy(ollamaUrl = candidate.ollamaUrl)
+            "Copilot API" -> withKey.copy(copilotUrl = candidate.copilotUrl)
+            else -> candidate.customEndpoints[provider]
+                ?.let { url -> withKey.copy(customEndpoints = withKey.customEndpoints + (provider to url)) }
+                ?: withKey
+        }
+    }
+
     fun fromException(
         provider: String,
         model: String,

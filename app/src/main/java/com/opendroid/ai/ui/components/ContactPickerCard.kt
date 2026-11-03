@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -23,17 +24,20 @@ import com.opendroid.ai.ui.theme.*
 /**
  * Contact picker card shown when multiple contacts match a query.
  * Displays up to 5 options with numbered badges and masked phone numbers.
+ * [enabled] is false once the agent is no longer waiting on this picker.
  */
 @Composable
 fun ContactPickerCard(
     query: String,
     matches: List<Map<String, String>>,
+    enabled: Boolean = true,
     onContactSelected: (Map<String, String>) -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(8.dp)
+            .alpha(if (enabled) 1f else 0.6f),
         colors = CardDefaults.cardColors(
             containerColor = CardBackground
         ),
@@ -69,6 +73,7 @@ fun ContactPickerCard(
                     name = contact["name"] ?: "",
                     phone = maskPhone(contact["phone"] ?: ""),
                     type = contact["type"] ?: "Mobile",
+                    enabled = enabled,
                     onClick = { onContactSelected(contact) }
                 )
                 if (index < matches.size - 1) {
@@ -83,7 +88,11 @@ fun ContactPickerCard(
 
             // Hint
             Text(
-                text = "Tap to select, or type the number (1, 2, 3...)",
+                text = if (enabled) {
+                    "Tap to select, or type the number (1, 2, 3...)"
+                } else {
+                    "This choice is closed"
+                },
                 color = TextSecondary,
                 fontSize = 11.sp
             )
@@ -97,13 +106,14 @@ fun ContactOptionRow(
     name: String,
     phone: String,
     type: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

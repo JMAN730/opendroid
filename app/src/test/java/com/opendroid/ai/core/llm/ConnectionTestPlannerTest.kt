@@ -10,6 +10,41 @@ import org.junit.Test
 class ConnectionTestPlannerTest {
 
     @Test
+    fun `connection test persists the on-screen key and endpoint before probing`() {
+        // The provider under test reads the saved config; the key field saves on a 1 s
+        // debounce, so the saved config can still hold the previous key.
+        val saved = LLMConfig(
+            apiKeys = mapOf("Custom OpenAI Compatible" to "old-key", "OpenAI" to "sk-openai"),
+            customEndpoints = mapOf("Custom OpenAI Compatible" to "https://old.example/v1")
+        )
+        val onScreen = saved.copy(
+            apiKeys = saved.apiKeys + ("Custom OpenAI Compatible" to "new-key"),
+            customEndpoints = mapOf("Custom OpenAI Compatible" to "https://new.example/v1")
+        )
+
+        val flushed = ConnectionTestPlanner.withCandidateConnection(
+            saved = saved,
+            candidate = onScreen,
+            providerName = "Custom OpenAI Compatible"
+        )
+
+        assertEquals("new-key", flushed.apiKeys["Custom OpenAI Compatible"])
+        assertEquals("https://new.example/v1", flushed.customEndpoints["Custom OpenAI Compatible"])
+        assertEquals("sk-openai", flushed.apiKeys["OpenAI"])
+    }
+
+    @Test
+    fun `connection test persists the on-screen Ollama url`() {
+        val saved = LLMConfig(ollamaUrl = "http://old:11434")
+        val flushed = ConnectionTestPlanner.withCandidateConnection(
+            saved = saved,
+            candidate = saved.copy(ollamaUrl = "http://new:11434"),
+            providerName = "Ollama"
+        )
+        assertEquals("http://new:11434", flushed.ollamaUrl)
+    }
+
+    @Test
     fun `missing api key is AuthMissing without probing`() {
         val gap = ConnectionTestPlanner.configurationGap(
             LLMConfig(activeProvider = "OpenAI", apiKeys = emptyMap()),

@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.agent.PlanApprovalSummary
+import com.opendroid.ai.core.voice.ApprovalListenGate
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.core.voice.TextToSpeechEngine
 import com.opendroid.ai.core.voice.VoiceApprovalIntent
@@ -26,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -47,6 +49,7 @@ class OpenDroidService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var showFloatingButton = false
     private val pendingApprovalListen = PendingApprovalListen()
+    private val approvalListenGate = ApprovalListenGate()
 
     companion object {
         const val ACTION_TRIGGER_RECORD = "com.opendroid.ai.action.TRIGGER_RECORD"
@@ -76,15 +79,23 @@ class OpenDroidService : Service() {
         agentLoop.onSpeakCallback = { text ->
             textToSpeechEngine.speak(text)
         }
+        // Stop and Clear cancel the task; speech already playing or still being fetched
+        // must stop with it.
+        agentLoop.onStopSpeakingCallback = {
+            approvalListenGate.disarm()
+            textToSpeechEngine.stop()
+        }
 
         // Set TTS completion listener to transition back to Idle
-        textToSpeechEngine.onCompletionListener = {
+        textToSpeechEngine.onCompletionListener = { utteranceId ->
             // Only Speaking resets to Idle - speech that happens to play while a
             // plan sits in PlanProposed must not knock the approval gate over.
             if (agentLoop.agentState.value is AgentState.Speaking) {
                 agentLoop.setAgentState(AgentState.Idle)
             }
-            pendingApprovalListen.take()?.let { planId -> startListeningForApproval(planId) }
+            if (approvalListenGate.onUtteranceDone(utteranceId)) {
+                pendingApprovalListen.take()?.let { planId -> startListeningForApproval(planId) }
+            }
         }
 
         // Start Foreground Notification
@@ -115,10 +126,16 @@ class OpenDroidService : Service() {
                 pendingApprovalListen.onAgentState(state)
                 if (state is AgentState.PlanProposed && state.plan != promptedPlan) {
                     promptedPlan = state.plan
+                    // Armed with the prompt's own id before it is queued, so only the
+                    // prompt finishing opens the mic, never an earlier utterance.
+                    val promptId = UUID.randomUUID().toString()
                     if (!showFloatingButton) {
                         pendingApprovalListen.arm(state.plan.planId)
+                        approvalListenGate.armFor(promptId)
+                    } else {
+                        approvalListenGate.disarm()
                     }
-                    textToSpeechEngine.speak(PlanApprovalSummary.spokenPrompt(state.plan))
+                    textToSpeechEngine.speak(PlanApprovalSummary.spokenPrompt(state.plan), utteranceId = promptId)
                 }
             }
         }

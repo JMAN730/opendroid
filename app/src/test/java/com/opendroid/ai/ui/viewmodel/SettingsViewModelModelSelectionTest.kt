@@ -14,6 +14,7 @@ import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
+import com.opendroid.ai.core.service.McpConfigStore
 import com.opendroid.ai.core.settings.AppSettingsStore
 import com.opendroid.ai.data.db.OpenDroidDatabase
 import com.opendroid.ai.data.models.LLMConfig
@@ -159,7 +160,8 @@ class SettingsViewModelModelSelectionTest {
         modelRepository = ModelRepository(context, database.modelDao(), settings, OnDeviceEngineReleaser { }),
         okHttpClient = OkHttpClient(),
         providerCredentialStore = EmptyProviderCredentialStore(),
-        appSettingsStore = NoOpAppSettingsStore()
+        appSettingsStore = NoOpAppSettingsStore(),
+        mcpConfigStore = McpConfigStore(context)
     )
 
     private fun stored(): LLMConfig = runBlocking { settings.llmConfig.first() }
