@@ -235,9 +235,10 @@ fun OpenDroidNavigation(
         }
 
         composable(OpenDroidRoutes.NOTIFICATION_HISTORY) {
-            val notifDao = hiltViewModel<NotificationHistoryViewModel>().notificationDao
+            val historyViewModel = hiltViewModel<NotificationHistoryViewModel>()
             NotificationHistoryScreen(
-                notificationDao = notifDao,
+                notificationDao = historyViewModel.notificationDao,
+                onClearAll = historyViewModel::clearAll,
                 onBack = {
                     navController.popBackStack()
                 }

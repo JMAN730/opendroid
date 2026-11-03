@@ -75,6 +75,8 @@ class MemoryManager @Inject constructor(
             // Contact picks are resolver lookups holding a third party's number, not facts
             // about the user, and this context goes to the LLM with every prompt.
             .filterNot { it.key.startsWith(CONTACT_PREF_PREFIX) }
+            // Notification patterns reach the prompt through getLearnedPatterns below.
+            .filterNot { it.key.startsWith(NotificationIntelligence.PATTERN_PREFIX) }
             .filter { memoryExtractor.shouldStoreInSemanticMemory(it.key) && memoryExtractor.shouldStoreInSemanticMemory(it.value) }
             .joinToString("; ") { "${it.key}: ${it.value}" }
 
