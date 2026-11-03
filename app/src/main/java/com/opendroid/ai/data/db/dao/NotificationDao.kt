@@ -41,6 +41,19 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE contactName = :contactName ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getNotificationsForContact(contactName: String, limit: Int = 20): List<NotificationEntity>
 
+    // contactName is a free-form notification title, so it only names a contact within one app.
+    @Query("""
+        SELECT * FROM notifications
+        WHERE packageName = :packageName AND contactName = :contactName
+        ORDER BY timestamp DESC
+        LIMIT :limit
+    """)
+    suspend fun getNotificationsForContactInApp(
+        packageName: String,
+        contactName: String,
+        limit: Int = 20
+    ): List<NotificationEntity>
+
     @Query("SELECT * FROM notifications WHERE timestamp > :since ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getNotificationsSince(since: Long, limit: Int = 100): List<NotificationEntity>
 
