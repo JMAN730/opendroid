@@ -564,8 +564,11 @@ class CommunicationActions internal constructor(
                 }
             }
 
-            // Couldn't auto-send — be honest
-            ActionResult(false, null, "I've opened your message to $contactLabel but couldn't tap send automatically. Please tap send.", true)
+            // Couldn't auto-send — the composer is open with the text in it.
+            // Not a plain Failure: a fallback SEND_WHATSAPP would duplicate it once the user taps Send.
+            ActionResult.UserActionRequired(
+                "I've opened your message to $contactLabel but couldn't tap send automatically. Review it and tap Send; sending was not verified."
+            )
         } catch (e: Exception) {
             try {
                 val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -587,7 +590,9 @@ class CommunicationActions internal constructor(
                     }
                 }
 
-                ActionResult(false, null, "Messaging app is open for $contactLabel but needs you to tap send.", true)
+                ActionResult.UserActionRequired(
+                    "Messaging app is open for $contactLabel with your message ready. Review it and tap Send; sending was not verified."
+                )
             } catch (e2: Exception) {
                 Log.e("SendSMS", "SMS failed: ${e2.localizedMessage}")
                 ActionResult(false, null, "Couldn't open messaging. Try again?")
