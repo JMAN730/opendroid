@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import com.opendroid.ai.data.db.dao.AppNotificationCount
 import com.opendroid.ai.data.db.dao.ContactNotificationCount
 import com.opendroid.ai.data.db.dao.NotificationDao
+import com.opendroid.ai.data.db.dao.NotificationHistoryStats
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,7 +98,13 @@ class DismissNotificationActionTest {
             return notifications.last().id
         }
 
-        override fun getAllNotificationsFlow(): Flow<List<NotificationEntity>> = flow
+        override fun getNotificationHistoryFlow(
+            category: String?,
+            autoRepliedOnly: Boolean,
+            limit: Int
+        ): Flow<List<NotificationEntity>> = flow
+        override fun getNotificationHistoryStatsFlow(): Flow<NotificationHistoryStats> =
+            MutableStateFlow(NotificationHistoryStats(0, 0, 0))
         override suspend fun getRecentNotifications(limit: Int): List<NotificationEntity> =
             notifications.take(limit)
         override suspend fun getNotificationsByApp(packageName: String, limit: Int): List<NotificationEntity> =

@@ -22,9 +22,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.data.db.dao.NotificationDao
+import com.opendroid.ai.data.db.dao.NotificationHistoryStats
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.ui.theme.AppTheme
 import kotlinx.coroutines.launch
+
+private const val HISTORY_LIMIT = 500
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,20 +36,21 @@ fun NotificationHistoryScreen(
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val notifications by notificationDao.getAllNotificationsFlow().collectAsState(initial = emptyList())
     var selectedFilter by remember { mutableStateOf("ALL") }
 
-    val filteredNotifications = when (selectedFilter) {
-        "MESSAGE" -> notifications.filter { it.category == "MESSAGE" }
-        "EMAIL" -> notifications.filter { it.category == "EMAIL" }
-        "SOCIAL" -> notifications.filter { it.category == "SOCIAL" }
-        "REPLIED" -> notifications.filter { it.isAutoReplied }
-        else -> notifications
-    }
+    val filteredNotifications by remember(selectedFilter) {
+        notificationDao.getNotificationHistoryFlow(
+            category = selectedFilter.takeIf { it in listOf("MESSAGE", "EMAIL", "SOCIAL") },
+            autoRepliedOnly = selectedFilter == "REPLIED",
+            limit = HISTORY_LIMIT
+        )
+    }.collectAsState(initial = emptyList())
+    val stats by remember { notificationDao.getNotificationHistoryStatsFlow() }
+        .collectAsState(initial = NotificationHistoryStats(total = 0, messages = 0, replied = 0))
 
-    val totalCount = notifications.size
-    val repliedCount = notifications.count { it.isAutoReplied }
-    val messageCount = notifications.count { it.category == "MESSAGE" }
+    val totalCount = stats.total
+    val repliedCount = stats.replied
+    val messageCount = stats.messages
 
     val themeColors = AppTheme.colors
 
