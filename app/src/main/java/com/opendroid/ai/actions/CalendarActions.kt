@@ -120,7 +120,7 @@ class CalendarActions @Inject constructor(
                 .joinToString(" ")
             val moment = parseEventMoment(params["date"], dateTimeText, clock)
             val durationText = params["duration"]?.takeIf { it.isNotBlank() }
-            val durationSeconds = durationText?.let { DurationParser.parseToSeconds(it) }
+            val durationSeconds = durationText?.let { EventTimeParser.parseDurationSeconds(it) }
 
             val intent = calendarInsertIntent(
                 title = title,

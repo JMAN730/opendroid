@@ -55,6 +55,19 @@ class CalendarActionsTest {
     }
 
     @Test
+    fun `a duration with a part the parser cannot read falls back to one hour and says so`() = runBlocking {
+        val result = CalendarActions.CreateCalendarEventAction(CLOCK).execute(
+            mapOf("title" to "Offsite", "date" to "2026-11-02", "time" to "15:00", "duration" to "1 day and 2 hours"),
+            context
+        )
+
+        val intent = context.started.single()
+        assertEquals(millis(2026, 11, 2, 15, 0), intent.beginTime())
+        assertEquals(millis(2026, 11, 2, 16, 0), intent.endTime())
+        assertTrue((result as ActionResult.UserActionRequired).message.contains("1 day and 2 hours"))
+    }
+
+    @Test
     fun `calendar event without a duration uses the schema default of one hour`() = runBlocking {
         CalendarActions.CreateCalendarEventAction(CLOCK).execute(
             mapOf("title" to "Sync", "date" to "tomorrow", "time" to "3pm"),
