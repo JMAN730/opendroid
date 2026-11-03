@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -98,7 +99,8 @@ fun PlanScreen(
                     )
                 }
 
-                items(displayPlan!!.steps, key = { it.stepId }) { step ->
+                // Index-qualified: a persisted plan with a repeated step id must still open.
+                itemsIndexed(displayPlan!!.steps, key = { index, step -> "$index:${step.stepId}" }) { _, step ->
                     val isStepEditable = isCurrentActivePlan &&
                         displayPlan!!.status == PlanStatus.RUNNING &&
                         step.status == StepStatus.PENDING
