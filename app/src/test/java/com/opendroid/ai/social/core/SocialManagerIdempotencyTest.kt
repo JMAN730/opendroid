@@ -43,6 +43,9 @@ class SocialManagerIdempotencyTest {
     private val sends = AtomicInteger(0)
 
     @Volatile
+    private var lastRequestUrl: String? = null
+
+    @Volatile
     private var duringSend: () -> Unit = {}
 
     @Volatile
@@ -53,7 +56,7 @@ class SocialManagerIdempotencyTest {
             accountId = accountId,
             platform = platform,
             accessToken = "real-token",
-            botToken = "123:real",
+            botToken = if (accountId.contains(SANDBOX)) "mock_token" else "123:$accountId",
             channelOrTargetId = "@channel"
         )
         override fun saveCredentials(credentials: SocialCredentials) = true
@@ -65,6 +68,7 @@ class SocialManagerIdempotencyTest {
     // Stands in for the network: the request is delivered whatever the calling coroutine does next.
     private val fakePlatform = Interceptor { chain ->
         sends.incrementAndGet()
+        lastRequestUrl = chain.request().url.toString()
         duringSend()
         Response.Builder()
             .request(chain.request())
@@ -108,7 +112,7 @@ class SocialManagerIdempotencyTest {
         )
         runBlocking {
             repository.saveAccount(
-                SocialAccount(ACCOUNT_ID, SocialPlatform.TELEGRAM, "bot", "Bot", status = AccountStatus.CONNECTED)
+                SocialAccount(ACCOUNT_ID, SocialPlatform.TELEGRAM, "bot", "Bot", status = AccountStatus.CONNECTED, permissions = SEND_PERMISSIONS)
             )
         }
     }
@@ -479,7 +483,7 @@ class SocialManagerIdempotencyTest {
     @Test
     fun `a YouTube publish with a real token ends FAILED with no fake post id`() = runBlocking {
         repository.saveAccount(
-            SocialAccount(YOUTUBE_ACCOUNT_ID, SocialPlatform.YOUTUBE, "channel", "Channel", status = AccountStatus.CONNECTED)
+            SocialAccount(YOUTUBE_ACCOUNT_ID, SocialPlatform.YOUTUBE, "channel", "Channel", status = AccountStatus.CONNECTED, permissions = SEND_PERMISSIONS)
         )
         repository.savePost(
             SocialPost(
@@ -515,7 +519,7 @@ class SocialManagerIdempotencyTest {
 
     private suspend fun assertUnsentReply(platform: SocialPlatform, expectedMessage: String) {
         repository.saveAccount(
-            SocialAccount("${platform.name}_acct", platform, "account", "Account", status = AccountStatus.CONNECTED)
+            SocialAccount("${platform.name}_acct", platform, "account", "Account", status = AccountStatus.CONNECTED, permissions = SEND_PERMISSIONS)
         )
         repository.saveComment(
             SocialComment(
@@ -537,7 +541,184 @@ class SocialManagerIdempotencyTest {
         assertEquals(1, audit("REPLY_FAILED").size)
     }
 
+    // ── PERMISSIONS ──────────────────────────────────────────────────────────
+
+    private suspend fun connectSandboxTelegram(permissions: List<SocialPermission>): SocialAccount =
+        manager.connectAccount(
+            SocialPlatform.TELEGRAM,
+            SocialCredentials(accountId = SANDBOX, platform = SocialPlatform.TELEGRAM, accessToken = "mock_token"),
+            permissions
+        ).getOrThrow()
+
+    @Test
+    fun `publishing without the publish permission fails and sends nothing`() = runBlocking {
+        val account = connectSandboxTelegram(listOf(SocialPermission.READ_POSTS))
+        val draft = manager.createDraft(account.id, SocialPlatform.TELEGRAM, "hello")
+
+        val result = manager.publishPost(draft.id)
+
+        assertEquals(
+            "@${account.username} doesn't have the Publish Posts permission. Reconnect the account to turn it on.",
+            result.exceptionOrNull()?.message
+        )
+        assertEquals(0, sends.get())
+        val saved = repository.getPostById(draft.id)!!
+        assertEquals(PostStatus.DRAFT, saved.status)
+        assertNull(saved.platformPostId)
+        assertTrue(audit("PUBLISHED_POST").isEmpty())
+    }
+
+    @Test
+    fun `replying without the reply permission fails and leaves the comment answerable`() = runBlocking {
+        val account = connectSandboxTelegram(listOf(SocialPermission.READ_COMMENTS))
+        val id = saveCommentFor(account.id)
+
+        val result = manager.replyToComment(id, "thanks")
+
+        assertEquals(
+            "@${account.username} doesn't have the Reply to Comments permission. Reconnect the account to turn it on.",
+            result.exceptionOrNull()?.message
+        )
+        assertEquals(0, sends.get())
+        val saved = comment(id)
+        assertEquals(CommentReplyStatus.NONE.name, saved.replyStatus)
+        assertFalse(saved.isAnswered)
+        assertTrue(audit("SENT_REPLY").isEmpty())
+    }
+
+    @Test
+    fun `an account with both send permissions can publish and reply`() = runBlocking {
+        val account = connectSandboxTelegram(SEND_PERMISSIONS)
+        val draft = manager.createDraft(account.id, SocialPlatform.TELEGRAM, "hello")
+
+        assertTrue(manager.publishPost(draft.id).isSuccess)
+        assertTrue(manager.replyToComment(saveCommentFor(account.id), "thanks").isSuccess)
+
+        assertEquals(PostStatus.PUBLISHED, repository.getPostById(draft.id)!!.status)
+    }
+
+    // ── WHICH ACCOUNT ────────────────────────────────────────────────────────
+
+    private suspend fun saveAccount(
+        id: String,
+        connectedAt: Long,
+        status: AccountStatus = AccountStatus.CONNECTED,
+        platform: SocialPlatform = SocialPlatform.TELEGRAM
+    ) {
+        repository.saveAccount(
+            SocialAccount(id, platform, id, id, status = status, permissions = SEND_PERMISSIONS, connectedAt = connectedAt)
+        )
+    }
+
+    private suspend fun saveCommentFor(accountId: String?): String {
+        repository.saveComment(
+            SocialComment(
+                id = COMMENT_ID,
+                platformCommentId = "42",
+                postId = null,
+                platform = SocialPlatform.TELEGRAM,
+                authorName = "someone",
+                content = "a question",
+                accountId = accountId
+            )
+        )
+        return COMMENT_ID
+    }
+
+    @Test
+    fun `platform lookup skips a disconnected account`() = runBlocking {
+        // A is inserted first and connected last, so neither row order nor recency can pick B.
+        saveAccount("a", connectedAt = 2000L, status = AccountStatus.DISCONNECTED, platform = SocialPlatform.X)
+        saveAccount("b", connectedAt = 1000L, platform = SocialPlatform.X)
+
+        assertEquals("b", repository.getAccountByPlatform(SocialPlatform.X)?.id)
+    }
+
+    @Test
+    fun `platform lookup picks the most recently connected account`() = runBlocking {
+        saveAccount("a", connectedAt = 1000L, platform = SocialPlatform.X)
+        saveAccount("b", connectedAt = 3000L, platform = SocialPlatform.X)
+        saveAccount("c", connectedAt = 2000L, platform = SocialPlatform.X)
+
+        assertEquals("b", repository.getAccountByPlatform(SocialPlatform.X)?.id)
+    }
+
+    @Test
+    fun `platform lookup finds nothing when every account is disconnected`() = runBlocking {
+        saveAccount("a", connectedAt = 1000L, status = AccountStatus.DISCONNECTED, platform = SocialPlatform.X)
+
+        assertNull(repository.getAccountByPlatform(SocialPlatform.X))
+    }
+
+    @Test
+    fun `a draft made after swapping accounts publishes through the new account`() = runBlocking {
+        database.socialAccountDao().deleteById(ACCOUNT_ID)
+        saveAccount("a", connectedAt = 1000L)
+        manager.disconnectAccount("a", SocialPlatform.TELEGRAM)
+        saveAccount("b", connectedAt = 500L)
+
+        val attachedTo = repository.getAccountByPlatform(SocialPlatform.TELEGRAM)!!.id
+        val draft = manager.createDraft(attachedTo, SocialPlatform.TELEGRAM, "hello")
+
+        assertTrue(manager.publishPost(draft.id).isSuccess)
+        assertEquals("b", attachedTo)
+        assertTrue(lastRequestUrl!!.contains("123:b"))
+    }
+
+    @Test
+    fun `a reply goes through the account the comment came from`() = runBlocking {
+        database.socialAccountDao().deleteById(ACCOUNT_ID)
+        saveAccount("a", connectedAt = 1000L)
+        saveAccount("b", connectedAt = 2000L)
+        val id = saveCommentFor("b")
+        assertTrue(manager.replyToComment(id, "thanks").isSuccess)
+        assertTrue(lastRequestUrl!!.contains("123:b"))
+
+        // Stored on A, the older row, which the platform lookup would never pick.
+        database.socialCommentDao().deleteById(id)
+        assertTrue(manager.replyToComment(saveCommentFor("a"), "thanks").isSuccess)
+
+        assertTrue(lastRequestUrl!!.contains("123:a"))
+    }
+
+    @Test
+    fun `a comment from before the column existed replies through the newest connected account`() = runBlocking {
+        database.socialAccountDao().deleteById(ACCOUNT_ID)
+        saveAccount("a", connectedAt = 2000L, status = AccountStatus.DISCONNECTED)
+        saveAccount("b", connectedAt = 1000L)
+        val id = saveCommentFor(null)
+
+        assertTrue(manager.replyToComment(id, "thanks").isSuccess)
+
+        assertTrue(lastRequestUrl!!.contains("123:b"))
+    }
+
+    @Test
+    fun `a reply never moves to another account when the comment's account is gone`() = runBlocking {
+        saveAccount("disconnected", connectedAt = 1000L, status = AccountStatus.DISCONNECTED)
+
+        for (owner in listOf("disconnected", "revoked")) {
+            val id = saveCommentFor(owner)
+
+            assertTrue(manager.replyToComment(id, "thanks").isFailure)
+
+            assertEquals(CommentReplyStatus.NONE.name, comment(id).replyStatus)
+        }
+        assertEquals(0, sends.get())
+    }
+
+    @Test
+    fun `syncing stores the account on each fetched comment`() = runBlocking {
+        val account = connectSandboxTelegram(SEND_PERMISSIONS)
+
+        manager.syncAccount(account.id)
+
+        assertEquals(account.id, comment("tg_comm_1").accountId)
+    }
+
     private companion object {
+        const val SANDBOX = "sandbox"
+        val SEND_PERMISSIONS = listOf(SocialPermission.PUBLISH_POSTS, SocialPermission.REPLY_TO_COMMENTS)
         const val ACCOUNT_ID = "acct"
         const val YOUTUBE_ACCOUNT_ID = "yt_acct"
         const val POST_ID = "post"

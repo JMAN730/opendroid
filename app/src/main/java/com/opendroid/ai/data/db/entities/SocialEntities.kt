@@ -91,7 +91,8 @@ data class SocialCommentEntity(
     val replyTimestamp: Long?,
     val sentiment: String,
     val category: String,
-    val priority: String
+    val priority: String,
+    val accountId: String?
 )
 
 @Entity(
