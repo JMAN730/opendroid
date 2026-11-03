@@ -86,6 +86,15 @@ class ChatViewModel @Inject constructor(
         val error = agentLoop.chatError.value ?: return
         when (error.primaryAction()) {
             ChatErrorPrimaryAction.RETRY -> {
+                val pausedPlanId = error.resumePlanId
+                if (pausedPlanId != null) {
+                    // The model failed mid-plan. Carry on with the steps not yet run:
+                    // re-sending the request would plan it again and repeat steps that
+                    // already happened. resumePlan clears the card itself, since
+                    // dismissing it would fail the plan.
+                    agentLoop.resumePlan(pausedPlanId, error.sessionId, context)
+                    return
+                }
                 agentLoop.dismissChatError()
                 // Re-execute the request the error actually describes, in ITS session -
                 // never re-send the visible chat's last message, and never insert a

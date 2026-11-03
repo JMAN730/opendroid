@@ -137,6 +137,40 @@ class PlanManager @Inject constructor(
         return true
     }
 
+    /**
+     * Makes [planId] current again and moves it from PAUSED back to RUNNING, so
+     * [getActiveStep] hands out only the steps it has not run yet. Loads the plan from
+     * the database when another plan has replaced it here. Returns null and changes
+     * nothing unless that plan is PAUSED: only a mid-plan model failure pauses one, and
+     * a plan in any other status is either still going or finished for good.
+     */
+    suspend fun resumePausedPlan(planId: String): Plan? {
+        val stored = if (_currentPlan.value?.planId == planId) null else planRepository.getPlanById(planId)
+        mutex.withLock {
+            val plan = _currentPlan.value?.takeIf { it.planId == planId } ?: stored ?: return null
+            if (plan.status != PlanStatus.PAUSED) return null
+            val resumed = plan.copy(status = PlanStatus.RUNNING)
+            _currentPlan.value = resumed
+            workingMemory.activePlan = resumed
+            saveCurrentPlanLocked()
+            return resumed
+        }
+    }
+
+    /**
+     * Fails [planId] if it is the current plan and still PAUSED, for when the user
+     * gives up on resuming it. Anything else is left alone.
+     */
+    suspend fun failPausedPlan(planId: String) {
+        mutex.withLock {
+            val plan = _currentPlan.value ?: return@withLock
+            if (plan.planId != planId || plan.status != PlanStatus.PAUSED) return@withLock
+            _currentPlan.value = plan.copy(status = PlanStatus.FAILED)
+            workingMemory.activePlan = null
+            saveCurrentPlanLocked()
+        }
+    }
+
     suspend fun saveCurrentPlan() {
         mutex.withLock {
             saveCurrentPlanLocked()
