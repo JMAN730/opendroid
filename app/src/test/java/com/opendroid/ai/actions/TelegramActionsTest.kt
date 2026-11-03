@@ -60,7 +60,7 @@ class TelegramActionsTest {
         val res2 = mapper.mapAction("open telegram", emptyMap(), registered)
         assertEquals("OPEN_TELEGRAM", res2.mappedAction)
 
-        val res3 = mapper.mapAction("message alex on telegram", emptyMap(), registered)
+        val res3 = mapper.mapAction("message alex on telegram", mapOf("contact" to "Alex"), registered)
         assertEquals("SEND_TELEGRAM", res3.mappedAction)
 
         val res4 = mapper.mapAction("SEND_TELEGRAM_MESSAGE", emptyMap(), registered)
