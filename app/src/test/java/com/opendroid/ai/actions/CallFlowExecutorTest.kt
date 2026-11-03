@@ -79,6 +79,27 @@ class CallFlowExecutorTest {
         assertEquals(Intent.ACTION_CALL, context.startedIntent?.action)
     }
 
+    @Test
+    fun `hash in the number survives into the call uri`() = runBlocking {
+        val context = recordingContext(grantCallPermission = true)
+
+        CallFlowExecutor(FakeCallFlowVerifier(callStarted = true)).execute("+1 555-0100,,1234#", context)
+
+        val uri = context.startedIntent?.data!!
+        assertEquals("tel", uri.scheme)
+        assertEquals("+15550100,,1234#", uri.schemeSpecificPart)
+        assertEquals(null, uri.fragment)
+    }
+
+    @Test
+    fun `hash in the number survives into the dialer uri`() = runBlocking {
+        val context = recordingContext(grantCallPermission = false)
+
+        CallFlowExecutor(FakeCallFlowVerifier(callStarted = true)).execute("5550100#", context)
+
+        assertEquals("5550100#", context.startedIntent?.data?.schemeSpecificPart)
+    }
+
     private fun recordingContext(
         grantCallPermission: Boolean,
         grantPhoneStatePermission: Boolean = grantCallPermission,
