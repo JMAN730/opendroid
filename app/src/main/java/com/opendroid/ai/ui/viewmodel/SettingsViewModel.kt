@@ -82,6 +82,12 @@ class SettingsViewModel @Inject constructor(
     private val _llmConfig = MutableStateFlow(LLMConfig())
     val llmConfig: StateFlow<LLMConfig> = _llmConfig
 
+    private val configSaver = OptimisticConfigSaver(
+        uiConfig = _llmConfig,
+        persist = { update -> settingsRepository.updateConfig(update) },
+        readStored = { settingsRepository.llmConfig.first() }
+    )
+
     private val _modelsLoading = MutableStateFlow(false)
     val modelsLoading: StateFlow<Boolean> = _modelsLoading
 
@@ -378,10 +384,12 @@ class SettingsViewModel @Inject constructor(
         _llmConfig.value = updated
         viewModelScope.launch {
             try {
-                settingsRepository.updateConfig { current ->
+                val saved = configSaver.save(
+                    revert = { stored -> copy(activeProvider = stored.activeProvider, activeModel = stored.activeModel) }
+                ) { current ->
                     current.withActiveProvider(provider)
                 }
-                refreshModels(force = false)
+                if (saved) refreshModels(force = false)
             } catch (e: Exception) {
                 android.util.Log.e("SettingsViewModel", "Failed to update active provider: ${e.message}", e)
             }
@@ -399,7 +407,9 @@ class SettingsViewModel @Inject constructor(
                 // Prefer this session's in-memory Claude/live list for the active
                 // provider if DataStore has not absorbed refreshModels yet.
                 val memoryModels = _llmConfig.value.modelCache[provider]
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(activeModel = stored.activeModel, selectedModels = stored.selectedModels) }
+                ) { current ->
                     val config = if (!memoryModels.isNullOrEmpty()) {
                         current.copy(modelCache = current.modelCache + (provider to memoryModels))
                     } else {
@@ -426,7 +436,9 @@ class SettingsViewModel @Inject constructor(
         }.distinct()
         _llmConfig.value = _llmConfig.value.copy(fallbackProviders = updated)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(fallbackProviders = stored.fallbackProviders) }
+            ) { current ->
                 current.copy(fallbackProviders = updated)
             }
         }
@@ -441,12 +453,14 @@ class SettingsViewModel @Inject constructor(
         apiKeyUpdateJobs[providerName] = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                val saved = configSaver.save(
+                    revert = { stored -> copy(apiKeys = apiKeys.withEntryFrom(stored.apiKeys, providerName)) }
+                ) { current ->
                     val currentKeys = current.apiKeys.toMutableMap()
                     currentKeys[providerName] = key
                     current.copy(apiKeys = currentKeys)
                 }
-                if (providerName == _llmConfig.value.activeProvider) {
+                if (saved && providerName == _llmConfig.value.activeProvider) {
                     refreshModels(force = true)
                 }
             } catch (e: Exception) {
@@ -463,7 +477,9 @@ class SettingsViewModel @Inject constructor(
         elevenLabsApiKeyJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(elevenLabsApiKey = stored.elevenLabsApiKey) }
+                ) { current ->
                     current.copy(elevenLabsApiKey = key)
                 }
             } catch (e: Exception) {
@@ -480,7 +496,9 @@ class SettingsViewModel @Inject constructor(
         elevenLabsVoiceIdJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(elevenLabsVoiceId = stored.elevenLabsVoiceId) }
+                ) { current ->
                     current.copy(elevenLabsVoiceId = voiceId)
                 }
             } catch (e: Exception) {
@@ -497,7 +515,9 @@ class SettingsViewModel @Inject constructor(
         ollamaUrlJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(ollamaUrl = stored.ollamaUrl) }
+                ) { current ->
                     current.copy(ollamaUrl = url)
                 }
             } catch (e: Exception) {
@@ -516,7 +536,9 @@ class SettingsViewModel @Inject constructor(
         ollamaTimeoutJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(ollamaTimeoutSeconds = stored.ollamaTimeoutSeconds) }
+                ) { current ->
                     current.copy(ollamaTimeoutSeconds = clamped)
                 }
             } catch (e: Exception) {
@@ -533,7 +555,9 @@ class SettingsViewModel @Inject constructor(
         copilotUrlJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored -> copy(copilotUrl = stored.copilotUrl) }
+                ) { current ->
                     current.copy(copilotUrl = url)
                 }
             } catch (e: Exception) {
@@ -553,7 +577,11 @@ class SettingsViewModel @Inject constructor(
         customEndpointJob = viewModelScope.launch {
             try {
                 delay(1000)
-                settingsRepository.updateConfig { current ->
+                configSaver.save(
+                    revert = { stored ->
+                        copy(customEndpoints = customEndpoints.withEntryFrom(stored.customEndpoints, providerName))
+                    }
+                ) { current ->
                     val currentEndpoints = current.customEndpoints.toMutableMap()
                     currentEndpoints[providerName] = url
                     current.copy(customEndpoints = currentEndpoints)
@@ -657,7 +685,11 @@ class SettingsViewModel @Inject constructor(
             val updatedBenchmarks = _llmConfig.value.latencyBenchmarks.toMutableMap()
             updatedBenchmarks[provider] = connected.latencyMs
             _llmConfig.value = _llmConfig.value.copy(latencyBenchmarks = updatedBenchmarks)
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored ->
+                    copy(latencyBenchmarks = latencyBenchmarks.withEntryFrom(stored.latencyBenchmarks, provider))
+                }
+            ) { current ->
                 current.copy(
                     latencyBenchmarks = current.latencyBenchmarks + (provider to connected.latencyMs)
                 )
@@ -692,7 +724,9 @@ class SettingsViewModel @Inject constructor(
     fun setAutoMode(mode: AutoMode) {
         _llmConfig.value = _llmConfig.value.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(autoMode = stored.autoMode, autoConfirmPlans = stored.autoConfirmPlans) }
+            ) { current ->
                 current.copy(autoMode = mode, autoConfirmPlans = mode == AutoMode.YOLO)
             }
         }
@@ -705,7 +739,9 @@ class SettingsViewModel @Inject constructor(
         val updated = _llmConfig.value.effectiveGrantedActions() - action
         _llmConfig.value = _llmConfig.value.copy(grantedActions = updated)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(grantedActions = stored.grantedActions) }
+            ) { current ->
                 current.copy(grantedActions = current.effectiveGrantedActions() - action)
             }
         }
@@ -714,7 +750,9 @@ class SettingsViewModel @Inject constructor(
     fun updateMultiAgentMode(enabled: Boolean) {
         _llmConfig.value = _llmConfig.value.copy(multiAgentModeEnabled = enabled)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(multiAgentModeEnabled = stored.multiAgentModeEnabled) }
+            ) { current ->
                 current.copy(multiAgentModeEnabled = enabled)
             }
         }
@@ -723,7 +761,9 @@ class SettingsViewModel @Inject constructor(
     fun updateShowFloatingButton(enabled: Boolean) {
         _llmConfig.value = _llmConfig.value.copy(showFloatingButton = enabled)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(showFloatingButton = stored.showFloatingButton) }
+            ) { current ->
                 current.copy(showFloatingButton = enabled)
             }
         }
@@ -732,7 +772,9 @@ class SettingsViewModel @Inject constructor(
     fun updateDarkMode(enabled: Boolean) {
         _llmConfig.value = _llmConfig.value.copy(isDarkMode = enabled)
         viewModelScope.launch {
-            settingsRepository.updateConfig { current ->
+            configSaver.save(
+                revert = { stored -> copy(isDarkMode = stored.isDarkMode) }
+            ) { current ->
                 current.copy(isDarkMode = enabled)
             }
         }
