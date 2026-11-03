@@ -116,6 +116,84 @@ class EventTimeParserTest {
     }
 
     @Test
+    fun `half past and quarter forms honour am and pm`() {
+        assertEquals(18 to 30, EventTimeParser.parseClockTime("half past 6 pm"))
+        assertEquals(18 to 30, EventTimeParser.parseClockTime("half past 6pm"))
+        assertEquals(18 to 30, EventTimeParser.parseClockTime("half past 6 p.m."))
+        assertEquals(6 to 30, EventTimeParser.parseClockTime("half past 6 am"))
+        assertEquals(18 to 15, EventTimeParser.parseClockTime("quarter past 6 pm"))
+        assertEquals(19 to 45, EventTimeParser.parseClockTime("quarter to 8 pm"))
+        assertEquals(7 to 45, EventTimeParser.parseClockTime("quarter to 8 am"))
+    }
+
+    @Test
+    fun `half past and quarter forms read 12 am as 0 and 12 pm as 12`() {
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 am"))
+        assertEquals(12 to 30, EventTimeParser.parseClockTime("half past 12 pm"))
+        assertEquals(0 to 15, EventTimeParser.parseClockTime("quarter past 12 am"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 12 am"))
+        assertEquals(11 to 45, EventTimeParser.parseClockTime("quarter to 12 pm"))
+        assertEquals(12 to 45, EventTimeParser.parseClockTime("quarter to 1 pm"))
+        assertEquals(0 to 45, EventTimeParser.parseClockTime("quarter to 1 am"))
+    }
+
+    @Test
+    fun `half past and quarter forms honour the part of the day`() {
+        assertEquals(6 to 30, EventTimeParser.parseClockTime("half past 6 in the morning"))
+        assertEquals(15 to 15, EventTimeParser.parseClockTime("quarter past 3 in the afternoon"))
+        assertEquals(18 to 30, EventTimeParser.parseClockTime("half past 6 in the evening"))
+        assertEquals(18 to 30, EventTimeParser.parseClockTime("half past 6 this evening"))
+        assertEquals(21 to 30, EventTimeParser.parseClockTime("half past 9 at night"))
+        assertEquals(20 to 45, EventTimeParser.parseClockTime("quarter to 9 at night"))
+        // Night runs past midnight, so the small hours stay AM.
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 at night"))
+        assertEquals(1 to 30, EventTimeParser.parseClockTime("half past 1 at night"))
+    }
+
+    @Test
+    fun `half past and quarter forms read 12 with a part of the day`() {
+        assertEquals(11 to 45, EventTimeParser.parseClockTime("quarter to 12 in the morning"))
+        assertEquals(11 to 45, EventTimeParser.parseClockTime("quarter to 12 in the afternoon"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 12 in the evening"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 12 at night"))
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 in the morning"))
+        assertEquals(0 to 15, EventTimeParser.parseClockTime("quarter past 12 in the morning"))
+        assertEquals(12 to 30, EventTimeParser.parseClockTime("half past 12 in the afternoon"))
+        assertEquals(0 to 30, EventTimeParser.parseClockTime("half past 12 in the evening"))
+        assertEquals(0 to 45, EventTimeParser.parseClockTime("quarter to 1 in the morning"))
+        assertEquals(12 to 45, EventTimeParser.parseClockTime("quarter to 1 in the afternoon"))
+    }
+
+    @Test
+    fun `half past and quarter forms without a suffix stay as written`() {
+        assertEquals(6 to 30, EventTimeParser.parseClockTime("half past 6"))
+        assertEquals(14 to 30, EventTimeParser.parseClockTime("at half past 14"))
+        assertEquals(5 to 15, EventTimeParser.parseClockTime("quarter past 5"))
+        assertEquals(23 to 45, EventTimeParser.parseClockTime("quarter to 0"))
+    }
+
+    @Test
+    fun `half past and quarter forms with anything unread are null rather than a guess`() {
+        listOf(
+            "half past 6 every weekday",
+            "quarter to 8 pm on tuesdays",
+            "half past 6 amazing",
+            "half past 18 pm",
+            "quarter to 13 am",
+            "half past 24",
+            "quarter to 30"
+        ).forEach { assertNull(it, EventTimeParser.parseClockTime(it)) }
+    }
+
+    @Test
+    fun `dated half past forms keep their pm`() {
+        assertTimed("half past 6 pm", at(11, 2, 18, 30))
+        assertTimed("tomorrow half past 6 pm", at(11, 3, 18, 30))
+        assertTimed("quarter to 8 pm tomorrow", at(11, 3, 19, 45))
+        assertTimed("tomorrow half past 6 in the evening", at(11, 3, 18, 30))
+    }
+
+    @Test
     fun `repeat schedules map to recurrence rules`() {
         assertEquals("FREQ=DAILY", EventTimeParser.parseRepeatRule("daily")?.rule)
         assertEquals("FREQ=DAILY", EventTimeParser.parseRepeatRule("Every day")?.rule)

@@ -114,7 +114,7 @@ CORE ACTIONS:
    - GET_SYSTEM_INFO {}
    - GET_BATTERY_LEVEL {}
 2. CLOCK & TASKS:
-   - SET_ALARM {time: String, label: String}
+   - SET_ALARM {time: String, label: String, repeat: String (once|daily|weekdays|weekends|day names)}
    - SET_TIMER {duration: String, label: String}
    - CREATE_CALENDAR_EVENT {title: String, date: String, time: String}
    - CREATE_NOTE {title: String, content: String}
