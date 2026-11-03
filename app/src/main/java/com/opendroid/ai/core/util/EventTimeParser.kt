@@ -29,6 +29,15 @@ object EventTimeParser {
         """\d+(?:\.\d+)?\s*(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|sec|s)"""
     private val RELATIVE_DURATION = Regex("""^$DURATION_PART(?:\s*(?:and\s+)?$DURATION_PART)*$""")
 
+    // Anchored so a trailing "every weekday" reads as null instead of being dropped.
+    private val RELATIVE_CLOCK_TIME = Regex(
+        """^(?:at\s+)?(half past|quarter past|quarter to)\s+(\d{1,2})""" +
+            """(?:\s*(am|pm|a\.m\.|p\.m\.)|\s+(?:in\s+(?:the\s+)?|at\s+|this\s+)?(morning|afternoon|evening|night))?$"""
+    )
+    private val DAY_LIST_SEPARATOR = Regex("""[\s,&/]+|\band\b""")
+    private val DAY_LIST_FILLER = setOf("every", "on")
+    private val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+
     /**
      * Seconds for an event length, or null when any part of [input] is unreadable.
      * DurationParser skips words it cannot read, so "1 day and 2 hours" must not reach it as two hours.
@@ -145,27 +154,34 @@ object EventTimeParser {
             if (hour in 0..23) return Pair(hour, 0)
         }
 
-        // "half past 5" → 5:30, "quarter past 5 pm" → 17:15, "quarter to 8 pm" → 19:45.
-        // Anchored so an unconsumed qualifier ("tonight") rejects rather than being dropped.
-        val relative = Regex("""^(half past|quarter past|quarter to) (\d{1,2})(?:\s*(am|pm|a\.m\.|p\.m\.))?$""")
-        relative.find(clean)?.let { match ->
-            var hour = match.groupValues[2].toInt()
-            val amPm = match.groupValues[3]
-            if (amPm.isNotEmpty()) {
-                if (hour !in 1..12) return null
-                val isPm = amPm.startsWith("p")
-                if (isPm && hour != 12) hour += 12
-                if (!isPm && hour == 12) hour = 0
-            }
-            if (hour > 23) return null
-            return when (match.groupValues[1]) {
+        // "half past 5" → 5:30, "quarter past 5 pm" → 17:15, "quarter to 6 in the evening" → 17:45
+        RELATIVE_CLOCK_TIME.find(clean)?.let { match ->
+            val (form, hourText, meridiem, dayPart) = match.destructured
+            // "quarter to 12 in the morning" counts back from noon; "half past 12 in the morning" is 00:30.
+            val countsBackFromNoon = form == "quarter to" && hourText.toInt() == 12 && dayPart == "morning"
+            val hour = if (countsBackFromNoon) 12 else relativeClockHour(hourText.toInt(), meridiem, dayPart) ?: return null
+            return when (form) {
                 "half past" -> Pair(hour, 30)
                 "quarter past" -> Pair(hour, 15)
-                else -> Pair(if (hour == 0) 23 else hour - 1, 45)
+                else -> Pair((hour + 23) % 24, 45)
             }
         }
 
         return null
+    }
+
+    private fun relativeClockHour(hour: Int, meridiem: String, dayPart: String): Int? {
+        if (meridiem.isEmpty() && dayPart.isEmpty()) return hour.takeIf { it in 0..23 }
+        if (hour !in 1..12) return null
+        val isPm = when {
+            meridiem.isNotEmpty() -> meridiem.startsWith("p")
+            // Night runs past midnight: "half past 1 at night" is 01:30.
+            dayPart == "night" -> hour in 5..11
+            // 12 in the evening is midnight, never noon.
+            dayPart == "evening" -> hour != 12
+            else -> dayPart != "morning"
+        }
+        return hour % 12 + if (isPm) 12 else 0
     }
 
     /** Maps a repeat schedule to an iCalendar RRULE. Null means the schedule was not understood. */
@@ -181,6 +197,28 @@ object EventTimeParser {
             else -> parseWeekday(clean.removePrefix("every ").removeSuffix("s"))
                 ?.let { RepeatRule("FREQ=WEEKLY;BYDAY=${it.name.take(2)}") }
         }
+    }
+
+    /** Maps a repeat schedule to the days an alarm rings on. Empty means one-time; null means it was not understood. */
+    fun parseAlarmDays(input: String): Set<DayOfWeek>? {
+        val clean = input.trim().lowercase()
+        if (clean.isEmpty() || clean in NO_REPEAT_WORDS) return emptySet()
+        return when (clean) {
+            "daily", "every day", "everyday" -> DayOfWeek.values().toSet()
+            "weekdays", "every weekday" -> DayOfWeek.values().toSet() - WEEKEND
+            "weekends", "every weekend" -> WEEKEND
+            else -> {
+                val names = clean.split(DAY_LIST_SEPARATOR).filter { it.isNotEmpty() && it !in DAY_LIST_FILLER }
+                names.map { parseDayName(it) ?: return null }.toSet().ifEmpty { null }
+            }
+        }
+    }
+
+    /** Reads "monday", "mondays", "mon" and "tues"; shorter text is too ambiguous to be a day. */
+    private fun parseDayName(text: String): DayOfWeek? {
+        val name = text.removeSuffix(".").removeSuffix("s")
+        if (name.length < 3) return null
+        return DayOfWeek.values().firstOrNull { it.name.lowercase().startsWith(name) }
     }
 
     private fun parseDate(text: String, today: LocalDate): LocalDate? {
