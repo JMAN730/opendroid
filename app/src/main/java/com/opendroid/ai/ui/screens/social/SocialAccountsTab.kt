@@ -1,5 +1,7 @@
 package com.opendroid.ai.ui.screens.social
 
+import android.view.View
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,8 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.social.domain.model.*
@@ -339,6 +346,17 @@ private fun ConnectAccountDialog(
             Text("Connect ${platform.displayName}", color = theme.textPrimary, fontWeight = FontWeight.Bold)
         },
         text = {
+            // Keep the token out of screenshots, the recents thumbnail and screen sharing.
+            val view = LocalView.current
+            DisposableEffect(view) {
+                val window = generateSequence<Any>(view) { (it as? View)?.parent }
+                    .filterIsInstance<DialogWindowProvider>()
+                    .firstOrNull()
+                    ?.window
+                window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+            }
+
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -377,12 +395,18 @@ private fun ConnectAccountDialog(
                         SocialPlatform.YOUTUBE -> "OAuth Token / API Key"
                     }
 
+                    // Masked, and kept out of the keyboard's learned words.
                     OutlinedTextField(
                         value = tokenOrKey,
                         onValueChange = { tokenOrKey = it },
                         label = { Text(label1, fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            autoCorrectEnabled = false
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = theme.textPrimary,
                             unfocusedTextColor = theme.textPrimary,
@@ -434,21 +458,7 @@ private fun ConnectAccountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val creds = if (useSandboxMock) {
-                        SocialCredentials(
-                            accountId = "mock_${platform.id}_acc",
-                            platform = platform,
-                            accessToken = "mock_${platform.id}_token"
-                        )
-                    } else {
-                        SocialCredentials(
-                            accountId = "acc_${platform.id}",
-                            platform = platform,
-                            accessToken = tokenOrKey,
-                            botToken = if (platform == SocialPlatform.TELEGRAM || platform == SocialPlatform.DISCORD) tokenOrKey else null,
-                            channelOrTargetId = if (channelOrChatId.isNotBlank()) channelOrChatId else null
-                        )
-                    }
+                    val creds = connectCredentials(platform, tokenOrKey, channelOrChatId, useSandboxMock)
                     onConfirm(creds, selectedPermissions.toList())
                 },
                 enabled = useSandboxMock || tokenOrKey.isNotBlank(),
@@ -462,5 +472,30 @@ private fun ConnectAccountDialog(
                 Text("Cancel", color = theme.textSecondary)
             }
         }
+    )
+}
+
+internal fun connectCredentials(
+    platform: SocialPlatform,
+    tokenOrKey: String,
+    channelOrChatId: String,
+    useSandbox: Boolean
+): SocialCredentials = if (useSandbox) {
+    SocialCredentials(
+        accountId = "mock_${platform.id}_acc",
+        platform = platform,
+        accessToken = "mock_${platform.id}_token"
+    )
+} else {
+    val secret = tokenOrKey.trim()
+    // The Discord field takes a bot token or a webhook URL; a URL sent as a bot token gets a 401.
+    val isDiscordWebhook = platform == SocialPlatform.DISCORD && secret.startsWith("https://")
+    SocialCredentials(
+        accountId = "acc_${platform.id}",
+        platform = platform,
+        accessToken = secret,
+        botToken = if ((platform == SocialPlatform.TELEGRAM || platform == SocialPlatform.DISCORD) && !isDiscordWebhook) secret else null,
+        webhookUrl = if (isDiscordWebhook) secret else null,
+        channelOrTargetId = if (channelOrChatId.isNotBlank()) channelOrChatId.trim() else null
     )
 }

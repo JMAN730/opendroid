@@ -234,7 +234,7 @@ fun SocialScreen(
                         interactions = interactions,
                         onResolve = { id -> viewModel.resolveInteraction(id) },
                         onDismiss = { id -> viewModel.dismissInteraction(id) },
-                        onReply = { id, text -> viewModel.replyToComment(id, text) },
+                        onReply = { id, text -> viewModel.replyToInteraction(id, text) },
                         onRefresh = { viewModel.refreshAll() }
                     )
                     3 -> SocialContentTab(

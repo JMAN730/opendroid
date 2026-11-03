@@ -1,5 +1,8 @@
 package com.opendroid.ai.social.core.adapter
 
+import com.opendroid.ai.social.domain.model.ReplyCommentResult
+import com.opendroid.ai.social.domain.model.SocialCredentials
+import com.opendroid.ai.social.domain.model.SocialInteraction
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,6 +18,18 @@ abstract class BaseSocialAdapter(
 
     protected fun isSandboxToken(token: String): Boolean =
         token.startsWith("sandbox_") || token.startsWith("mock_") || token == "test_token"
+
+    /** Platforms with no inbox reply call yet. Sandbox accounts still get a simulated success. */
+    open suspend fun replyToInteraction(
+        credentials: SocialCredentials,
+        interaction: SocialInteraction,
+        text: String
+    ): Result<ReplyCommentResult> {
+        if (isSandboxToken(credentials.botToken ?: credentials.accessToken) || isSandboxToken(credentials.webhookUrl.orEmpty())) {
+            return Result.success(ReplyCommentResult(success = true, platformReplyId = "inbox_reply_${System.currentTimeMillis()}"))
+        }
+        return Result.failure(UnsupportedOperationException("Replying to ${interaction.platform.displayName} inbox messages isn't supported yet"))
+    }
 
     protected fun executeRequest(request: Request): Result<String> {
         return try {
