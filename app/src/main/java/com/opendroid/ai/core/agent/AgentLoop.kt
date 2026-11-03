@@ -205,6 +205,9 @@ interface ChatAgent {
 
     fun processQuery(query: String, context: Context, explicitSessionId: String? = null)
     fun retryRequest(requestId: String, sessionId: String, context: Context)
+
+    /** Carries on the plan a mid-plan error card paused. See [ChatErrorUiState.resumePlanId]. */
+    fun resumePlan(planId: String, sessionId: String, context: Context)
     fun dismissChatError()
     fun approveProposedPlan(context: Context, planId: String, grantActions: Set<String> = emptySet())
     fun rejectProposedPlan()
@@ -476,10 +479,37 @@ class AgentLoop @Inject constructor(
      * card. Mirrors processQuery's new-task path, but reuses the user message already
      * persisted for [requestId] in [sessionId] instead of inserting a duplicate bubble -
      * and always runs in the error's own session, never wherever the user is looking.
-     * Falls back to the session's last user message if [requestId] doesn't resolve to
-     * one (e.g. a plan re-evaluation failure, whose requestId is a plan id).
+     *
+     * A [requestId] that is not a user message is a plan id from a mid-plan error
+     * card, so it resumes that plan. It never falls back to re-planning the session's
+     * last message: the new plan would re-run steps that already happened, such as a
+     * sent SMS.
      */
     override fun retryRequest(requestId: String, sessionId: String, context: Context) {
+        launchRetry(sessionId) {
+            val userMsg = conversationRepository.getMessages(sessionId).first().lastOrNull {
+                it.id == requestId && it.sender == ChatMessage.Sender.USER
+            }
+            if (userMsg != null) {
+                processQueryLocked(userMsg, userMsg.text, context, sessionId)
+            } else {
+                resumePausedPlanLocked(requestId, context, sessionId)
+            }
+        }
+    }
+
+    /**
+     * Retry on a mid-plan error card: runs only the steps of [planId] that have not run
+     * yet. Clears the card without failing the plan, which [dismissChatError] would do.
+     */
+    override fun resumePlan(planId: String, sessionId: String, context: Context) {
+        _chatError.value = null
+        launchRetry(sessionId) {
+            resumePausedPlanLocked(planId, context, sessionId)
+        }
+    }
+
+    private fun launchRetry(sessionId: String, body: suspend () -> Unit) {
         val waitingSession = waitingSessionId
         if (waitingSession != null && waitingSession != sessionId) {
             abandonWaitingTask(waitingSession)
@@ -493,13 +523,8 @@ class AgentLoop @Inject constructor(
             try {
                 resolveStaleProposedPlan(sessionId)
 
-                val messages = conversationRepository.getMessages(sessionId).first()
-                val userMsg = messages.lastOrNull {
-                    it.id == requestId && it.sender == ChatMessage.Sender.USER
-                } ?: messages.lastOrNull { it.sender == ChatMessage.Sender.USER } ?: return@launch
-
                 queryMutex.withLock {
-                    processQueryLocked(userMsg, userMsg.text, context, sessionId)
+                    body()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -512,7 +537,9 @@ class AgentLoop @Inject constructor(
 
     private suspend fun processQueryLocked(userMsg: ChatMessage, query: String, context: Context, sessionId: String) {
                 // Each new task starts with a clean slate: a stale error card from an
-                // earlier request must not outlive the request it described.
+                // earlier request must not outlive the request it described. A plan that
+                // card had paused can no longer be resumed, so it fails.
+                _chatError.value?.resumePlanId?.let { planManager.failPausedPlan(it) }
                 _chatError.value = null
                 _agentState.value = AgentState.Thinking
 
@@ -636,7 +663,27 @@ class AgentLoop @Inject constructor(
     }
 
     override fun dismissChatError() {
+        val dismissed = _chatError.value
         _chatError.value = null
+        // Dismissing a mid-plan card gives up on the plan it paused.
+        val pausedPlanId = dismissed?.resumePlanId ?: return
+        scope.launch { planManager.failPausedPlan(pausedPlanId) }
+    }
+
+    /**
+     * Runs what is left of [planId] after a mid-plan model failure paused it. Completed
+     * steps stay completed, so nothing that already happened runs again. Does nothing
+     * when the plan is no longer paused.
+     */
+    private suspend fun resumePausedPlanLocked(planId: String, context: Context, sessionId: String) {
+        val plan = planManager.resumePausedPlan(planId)
+        if (plan == null) {
+            _agentState.value = AgentState.Idle
+            return
+        }
+        // autoApproved = true: a MODIFY from here re-checks the whole remainder against
+        // the allowlist, since how the plan was first approved is not known any more.
+        executePlanLoop(plan, context, sessionId, autoApproved = true)
     }
 
     private fun publishChatError(error: ChatErrorUiState) {
@@ -1287,18 +1334,7 @@ class AgentLoop @Inject constructor(
                         planId = currentPlanState.planId
                     )
                 } catch (e: LLMException) {
-                    // Nothing ever resumes a PAUSED plan - mark it FAILED so the Plan
-                    // tab shows a truthful terminal state; the error card still offers
-                    // the retry path.
-                    planManager.updatePlanStatus(PlanStatus.FAILED)
-                    publishChatError(
-                        ChatErrorUiState.fromException(
-                            sessionId = sessionId,
-                            requestId = currentPlanState.planId,
-                            runId = UUID.randomUUID().toString(),
-                            failure = e
-                        )
-                    )
+                    pauseForRetry(currentPlanState.planId, sessionId, e)
                     return
                 }
 
@@ -1404,17 +1440,7 @@ class AgentLoop @Inject constructor(
                     planId = currentPlanState.planId
                 )
             } catch (e: LLMException) {
-                // Same rationale as the replan failure above: PAUSED is a dead end, so
-                // fail the plan and let the error card drive recovery.
-                planManager.updatePlanStatus(PlanStatus.FAILED)
-                publishChatError(
-                    ChatErrorUiState.fromException(
-                        sessionId = sessionId,
-                        requestId = currentPlanState.planId,
-                        runId = UUID.randomUUID().toString(),
-                        failure = e
-                    )
-                )
+                pauseForRetry(currentPlanState.planId, sessionId, e)
                 return
             }
 
@@ -1442,6 +1468,25 @@ class AgentLoop @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * The model failed partway through [planId]. Steps before this point may already
+     * have sent an SMS or placed a call, so the plan is PAUSED rather than failed and
+     * the error card's Retry resumes it (see [resumePlan]) instead of planning the
+     * request again. Dismissing the card, or starting a new task, fails the plan.
+     */
+    private suspend fun pauseForRetry(planId: String, sessionId: String, failure: LLMException) {
+        planManager.updatePlanStatus(PlanStatus.PAUSED)
+        publishChatError(
+            ChatErrorUiState.fromException(
+                sessionId = sessionId,
+                requestId = planId,
+                runId = UUID.randomUUID().toString(),
+                failure = failure,
+                resumePlanId = planId
+            )
+        )
     }
 
     private suspend fun cancelDeclinedPlan(

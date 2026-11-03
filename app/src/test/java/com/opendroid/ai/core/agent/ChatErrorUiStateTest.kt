@@ -38,6 +38,17 @@ class ChatErrorUiStateTest {
     }
 
     @Test
+    fun `a mid-plan failure names the plan to resume, any other failure names none`() {
+        val failure = LLMErrorMapper.fromThrowable("OpenAI", "gpt-4o", java.net.UnknownHostException("offline"))
+
+        val midPlan = ChatErrorUiState.fromException("session", "plan-1", "run", failure, resumePlanId = "plan-1")
+        val request = ChatErrorUiState.fromException("session", "msg-1", "run", failure)
+
+        assertEquals("plan-1", midPlan.resumePlanId)
+        assertEquals(null, request.resumePlanId)
+    }
+
+    @Test
     fun `error carries the session it was raised in`() {
         val state = ChatErrorUiState.fromException(
             sessionId = "session-a",
