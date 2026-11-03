@@ -1,10 +1,6 @@
 package com.opendroid.ai.core.agent
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.provider.ContactsContract
-import androidx.core.content.ContextCompat
 import com.opendroid.ai.actions.ActionDispatcher
 import com.opendroid.ai.data.db.dao.UnknownActionDao
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
@@ -15,10 +11,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class PlanValidator @Inject constructor(
-    private val actionDispatcher: dagger.Lazy<ActionDispatcher>,
-    private val unknownActionDao: dagger.Lazy<UnknownActionDao>
+class PlanValidator internal constructor(
+    private val isRegistered: (String) -> Boolean,
+    private val unknownActionDao: dagger.Lazy<UnknownActionDao>,
+    private val contactResolver: dagger.Lazy<ContactResolver>
 ) {
+
+    @Inject constructor(
+        actionDispatcher: dagger.Lazy<ActionDispatcher>,
+        unknownActionDao: dagger.Lazy<UnknownActionDao>,
+        contactResolver: dagger.Lazy<ContactResolver>
+    ) : this({ actionDispatcher.get().isRegistered(it) }, unknownActionDao, contactResolver)
 
     companion object {
         private val DATA_PRODUCING_ACTIONS = setOf(
@@ -105,7 +108,7 @@ class PlanValidator @Inject constructor(
     }
 
     fun validateStep(step: PlanStep): String? {
-        if (!actionDispatcher.get().isRegistered(step.action)) {
+        if (!isRegistered(step.action)) {
             return "Action '${step.action}' is not registered."
         }
         return null
@@ -119,7 +122,7 @@ class PlanValidator @Inject constructor(
 
         for (step in steps) {
             var updatedStep = step
-            val isReg = actionDispatcher.get().isRegistered(step.action)
+            val isReg = isRegistered(step.action)
 
             if (!isReg) {
                 when (step.action.uppercase()) {
@@ -161,11 +164,14 @@ class PlanValidator @Inject constructor(
             if (commActions.contains(updatedStep.action.uppercase()) && updatedStep.params.containsKey("contact")) {
                 val contactName = updatedStep.params["contact"] ?: ""
                 if (needsContactResolution(contactName)) {
-                    val resolvedPhone = resolveContactToPhoneNumber(context, contactName)
-                    if (resolvedPhone != null) {
-                        val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", resolvedPhone) }
+                    val resolution = contactResolver.get().resolveWithDisambiguation(contactName)
+                    if (resolution is ContactResolution.Found) {
+                        val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", resolution.contact.phoneNumber) }
                         updatedStep = updatedStep.copy(order = currentOrder++, params = updatedParams)
                         finalSteps.add(updatedStep)
+                    } else if (resolution is ContactResolution.Ambiguous) {
+                        // Stays a name: a number here would stop the action showing the picker.
+                        finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else if (updatedStep.action.uppercase() == "SEND_TELEGRAM") {
                         // For Telegram, a contact name could also be a Telegram username directly
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
@@ -204,38 +210,5 @@ class PlanValidator @Inject constructor(
                 UnknownActionEntity(attemptedAction = attemptedAction, goal = goal, fixStatus = fixStatus)
             )
         } catch (e: Exception) { }
-    }
-
-    // lint false positive: both cursors are closed by `?.use { }` on every path,
-    // but the Recycle detector does not model Kotlin's use() inlining. See #67.
-    @Suppress("Recycle")
-    private fun resolveContactToPhoneNumber(context: Context, contact: String): String? {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
-        try {
-            val contentResolver = context.contentResolver
-            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-            val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            val selectionExact = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
-            contentResolver.query(uri, projection, selectionExact, arrayOf(contact.trim()), null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (idx >= 0) {
-                        val number = cursor.getString(idx)
-                        if (!number.isNullOrBlank()) return number.replace(" ", "").replace("-", "")
-                    }
-                }
-            }
-            val selectionLike = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-            contentResolver.query(uri, projection, selectionLike, arrayOf("%${contact.trim()}%"), null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    if (idx >= 0) {
-                        val number = cursor.getString(idx)
-                        if (!number.isNullOrBlank()) return number.replace(" ", "").replace("-", "")
-                    }
-                }
-            }
-        } catch (e: Exception) { }
-        return null
     }
 }
