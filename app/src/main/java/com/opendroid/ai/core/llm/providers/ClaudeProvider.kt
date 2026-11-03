@@ -1,8 +1,8 @@
 package com.opendroid.ai.core.llm.providers
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
+import com.opendroid.ai.core.llm.error.LLMErrorMapper
 import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
@@ -111,18 +111,11 @@ class ClaudeProvider @Inject constructor(
                 )
             }
             val responseBody = response.body.string()
-            if (responseBody.isBlank()) throw IOException("Empty response body from Claude")
-            val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
-            val contentArray = jsonResponse.getAsJsonArray("content")
-            val content = contentArray[0].asJsonObject.get("text").asString
-
-            val usage = jsonResponse.getAsJsonObject("usage")
-            val inputTokens = usage?.get("input_tokens")?.asInt ?: 0
-            val outputTokens = usage?.get("output_tokens")?.asInt ?: 0
+            val completion = ProviderResponseParser.claudeMessage(responseBody, name, selectedModel)
 
             LLMResponse(
-                content = content,
-                tokensUsed = inputTokens + outputTokens,
+                content = completion.content,
+                tokensUsed = completion.tokensUsed,
                 model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
@@ -152,8 +145,11 @@ class ClaudeProvider @Inject constructor(
             // Configuration failures belong in AgentLoop's Error state, not in
             // persisted assistant content that looks like a Claude response.
             throw e
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             throw IOException("Claude streaming failed.", e)
+        } catch (e: Exception) {
+            // Not an I/O failure, so it must not reach the caller as a network error.
+            throw LLMErrorMapper.fromThrowable(name, request.model.orEmpty(), e)
         }
     }
 

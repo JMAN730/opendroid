@@ -1,7 +1,6 @@
 package com.opendroid.ai.core.llm.providers
 
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.opendroid.ai.core.llm.*
 import com.opendroid.ai.core.llm.error.ProviderErrorDetail
 import com.opendroid.ai.core.llm.error.toSafeProviderException
@@ -71,17 +70,11 @@ class DeepSeekProvider @Inject constructor(
             }
             val responseBody = response.body.string()
             if (responseBody.isBlank()) throw IOException("Empty response body from DeepSeek")
-            val jsonResponse = gson.fromJson(responseBody, JsonObject::class.java)
-            val choices = jsonResponse.getAsJsonArray("choices")
-            val messageObj = choices[0].asJsonObject.getAsJsonObject("message")
-            val content = messageObj.get("content").asString
-
-            val usage = jsonResponse.getAsJsonObject("usage")
-            val tokensUsed = usage?.get("total_tokens")?.asInt ?: 0
+            val completion = ProviderResponseParser.openAiChatCompletion(responseBody, name, selectedModel)
 
             LLMResponse(
-                content = content,
-                tokensUsed = tokensUsed,
+                content = completion.content,
+                tokensUsed = completion.tokensUsed,
                 model = selectedModel,
                 provider = name,
                 latencyMs = System.currentTimeMillis() - startTime
