@@ -1,10 +1,10 @@
 package com.opendroid.ai.actions
 
-import com.opendroid.ai.core.util.AlarmTimeParser
 import com.opendroid.ai.core.util.DurationParser
+import com.opendroid.ai.core.util.EventTimeParser
+import com.opendroid.ai.core.util.EventTimeParser.EventMoment
 
 import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -17,11 +17,13 @@ import com.opendroid.ai.core.agent.VisionEngine
 import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
+import java.time.Clock
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.util.Calendar
 import com.opendroid.ai.core.memory.graph.KnowledgeCategory
 import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
-import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,38 +51,101 @@ class CalendarActions @Inject constructor(
         SaveSensitiveInfoAction(personalGrowthEngine)
     )
 
-    private class CreateCalendarEventAction : Action {
+    private companion object {
+        const val DEFAULT_EVENT_SECONDS = 60 * 60
+
+        /**
+         * Reads [text] as a start time. [dateOnly] is retried alone so a date param that
+         * already holds a time ("2026-11-02 15:00") isn't lost to a repeated time param.
+         */
+        fun parseEventMoment(dateOnly: String?, text: String, clock: Clock): EventMoment? {
+            val now = ZonedDateTime.now(clock)
+            return EventTimeParser.parseMoment(text, now)
+                ?: dateOnly?.let { EventTimeParser.parseMoment(it, now) }?.takeIf { it.hasTime }
+        }
+
+        fun unreadTimeNote(text: String, moment: EventMoment?): String? =
+            if (text.isNotBlank() && moment == null) {
+                "I couldn't read the time '$text', so set it in the editor."
+            } else {
+                null
+            }
+
+        /** Writing to the calendar directly needs WRITE_CALENDAR, which the app deliberately doesn't declare. */
+        fun calendarInsertIntent(
+            title: String,
+            description: String,
+            moment: EventMoment?,
+            durationSeconds: Int
+        ): Intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.Events.TITLE, title)
+            putExtra(CalendarContract.Events.DESCRIPTION, description)
+            if (moment != null) {
+                // Calendar editors read all-day times as UTC, so local midnight east of UTC would land on the day before.
+                val begin = if (moment.hasTime) moment.begin else moment.begin.toLocalDate().atStartOfDay(ZoneOffset.UTC)
+                val end = if (moment.hasTime) {
+                    begin.plusSeconds(durationSeconds.toLong())
+                } else {
+                    begin.plusDays(1)
+                }
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin.toInstant().toEpochMilli())
+                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end.toInstant().toEpochMilli())
+                putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, !moment.hasTime)
+            }
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        /** The editor only opens a draft: nothing is saved until the user confirms, so this is never success. */
+        fun openCalendarEditor(
+            context: Context,
+            intent: Intent,
+            message: String,
+            notes: List<String>
+        ): ActionResult = try {
+            context.startActivity(intent)
+            ActionResult.UserActionRequired((listOf(message) + notes).joinToString(" "))
+        } catch (e: Exception) {
+            Log.e("CalendarActions", "Calendar editor failed: ${e.localizedMessage}")
+            ActionResult(false, null, "Couldn't open the calendar. Is a calendar app installed?")
+        }
+    }
+
+    internal class CreateCalendarEventAction(private val clock: Clock = Clock.systemDefaultZone()) : Action {
         override val name: String = "CREATE_CALENDAR_EVENT"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val title = params["title"] ?: "New Event"
-            return try {
-                val cr = context.contentResolver
-                val values = ContentValues().apply {
-                    put(CalendarContract.Events.DTSTART, Calendar.getInstance().timeInMillis)
-                    put(CalendarContract.Events.DTEND, Calendar.getInstance().timeInMillis + 60 * 60 * 1000) // 1 hr duration
-                    put(CalendarContract.Events.TITLE, title)
-                    put(CalendarContract.Events.DESCRIPTION, params["description"] ?: "Created by OpenDroid")
-                    put(CalendarContract.Events.CALENDAR_ID, 1)
-                    put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+            val dateTimeText = listOfNotNull(params["date"], params["time"])
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+            val moment = parseEventMoment(params["date"], dateTimeText, clock)
+            val durationText = params["duration"]?.takeIf { it.isNotBlank() }
+            val durationSeconds = durationText?.let { EventTimeParser.parseDurationSeconds(it) }
+
+            val intent = calendarInsertIntent(
+                title = title,
+                description = params["description"] ?: "Created by OpenDroid",
+                moment = moment,
+                durationSeconds = durationSeconds ?: DEFAULT_EVENT_SECONDS
+            ).apply {
+                params["location"]?.takeIf { it.isNotBlank() }?.let {
+                    putExtra(CalendarContract.Events.EVENT_LOCATION, it)
                 }
-                
-                // Needs calendar permissions. If fails, fallback to calendar UI compose intent
-                val uri = cr.insert(CalendarContract.Events.CONTENT_URI, values)
-                if (uri != null) {
-                    ActionResult(true, "Your event '$title' is on the calendar!", null)
-                } else {
-                    throw IllegalStateException("Insert returned null URI")
+                params["attendees"]?.takeIf { it.isNotBlank() }?.let { attendees ->
+                    // The calendar insert intent takes EXTRA_EMAIL as one comma-separated string.
+                    putExtra(
+                        Intent.EXTRA_EMAIL,
+                        attendees.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
+                    )
                 }
-            } catch (e: Exception) {
-                // Fallback: Open compose intent in system calendar
-                val intent = Intent(Intent.ACTION_INSERT).apply {
-                    data = CalendarContract.Events.CONTENT_URI
-                    putExtra(CalendarContract.Events.TITLE, title)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(false, "Couldn't add it directly, but I opened the calendar for you to create it.", e.localizedMessage, true)
             }
+
+            val notes = listOfNotNull(
+                unreadTimeNote(dateTimeText, moment),
+                durationText?.takeIf { durationSeconds == null && moment?.hasTime == true }
+                    ?.let { "I couldn't read the duration '$it', so I used one hour." }
+            )
+            return openCalendarEditor(context, intent, "I opened the calendar with '$title'; please review it and save to add the event.", notes)
         }
     }
 
@@ -93,7 +158,7 @@ class CalendarActions @Inject constructor(
             val label = params["label"]?.trim() ?: "OpenDroid Alarm"
 
             // Parse time string to hour + minute
-            val parsed = AlarmTimeParser.parse(timeStr)
+            val parsed = EventTimeParser.parseClockTime(timeStr)
                 ?: return ActionResult(false, null,
                     "Could not understand time '$timeStr'. Try formats like '5 am', '7:30', or '14:00'")
 
@@ -280,39 +345,53 @@ class CalendarActions @Inject constructor(
         }
     }
 
-    private class SetReminderAction : Action {
+    internal class SetReminderAction(private val clock: Clock = Clock.systemDefaultZone()) : Action {
         override val name: String = "SET_REMINDER"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
-            val title = params["title"] ?: "New Reminder"
-            val timeStr = params["time"]
-            val startMillis = if (timeStr != null) {
-                Calendar.getInstance().timeInMillis
-            } else {
-                Calendar.getInstance().timeInMillis
+            val title = (params["text"] ?: params["title"])?.takeIf { it.isNotBlank() } ?: "New Reminder"
+            val dateTimeText = (params["datetime"] ?: params["time"]).orEmpty()
+            val moment = parseEventMoment(null, dateTimeText, clock)
+            val repeatText = params["repeat"]?.takeIf { it.isNotBlank() }
+            val repeat = repeatText?.let { EventTimeParser.parseRepeatRule(it) }
+
+            val intent = calendarInsertIntent(
+                title = title,
+                description = params["description"] ?: "Created by OpenDroid",
+                moment = moment,
+                durationSeconds = DEFAULT_EVENT_SECONDS
+            ).apply {
+                repeat?.rule?.let { putExtra(CalendarContract.Events.RRULE, it) }
             }
-            return try {
-                val intent = Intent(Intent.ACTION_INSERT).apply {
-                    data = CalendarContract.Events.CONTENT_URI
-                    putExtra(CalendarContract.Events.TITLE, title)
-                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
-                    putExtra(CalendarContract.Events.DESCRIPTION, params["description"] ?: "Created by OpenDroid")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                ActionResult(true, "I opened the calendar so you can set up your reminder '$title'.", null)
-            } catch (e: Exception) {
-                Log.e("SetReminder", "Reminder failed: ${e.localizedMessage}")
-                ActionResult(false, null, "Couldn't set up that reminder.")
-            }
+
+            val notes = listOfNotNull(
+                unreadTimeNote(dateTimeText, moment),
+                repeatText?.takeIf { repeat == null }
+                    ?.let { "I couldn't read the repeat schedule '$it', so set it in the editor." }
+            )
+            return openCalendarEditor(context, intent, "I opened the calendar with your reminder '$title'; please review it and save to set it.", notes)
         }
     }
 
-    private class CreateTaskAction : Action {
+    internal class CreateTaskAction(private val clock: Clock = Clock.systemDefaultZone()) : Action {
         override val name: String = "CREATE_TASK"
         override suspend fun execute(params: Map<String, String>, context: Context): ActionResult {
             val title = params["title"] ?: "New Task"
-            val description = params["description"] ?: ""
-            return ActionResult(true, "Done! Task '$title' is created.", null)
+            val dueText = params["dueDate"].orEmpty()
+            val moment = parseEventMoment(null, dueText, clock)
+            val description = listOfNotNull(
+                params["description"],
+                params["priority"]?.let { "Priority: $it" },
+                params["list"]?.let { "List: $it" }
+            ).filter { it.isNotBlank() }.joinToString("\n").ifEmpty { "Created by OpenDroid" }
+
+            // There is no task store in the app, so the task lives in the calendar once the user saves it.
+            val intent = calendarInsertIntent(title, description, moment, DEFAULT_EVENT_SECONDS)
+            return openCalendarEditor(
+                context,
+                intent,
+                "I opened the calendar with the task '$title'; please review it and save to add it.",
+                listOfNotNull(unreadTimeNote(dueText, moment))
+            )
         }
     }
 
