@@ -16,6 +16,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -77,8 +78,24 @@ class DeviceStateLocationTest {
         assertEquals("51.51, -0.13", workingMemory.locationContext)
 
         val published = withTimeout(2000) { workingMemory.resolvedLocation.first { it != null } }
-        assertEquals("London, United Kingdom", published)
+        assertEquals("London, United Kingdom", published!!.second)
         assertEquals("London, United Kingdom", workingMemory.locationContext)
+    }
+
+    @Test
+    fun `resolving a new cell with the same place name still changes the published state`() = runBlocking {
+        val provider = DeviceStateProvider(context, ReverseGeocoder { _, _ -> "London, United Kingdom" })
+
+        provider.refreshLocationContext(LAT, LNG)
+        val first = provider.resolvedLocation.value
+
+        // About 1 km north rounds to a different cache cell in the same city.
+        provider.refreshLocationContext(LAT + 0.02, LNG)
+        val second = provider.resolvedLocation.value
+
+        assertEquals("London, United Kingdom", first!!.second)
+        assertEquals("London, United Kingdom", second!!.second)
+        assertNotEquals(first, second)
     }
 
     @Test
