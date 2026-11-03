@@ -10,8 +10,8 @@ import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.Contact
 import com.opendroid.ai.core.agent.ContactResolver
 import com.opendroid.ai.core.agent.ContactsContext
-import com.opendroid.ai.core.agent.FakeContactRow
-import com.opendroid.ai.core.agent.FakeContactsProvider
+import com.opendroid.ai.core.agent.LookupKeyContactRow
+import com.opendroid.ai.core.agent.LookupKeyContactsProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -33,12 +33,12 @@ class MakeVideoCallActionTest {
 
     @Before
     fun installContacts() {
-        FakeContactsProvider.install()
+        LookupKeyContactsProvider.install()
     }
 
     @After
     fun clearContacts() {
-        FakeContactsProvider.rows.clear()
+        LookupKeyContactsProvider.rows.clear()
     }
 
     @Test
@@ -51,8 +51,8 @@ class MakeVideoCallActionTest {
 
     @Test
     fun `several people matching shows the picker instead of opening the shortest name`() = runBlocking {
-        FakeContactsProvider.rows += FakeContactRow("Sam Lee", "5550101", "key-lee")
-        FakeContactsProvider.rows += FakeContactRow("Samantha Ortiz", "5550102", "key-ortiz")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Sam Lee", "5550101", "key-lee")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Samantha Ortiz", "5550102", "key-ortiz")
 
         val result = videoCall("sam") as ActionResult.NeedsInput
 
@@ -64,7 +64,7 @@ class MakeVideoCallActionTest {
 
     @Test
     fun `single match opens the WhatsApp chat with their number`() = runBlocking {
-        FakeContactsProvider.rows += FakeContactRow("Sam Lee", "555 0101", "key-lee")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Sam Lee", "555 0101", "key-lee")
 
         val result = videoCall("sam")
 
@@ -78,7 +78,7 @@ class MakeVideoCallActionTest {
     @Test
     fun `dialer fallback keeps the hash in the number`() = runBlocking {
         installDialer()
-        FakeContactsProvider.rows += FakeContactRow("Sam", "5550101,,1234#", "key-sam")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Sam", "5550101,,1234#", "key-sam")
 
         videoCall("sam", app = "meet")
 
@@ -90,7 +90,7 @@ class MakeVideoCallActionTest {
 
     @Test
     fun `saved pick says which contact was used`() = runBlocking {
-        FakeContactsProvider.rows += FakeContactRow("Dad", "9876543210", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "9876543210", "key-dad")
         val resolver = SavedPickResolver(context, Contact("Dad", "9876543210", lookupKey = "key-dad"))
 
         val result = videoCall("dad", resolver = resolver)
@@ -102,7 +102,7 @@ class MakeVideoCallActionTest {
     @Test
     fun `saved pick is named on a call that still needs the user`() = runBlocking {
         installDialer()
-        FakeContactsProvider.rows += FakeContactRow("Dad", "9876543210", "key-dad")
+        LookupKeyContactsProvider.rows += LookupKeyContactRow("Dad", "9876543210", "key-dad")
         val resolver = SavedPickResolver(context, Contact("Dad", "9876543210", lookupKey = "key-dad"))
 
         val result = actions(resolver).first { it.name == "MAKE_CALL" }
@@ -125,7 +125,7 @@ class MakeVideoCallActionTest {
             override fun isCallInProgress(context: Context): Boolean = false
             override suspend fun awaitNewCallStarted(context: Context, wasAlreadyInProgress: Boolean): Boolean = true
         }),
-        TelegramAutoSender { false }
+        TelegramAutoSender { _, _ -> false }
     ).getActions()
 
     @Suppress("DEPRECATION")

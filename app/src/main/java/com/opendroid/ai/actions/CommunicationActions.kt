@@ -176,7 +176,7 @@ class CommunicationActions internal constructor(
             is ActionResult.Failure -> copy(errorMsg = notice + errorMsg)
             is ActionResult.PendingUserAction -> copy(message = notice + message)
             is ActionResult.UserActionRequired -> copy(message = notice + message)
-            is ActionResult.NeedsInput, is ActionResult.UnknownAction -> this
+            is ActionResult.NeedsInput, is ActionResult.UnknownAction, is ActionResult.Declined -> this
         }
     }
 
@@ -654,7 +654,7 @@ class CommunicationActions internal constructor(
             return try {
                 when (app.lowercase()) {
                     "whatsapp" -> {
-                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=${phone.filter { it.isDigit() || it == '+' }}".toUri()).apply {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://api.whatsapp.com/send?phone=${phone.substringBefore('#').substringBefore(';').substringBefore(',').filter { it.isDigit() || it == '+' }}".toUri()).apply {
                             setPackage("com.whatsapp")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
