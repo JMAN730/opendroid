@@ -881,13 +881,13 @@ object StorageWorkspaceProvider {
         if (src.isDirectory) {
             // List first: a destination inside src must not show up as one of its children.
             val children = listDocuments(context, src)
-            val dir = existing ?: destParent.createDirectory(name) ?: throw IOException("Can't create folder: $name")
+            val dir = existing ?: createdAsNamed(destParent.createDirectory(name), name)
             if (!dir.isDirectory) throw IOException("Can't copy a folder over a file: $name")
             children.forEach { child ->
                 copyDocument(context, child, dir, child.name ?: throw IOException("Unnamed file in ${src.name}"))
             }
         } else {
-            val file = existing ?: destParent.createFile(guessMimeType(name), name) ?: throw IOException("Can't create file: $name")
+            val file = existing ?: createdAsNamed(destParent.createFile(guessMimeType(name), name), name)
             if (file.isDirectory) throw IOException("Can't copy a file over a folder: $name")
             openDocumentInput(context, src).use { input ->
                 openDocumentOutput(context, file).use { output ->
@@ -895,6 +895,20 @@ object StorageWorkspaceProvider {
                 }
             }
         }
+    }
+
+    /**
+     * [findFile][DocumentFile.findFile] compares names case-sensitively, so on case-insensitive storage a provider can
+     * answer a create with a free name like "report (1).txt". That copy would be unreachable at [name], so it is removed.
+     */
+    private fun createdAsNamed(created: DocumentFile?, name: String): DocumentFile {
+        created ?: throw IOException("Can't create: $name")
+        if (created.name != name) {
+            val actual = created.name
+            created.delete()
+            throw IOException("Can't create $name: the destination already has a name that differs only by case (provider used $actual)")
+        }
+        return created
     }
 
     private fun zipDocument(context: Context, doc: DocumentFile, entryPath: String, zos: ZipOutputStream) {

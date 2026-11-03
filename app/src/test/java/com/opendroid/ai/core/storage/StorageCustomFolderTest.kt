@@ -50,6 +50,9 @@ class StorageCustomFolderTest {
          */
         var uniquifyRenames = false
 
+        /** Creates pick a free name the same way, so a name that differs only by case from a sibling gets a suffix. */
+        var uniquifyCreates = false
+
         private fun uniqueName(dir: File, name: String): String {
             val taken = dir.list().orEmpty().map { it.lowercase() }.toSet()
             if (name.lowercase() !in taken) return name
@@ -109,14 +112,15 @@ class StorageCustomFolderTest {
             when (method) {
                 "android:createDocument" -> {
                     check(file.isDirectory) { "Parent is not a directory: $id" }
-                    val child = File(file, name!!)
+                    val actual = if (uniquifyCreates) uniqueName(file, name!!) else name!!
+                    val child = File(file, actual)
                     val created = if (extras.getString(Document.COLUMN_MIME_TYPE) == Document.MIME_TYPE_DIR) {
                         child.mkdir()
                     } else {
                         child.createNewFile()
                     }
-                    check(created) { "Couldn't create $name in $id" }
-                    out.putParcelable("uri", DocumentsContract.buildDocumentUriUsingTree(uri, "$id/$name"))
+                    check(created) { "Couldn't create $actual in $id" }
+                    out.putParcelable("uri", DocumentsContract.buildDocumentUriUsingTree(uri, "$id/$actual"))
                 }
                 "android:deleteDocument" -> check(file.deleteRecursively()) { "Couldn't delete $id" }
                 "android:renameDocument" -> {
@@ -343,6 +347,20 @@ class StorageCustomFolderTest {
         assertTrue(result.error, result.success)
         assertEquals(listOf("NOTES.txt"), folderFile("dir").list()!!.toList())
         assertEquals("keep", folderFile("dir/NOTES.txt").readText())
+    }
+
+    @Test
+    fun `a move keeps the source when the provider files the copy under a different name`() {
+        provider.uniquifyCreates = true
+        givenFolderFile("notes.txt", "keep")
+        givenFolderFile("REPORT.txt", "other")
+
+        val result = StorageWorkspaceProvider.moveFile(context, "notes.txt", "report.txt")
+
+        assertFalse(result.success)
+        assertEquals("keep", folderFile("notes.txt").readText())
+        assertEquals("other", folderFile("REPORT.txt").readText())
+        assertEquals(listOf("REPORT.txt", "notes.txt"), folderFile("").list()!!.sorted())
     }
 
     // ── Zip and unzip ────────────────────────────────────────────────────
