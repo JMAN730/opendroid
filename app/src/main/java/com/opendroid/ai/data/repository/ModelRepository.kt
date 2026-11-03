@@ -14,6 +14,7 @@ import com.opendroid.ai.data.db.entities.ModelStatus
 import com.opendroid.ai.data.db.dao.markDownloadReady
 import com.opendroid.ai.data.db.dao.markDownloadFailed
 import com.opendroid.ai.data.db.dao.clearDownloadState
+import com.opendroid.ai.data.models.selectedModelFor
 import com.opendroid.ai.data.models.withActiveProvider
 import com.opendroid.ai.data.models.withSelectedModel
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,8 @@ import javax.inject.Singleton
 class ModelRepository @Inject constructor(
     private val context: Context,
     private val modelDao: ModelDao,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val engineReleaser: OnDeviceEngineReleaser
 ) : ModelManager {
 
     private val tag = "ModelRepository"
@@ -401,6 +403,8 @@ class ModelRepository @Inject constructor(
             workManager.cancelUniqueWork("download_${model.id}")
         }
         val dir = getModelDir(model.id)
+        // A cached engine would keep the deleted model resident in memory.
+        engineReleaser.releaseIfLoadedFrom(dir)
         if (dir.exists()) {
             dir.deleteRecursively()
         }
@@ -506,27 +510,22 @@ class ModelRepository @Inject constructor(
 
     suspend fun deleteUnusedModels() {
         val config = settingsRepository.llmConfig.first()
-        val activeModelId = config.activeModel
-        
-        OnDeviceModelRegistry.liteRTOnly.forEach { spec ->
-            if (spec.id != activeModelId) {
-                val dir = getModelDir(spec.id)
-                if (dir.exists()) {
-                    dir.deleteRecursively()
-                }
-                
-                val refFile = File(context.filesDir, "litert_models/${spec.id}.litertlm")
-                if (refFile.exists()) {
-                    refFile.delete()
-                }
+        // activeModel belongs to the active provider, which may be a cloud one. The On-Device
+        // selection is also the model the planning fallback chain runs, so it is in use too.
+        val keptModelIds = setOf(
+            config.activeModel,
+            config.selectedModelFor(ProviderCatalog.ON_DEVICE)
+        )
 
-                modelDao.clearDownloadState(spec.id)
+        OnDeviceModelRegistry.liteRTOnly.forEach { spec ->
+            if (spec.id !in keptModelIds) {
+                cancelDownload(spec)
             }
         }
 
-        // Remove custom imports that are not the active model
+        // Remove custom imports that nothing selects
         modelDao.getAllModels().first().forEach { entity ->
-            if (OnDeviceModelRegistry.isCustomId(entity.id) && entity.id != activeModelId) {
+            if (OnDeviceModelRegistry.isCustomId(entity.id) && entity.id !in keptModelIds) {
                 cancelDownload(
                     OnDeviceModelRegistry.customSpec(
                         id = entity.id,

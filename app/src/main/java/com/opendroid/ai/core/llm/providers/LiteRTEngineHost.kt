@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 import java.io.IOException
 
 /** The part of a loaded LiteRT-LM engine that [LiteRTEngineHost] drives. */
@@ -44,6 +45,17 @@ internal class LiteRTEngineHost(
      * good enough to skip a memory check for a model that is already resident.
      */
     fun holds(modelPath: String): Boolean = cachedModelPath == modelPath
+
+    /**
+     * Closes the cached engine if it was loaded from a file directly in [modelDir]. Waits for a
+     * running session first, like a model switch does.
+     */
+    suspend fun closeIfLoadedFrom(modelDir: File) {
+        mutex.withLock {
+            val loadedFrom = cachedModelPath?.let { File(it).absoluteFile.parentFile } ?: return
+            if (loadedFrom == modelDir.absoluteFile) closeEngine()
+        }
+    }
 
     /** Decodes [prompt] and emits each text delta, up to the output cap. */
     fun stream(
