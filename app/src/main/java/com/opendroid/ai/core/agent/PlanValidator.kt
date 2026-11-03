@@ -121,6 +121,13 @@ class PlanValidator internal constructor(
         val takenIds = steps.mapTo(mutableSetOf()) { it.stepId }
 
         for (step in steps) {
+            // Re-plans re-validate the steps that already ran. Fixing or re-resolving
+            // one would queue a fresh ask for a number the user already gave.
+            if (step.status != StepStatus.PENDING) {
+                finalSteps.add(step.copy(order = currentOrder++))
+                continue
+            }
+
             var updatedStep = step
             val isReg = isRegistered(step.action)
 
@@ -176,15 +183,26 @@ class PlanValidator internal constructor(
                         // For Telegram, a contact name could also be a Telegram username directly
                         finalSteps.add(updatedStep.copy(order = currentOrder++))
                     } else {
-                        val askStepId = askStepIdFor(updatedStep.stepId, takenIds).also { takenIds += it }
-                        val askStep = PlanStep(
-                            stepId = askStepId, order = currentOrder++,
-                            description = "Ask user for contact number of '$contactName'",
-                            action = "ASK_USER",
-                            params = mapOf("question" to "I couldn't find a contact named '$contactName'. What is their phone number?"),
-                            fallback = ""
-                        )
-                        finalSteps.add(askStep)
+                        val question = "I couldn't find a contact named '$contactName'. What is their phone number?"
+                        val baseAskId = "${updatedStep.stepId}_ask"
+                        // A second step under the same id would be asked twice and crash the Plan tab,
+                        // so an existing ask is reused, but only if it asked about this contact:
+                        // otherwise its answer is someone else's number.
+                        val reusable = steps.any {
+                            it.stepId == baseAskId && it.action == "ASK_USER" && it.params["question"] == question
+                        }
+                        val askStepId = if (reusable) baseAskId
+                            else askStepIdFor(updatedStep.stepId, takenIds).also { takenIds += it }
+                        if (!reusable) {
+                            val askStep = PlanStep(
+                                stepId = askStepId, order = currentOrder++,
+                                description = "Ask user for contact number of '$contactName'",
+                                action = "ASK_USER",
+                                params = mapOf("question" to question),
+                                fallback = ""
+                            )
+                            finalSteps.add(askStep)
+                        }
                         val updatedParams = updatedStep.params.toMutableMap().apply { put("contact", "$$askStepId") }
                         val updatedDependsOn = updatedStep.dependsOn.toMutableList().apply { if (!contains(askStepId)) add(askStepId) }
                         updatedStep = updatedStep.copy(order = currentOrder++, params = updatedParams, dependsOn = updatedDependsOn)
