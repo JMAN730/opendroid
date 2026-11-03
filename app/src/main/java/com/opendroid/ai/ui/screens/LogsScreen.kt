@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +23,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.opendroid.ai.core.memory.MacroRecording
 import com.opendroid.ai.data.db.entities.TaskHistoryEntity
 import com.opendroid.ai.data.db.entities.UnknownActionEntity
 import com.opendroid.ai.ui.theme.*
@@ -40,19 +43,13 @@ fun LogsScreen(
 
     val history by viewModel.taskHistory.collectAsState()
     val actionErrors by viewModel.unknownActions.collectAsState()
-    var selectedPlanForMacro by remember { mutableStateOf<String?>(null) }
+    var selectedRunForMacro by remember { mutableStateOf<List<TaskHistoryEntity>?>(null) }
     var macroName by remember { mutableStateOf("") }
     var macroSaveError by remember { mutableStateOf<String?>(null) }
 
-    val saveableLogIds = remember(history) {
-        history.groupBy { it.planId }
-            .filter { (planId, entries) ->
-                planId.isNotBlank() && planId != "n/a" && entries.isNotEmpty() && entries.all { it.success }
-            }
-            .mapNotNull { (_, entries) ->
-                entries.minWithOrNull(compareBy<TaskHistoryEntity> { it.timestamp }.thenBy { it.id })?.id
-            }
-            .toSet()
+    // Keyed by each run's first row, which carries that run's Save button.
+    val saveableRuns = remember(history) {
+        MacroRecording.saveableRuns(history).associateBy { it.first().id }
     }
 
     Scaffold(
@@ -145,14 +142,12 @@ fun LogsScreen(
                             items(history) { log ->
                                 HistoryLogCard(
                                     log = log,
-                                    onSaveAsMacro = if (log.id in saveableLogIds) {
+                                    onSaveAsMacro = saveableRuns[log.id]?.let { run ->
                                         {
-                                            selectedPlanForMacro = log.planId
+                                            selectedRunForMacro = run
                                             macroName = "${log.description.take(40).ifBlank { "Completed task" }} macro"
                                             macroSaveError = null
                                         }
-                                    } else {
-                                        null
                                     }
                                 )
                             }
@@ -188,10 +183,11 @@ fun LogsScreen(
         }
     }
 
-    if (selectedPlanForMacro != null) {
+    selectedRunForMacro?.let { run ->
+        val recordedSteps = remember(run) { MacroRecording.stepsFromCompletedTask(run).orEmpty() }
         AlertDialog(
             onDismissRequest = {
-                selectedPlanForMacro = null
+                selectedRunForMacro = null
                 macroSaveError = null
             },
             title = { Text("Save completed task as macro") },
@@ -202,6 +198,23 @@ fun LogsScreen(
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Steps this macro will run:", fontSize = 12.sp, color = TextPrimary)
+                    // Bounded and scrollable so a long run cannot push the name field off-screen.
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        recordedSteps.forEach { step ->
+                            Text(
+                                "${step.order}. ${step.action} - ${step.description}",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = macroName,
@@ -220,11 +233,12 @@ fun LogsScreen(
                 Button(
                     onClick = {
                         viewModel.saveCompletedTaskAsMacro(
-                            planId = selectedPlanForMacro!!,
+                            planId = run.first().planId,
+                            logId = run.first().id,
                             name = macroName
                         ) { error ->
                             if (error == null) {
-                                selectedPlanForMacro = null
+                                selectedRunForMacro = null
                                 macroSaveError = null
                             } else {
                                 macroSaveError = error
@@ -237,7 +251,7 @@ fun LogsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { selectedPlanForMacro = null }) {
+                TextButton(onClick = { selectedRunForMacro = null }) {
                     Text("Cancel")
                 }
             }

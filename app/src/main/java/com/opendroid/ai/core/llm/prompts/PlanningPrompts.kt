@@ -71,7 +71,6 @@ ANY action NOT in the list above is INVALID and will be rejected by the system.
 PLAN JSON format:
 {
   "goal": "Original request",
-  "planId": "uuid",
   "estimatedSteps": 3,
   "estimatedDuration": "2 minutes",
   "steps": [
@@ -140,7 +139,6 @@ RULES:
 - Return ONLY valid JSON conforming to this format:
 {
   "goal": "user request",
-  "planId": "id",
   "estimatedSteps": 1,
   "estimatedDuration": "instant",
   "steps": [

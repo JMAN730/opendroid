@@ -20,7 +20,6 @@ RESPONSE FORMAT - always return valid JSON only:
   "params": {},
   "plan": {
     "goal": "Original user goal",
-    "planId": "uuid",
     "estimatedSteps": 3,
     "estimatedDuration": "3 minutes",
     "steps": [
@@ -156,7 +155,6 @@ $schema
               "type": "PLAN",
               "plan": {
                 "goal": "Original user goal",
-                "planId": "generate-a-uuid",
                 "estimatedSteps": 1,
                 "estimatedDuration": "1 minute",
                 "steps": [
