@@ -204,6 +204,26 @@ class OpenDroidDatabaseMigrationTest {
     }
 
     @Test
+    fun `migration 9 to 10 keeps existing comments with no account and matches the exported 10 schema`() {
+        helper.createDatabase(databasePath, 9).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO social_comments (`id`, `platformCommentId`, `platform`, `authorName`, `content`, `timestamp`, `isAnswered`, `replyStatus`, `sentiment`, `category`, `priority`)
+                VALUES ('comment-1', '42', 'x', 'someone', 'a question', 1000, 0, 'NONE', 'NEUTRAL', 'GENERAL', 'NORMAL')
+                """.trimIndent()
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(databasePath, 10, true, OpenDroidDatabase.MIGRATION_9_10)
+
+        migrated.query("SELECT `content`, `accountId` FROM social_comments WHERE `id` = 'comment-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("a question", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+    }
+
+    @Test
     fun `the app's database builder upgrades a version 1 database without losing data`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         createVersion1Database(APP_DATABASE)
@@ -214,7 +234,7 @@ class OpenDroidDatabaseMigrationTest {
         val database = DatabaseModule.provideDatabase(context)
         try {
             val db = database.openHelper.writableDatabase
-            assertEquals(9, db.version)
+            assertEquals(10, db.version)
             db.query("SELECT `text`, `sessionId` FROM conversations WHERE `id` = 'msg-1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("hello", cursor.getString(0))

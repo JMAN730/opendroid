@@ -365,7 +365,8 @@ open class SocialRepository @Inject constructor(
         replyTimestamp = replyTimestamp,
         sentiment = runCatching { Sentiment.valueOf(sentiment) }.getOrDefault(Sentiment.NEUTRAL),
         category = runCatching { InteractionCategory.valueOf(category) }.getOrDefault(InteractionCategory.GENERAL),
-        priority = runCatching { InteractionPriority.valueOf(priority) }.getOrDefault(InteractionPriority.NORMAL)
+        priority = runCatching { InteractionPriority.valueOf(priority) }.getOrDefault(InteractionPriority.NORMAL),
+        accountId = accountId
     )
 
     private fun SocialComment.toEntity(): SocialCommentEntity = SocialCommentEntity(
@@ -384,7 +385,8 @@ open class SocialRepository @Inject constructor(
         replyTimestamp = replyTimestamp,
         sentiment = sentiment.name,
         category = category.name,
-        priority = priority.name
+        priority = priority.name,
+        accountId = accountId
     )
 
     private fun SocialInteractionEntity.toDomain(): SocialInteraction = SocialInteraction(

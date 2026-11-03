@@ -21,7 +21,7 @@ interface SocialAccountDao {
     @Query("SELECT * FROM social_accounts WHERE id = :id")
     suspend fun getAccountById(id: String): SocialAccountEntity?
 
-    @Query("SELECT * FROM social_accounts WHERE platform = :platform LIMIT 1")
+    @Query("SELECT * FROM social_accounts WHERE platform = :platform AND status = 'CONNECTED' ORDER BY connectedAt DESC LIMIT 1")
     suspend fun getAccountByPlatform(platform: String): SocialAccountEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
