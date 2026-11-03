@@ -5,6 +5,7 @@ import com.opendroid.ai.core.agent.DeviceStateProvider
 import com.opendroid.ai.data.models.ChatMessage
 import com.opendroid.ai.data.models.Plan
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +38,10 @@ class WorkingMemory @Inject constructor(
             location = loc // keep location field in sync
             return loc
         }
+
+    /** Emits when a background place-name lookup finishes, so readers of [locationContext] can refresh. */
+    val resolvedLocation: StateFlow<Pair<String, String>?>
+        get() = deviceStateProvider.resolvedLocation
 
     fun addMessage(msg: ChatMessage) {
         _conversationHistory.add(msg)
