@@ -237,7 +237,7 @@ class SocialViewModel @Inject constructor(
     fun publishPostNow(postId: String) {
         viewModelScope.launch {
             _isGenerating.value = true
-            val result = socialManager.publishPost(postId)
+            val result = socialManager.publishPost(postId, "USER")
             _isGenerating.value = false
             if (result.isSuccess) {
                 _statusMessage.value = "Published successfully!"
@@ -275,6 +275,17 @@ class SocialViewModel @Inject constructor(
     fun replyToComment(commentId: String, text: String) {
         viewModelScope.launch {
             val result = socialManager.replyToComment(commentId, text, actor = "USER")
+            if (result.isSuccess) {
+                _statusMessage.value = "Reply sent!"
+            } else {
+                _statusMessage.value = "Reply failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
+    fun replyToInteraction(interactionId: String, text: String) {
+        viewModelScope.launch {
+            val result = socialManager.replyToInteraction(interactionId, text, actor = "USER")
             if (result.isSuccess) {
                 _statusMessage.value = "Reply sent!"
             } else {
@@ -358,10 +369,10 @@ class SocialViewModel @Inject constructor(
     fun refreshAll() {
         viewModelScope.launch {
             _isGenerating.value = true
-            socialManager.syncAllAccounts()
+            val result = socialManager.syncAllAccounts()
             loadAnalyticsAndInsights()
             _isGenerating.value = false
-            _statusMessage.value = "Refreshed social data."
+            _statusMessage.value = result.exceptionOrNull()?.let { "Refresh failed: ${it.message}" } ?: "Refreshed social data."
         }
     }
 }

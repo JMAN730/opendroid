@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -105,7 +108,7 @@ class SocialCampaignGenerator @Inject constructor(
                 val plat = SocialPlatform.fromId(p.optString("platform", "X"))
                 val cType = runCatching { ContentType.valueOf(p.optString("contentType", "ANNOUNCEMENT")) }.getOrDefault(ContentType.ANNOUNCEMENT)
                 val postContent = p.optString("content", "Announcement for $name")
-                val scheduledTime = now + (dayOffset * dayMillis) + (10 * 3600_000L) // 10:00 AM each day
+                val scheduledTime = campaignPostTime(now, dayOffset)
 
                 postsList.add(
                     SocialPost(
@@ -138,6 +141,22 @@ class SocialCampaignGenerator @Inject constructor(
             PlannedCampaignResult(campaign, postsList, goalsList)
         } catch (e: Exception) {
             fallbackCampaignPlan(name, objective, now, endDate, platforms)
+        }
+    }
+
+    companion object {
+        private val POST_TIME: LocalTime = LocalTime.of(10, 0)
+
+        /**
+         * 10:00 local time, [dayOffset] days from today. The offset comes from the LLM, so a
+         * negative one counts as today, and a time already past moves to the next morning
+         * rather than leaving the post due the moment it's approved.
+         */
+        fun campaignPostTime(now: Long, dayOffset: Int, zone: ZoneId = ZoneId.systemDefault()): Long {
+            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val time = today.plusDays(dayOffset.coerceAtLeast(0).toLong()).atTime(POST_TIME).atZone(zone)
+            val upcoming = if (time.toInstant().toEpochMilli() <= now) time.plusDays(1) else time
+            return upcoming.toInstant().toEpochMilli()
         }
     }
 
@@ -177,7 +196,7 @@ class SocialCampaignGenerator @Inject constructor(
                 id = UUID.randomUUID().toString(),
                 accountId = "pending",
                 platform = SocialPlatform.TELEGRAM,
-                content = "📣 **$name is officially live!**\n\n$objective.\n\nJoin the discussion and test out the new capabilities today in our community!",
+                content = "📣 $name is officially live!\n\n$objective.\n\nJoin the discussion and test out the new capabilities today in our community!",
                 status = PostStatus.DRAFT,
                 scheduledPublishTime = startDate + dayMillis * 4 + 3600_000L * 6,
                 campaignId = campaignId,

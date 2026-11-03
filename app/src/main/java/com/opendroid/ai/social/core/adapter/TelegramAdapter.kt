@@ -6,6 +6,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +17,12 @@ class TelegramAdapter @Inject constructor(
 
     override val platform: SocialPlatform = SocialPlatform.TELEGRAM
     override val displayName: String = "Telegram"
+
+    // Per bot token: the update_id after the newest update already saved. Sending it confirms
+    // everything before it to Telegram, so it only moves up once the batch is persisted.
+    private val nextUpdateOffset = ConcurrentHashMap<String, Long>()
+    // Per bot token: the offset the last fetched batch would move to, once acknowledged.
+    private val fetchedUpdateOffset = ConcurrentHashMap<String, Long>()
     override val supportedPermissions: List<SocialPermission> = listOf(
         SocialPermission.READ_PROFILE,
         SocialPermission.READ_POSTS,
@@ -77,8 +84,9 @@ class TelegramAdapter @Inject constructor(
 
         val payload = JSONObject().apply {
             put("chat_id", chatId)
+            // Plain text: with a parse_mode, an unbalanced _ or * (as in @alex_tech) makes
+            // Telegram reject the whole message.
             put("text", post.content)
-            put("parse_mode", "Markdown")
         }
 
         val request = Request.Builder()
@@ -124,8 +132,11 @@ class TelegramAdapter @Inject constructor(
             )
         }
 
+        // An offset tells Telegram the earlier updates were seen, so it stops returning them,
+        // even after a restart.
+        val offset = nextUpdateOffset[token]
         val request = Request.Builder()
-            .url("https://api.telegram.org/bot$token/getUpdates?limit=20")
+            .url("https://api.telegram.org/bot$token/getUpdates?limit=20" + (offset?.let { "&offset=$it" } ?: ""))
             .get()
             .build()
 
@@ -135,7 +146,12 @@ class TelegramAdapter @Inject constructor(
             val list = mutableListOf<SocialInteraction>()
             for (i in 0 until updates.length()) {
                 val item = updates.getJSONObject(i)
+                val updateId = item.optLong("update_id", -1L)
+                if (updateId >= 0) {
+                    fetchedUpdateOffset.merge(token, updateId + 1) { old, new -> maxOf(old, new) }
+                }
                 val msg = item.optJSONObject("message") ?: continue
+                val chatId = msg.optJSONObject("chat")?.optLong("id")
                 val from = msg.optJSONObject("from")
                 val text = msg.optString("text", "")
                 val date = msg.optLong("date", 0) * 1000L
@@ -152,7 +168,8 @@ class TelegramAdapter @Inject constructor(
                             priority = InteractionPriority.NORMAL,
                             content = text,
                             timestamp = if (date > 0) date else System.currentTimeMillis(),
-                            status = "UNREAD"
+                            status = "UNREAD",
+                            replyTargetId = chatId?.let { "$it:${msg.optLong("message_id")}" }
                         )
                     )
                 }
@@ -217,6 +234,54 @@ class TelegramAdapter @Inject constructor(
             ReplyCommentResult(
                 success = true,
                 platformReplyId = result.getLong("message_id").toString()
+            )
+        }
+    }
+
+    override fun acknowledgeInbox(credentials: SocialCredentials) {
+        val token = credentials.botToken ?: credentials.accessToken
+        fetchedUpdateOffset[token]?.let { fetched ->
+            nextUpdateOffset.merge(token, fetched) { old, new -> maxOf(old, new) }
+        }
+    }
+
+    override suspend fun replyToInteraction(
+        credentials: SocialCredentials,
+        interaction: SocialInteraction,
+        text: String
+    ): Result<ReplyCommentResult> {
+        val token = credentials.botToken ?: credentials.accessToken
+        if (isSandboxToken(token)) {
+            return Result.success(ReplyCommentResult(success = true, platformReplyId = "tg_reply_${System.currentTimeMillis()}"))
+        }
+
+        // "chatId:messageId", set when the message was synced.
+        val target = interaction.replyTargetId?.split(":")
+        val chatId = target?.getOrNull(0)
+        val messageId = target?.getOrNull(1)?.toLongOrNull()
+        if (target?.size != 2 || chatId.isNullOrBlank() || messageId == null) {
+            return Result.failure(IllegalStateException("This message can't be replied to. Refresh the inbox and try again."))
+        }
+
+        val payload = JSONObject().apply {
+            put("chat_id", chatId)
+            put("text", text)
+            put("reply_to_message_id", messageId)
+        }
+
+        val request = Request.Builder()
+            .url("https://api.telegram.org/bot$token/sendMessage")
+            .post(payload.toString().toRequestBody(jsonMediaType))
+            .build()
+
+        return executeRequest(request).mapCatching { jsonStr ->
+            val json = JSONObject(jsonStr)
+            if (!json.optBoolean("ok")) {
+                throw IllegalStateException(json.optString("description", "Failed to send Telegram reply"))
+            }
+            ReplyCommentResult(
+                success = true,
+                platformReplyId = json.getJSONObject("result").getLong("message_id").toString()
             )
         }
     }

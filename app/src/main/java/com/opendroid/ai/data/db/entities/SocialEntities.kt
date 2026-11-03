@@ -118,7 +118,9 @@ data class SocialInteractionEntity(
     val content: String,
     val timestamp: Long,
     val status: String,
-    val suggestedAction: String?
+    val suggestedAction: String?,
+    // What a reply is sent to on the platform; null for items synced before inbox replies.
+    val replyTargetId: String? = null
 )
 
 @Entity(
@@ -135,19 +137,20 @@ data class SocialAnalyticsSnapshotEntity(
     val accountId: String,
     val platform: String,
     val timestamp: Long,
-    val followersCount: Int,
-    val followingCount: Int,
-    val postsCount: Int,
-    val totalLikes: Int,
-    val totalComments: Int,
-    val totalShares: Int,
-    val totalViews: Int,
-    val reach: Int,
-    val impressions: Int,
-    val engagementRate: Float,
-    val subscribersCount: Int,
-    val profileVisits: Int,
-    val linkClicks: Int,
+    // Null means the platform didn't report the metric, which is not the same as 0.
+    val followersCount: Int?,
+    val followingCount: Int?,
+    val postsCount: Int?,
+    val totalLikes: Int?,
+    val totalComments: Int?,
+    val totalShares: Int?,
+    val totalViews: Int?,
+    val reach: Int?,
+    val impressions: Int?,
+    val engagementRate: Float?,
+    val subscribersCount: Int?,
+    val profileVisits: Int?,
+    val linkClicks: Int?,
     val periodLabel: String
 )
 

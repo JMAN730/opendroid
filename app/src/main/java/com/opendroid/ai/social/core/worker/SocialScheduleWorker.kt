@@ -66,7 +66,7 @@ class SocialScheduleWorker(
                     continue
                 }
 
-                val publishResult = socialManager.publishPost(post.id)
+                val publishResult = socialManager.publishPost(post.id, post.approvedBy ?: "OPENDROID_AI")
                 if (publishResult.isFailure) {
                     Log.e(TAG, "Failed scheduled publishing for post ${post.id}: ${publishResult.exceptionOrNull()?.message}")
                 }

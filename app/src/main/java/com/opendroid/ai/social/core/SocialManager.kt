@@ -16,6 +16,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -41,6 +43,7 @@ class SocialManager @Inject constructor(
         private const val TAG = "SocialManager"
         private const val PREFS_NAME = "opendroid_social_settings"
         private const val KEY_AUTOMATION_LEVEL = "automation_level"
+        private const val INTERACTION_REPLIED = "REPLIED"
     }
 
     private val adapters: Map<SocialPlatform, SocialPlatformAdapter> = mapOf(
@@ -57,6 +60,11 @@ class SocialManager @Inject constructor(
     // was left behind by process death, and only then can the user settle it.
     private val postsInFlight = ConcurrentHashMap.newKeySet<String>()
     private val repliesInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val inboxRepliesInFlight = ConcurrentHashMap.newKeySet<String>()
+
+    // One inbox fetch/save/acknowledge at a time per account, so an acknowledgement can only
+    // confirm the batch that the same sync just saved.
+    private val inboxSyncLocks = ConcurrentHashMap<String, Mutex>()
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -242,7 +250,7 @@ class SocialManager @Inject constructor(
         )
 
         if (publishImmediately) {
-            val pubResult = publishPost(postId)
+            val pubResult = publishPost(postId, "USER")
             if (pubResult.isFailure) {
                 return@withContext Result.failure(pubResult.exceptionOrNull() ?: Exception("Publication failed"))
             }
@@ -280,7 +288,8 @@ class SocialManager @Inject constructor(
         Result.success(updated)
     }
 
-    suspend fun publishPost(postId: String): Result<PublishPostResult> = withContext(Dispatchers.IO) {
+    /** [actor] is whoever started this send: the user tapping Publish, or the scheduler. */
+    suspend fun publishPost(postId: String, actor: String): Result<PublishPostResult> = withContext(Dispatchers.IO) {
         val post = socialRepository.getPostById(postId)
             ?: return@withContext Result.failure(IllegalArgumentException("Post $postId not found"))
 
@@ -302,14 +311,15 @@ class SocialManager @Inject constructor(
         // The HTTP call can't be recalled once it starts, so from the claim onwards the caller
         // leaving must not stop the outcome being saved.
         withContext(NonCancellable) {
-            sendPost(post, credentials, adapter)
+            sendPost(post, credentials, adapter, actor)
         }
     }
 
     private suspend fun sendPost(
         post: SocialPost,
         credentials: SocialCredentials,
-        adapter: SocialPlatformAdapter
+        adapter: SocialPlatformAdapter,
+        actor: String
     ): Result<PublishPostResult> {
         val postId = post.id
         if (!postsInFlight.add(postId)) {
@@ -336,7 +346,7 @@ class SocialManager @Inject constructor(
                     errorMessage = null
                 )
                 auditLogger.log(
-                    actor = post.approvedBy ?: "OPENDROID_AI",
+                    actor = actor,
                     action = "PUBLISHED_POST",
                     platform = post.platform,
                     targetId = postId,
@@ -422,11 +432,14 @@ class SocialManager @Inject constructor(
         val adapter = getAdapter(account.platform)
 
         // 1. Sync Inbox
-        val inboxResult = adapter.fetchInbox(credentials, account.lastSyncAt)
-        if (inboxResult.isSuccess) {
-            val interactions = inboxResult.getOrThrow()
-            if (interactions.isNotEmpty()) {
-                socialRepository.saveInteractions(interactions)
+        inboxSyncLocks.getOrPut(account.id) { Mutex() }.withLock {
+            val inboxResult = adapter.fetchInbox(credentials, account.lastSyncAt)
+            if (inboxResult.isSuccess) {
+                val interactions = inboxResult.getOrThrow()
+                if (interactions.isNotEmpty()) {
+                    socialRepository.saveInteractions(interactions.map { it.copy(accountId = account.id) })
+                }
+                adapter.acknowledgeInbox(credentials)
             }
         }
 
@@ -452,15 +465,19 @@ class SocialManager @Inject constructor(
     }
 
     suspend fun syncAllAccounts(): Result<Unit> = withContext(Dispatchers.IO) {
-        val accounts = socialRepository.getAllAccountsFlow()
-        // Run sync for each connected account
-        val connected = socialRepository.getConnectedAccountsFlow()
-        // We'll trigger sync for each account
-        try {
-            val accountsList = socialRepository.getAccountByPlatform(SocialPlatform.TELEGRAM)?.let { listOf(it) } ?: emptyList()
+        val failed = socialRepository.getConnectedAccounts().filter { account ->
+            val result = try {
+                syncAccount(account.id)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            result.exceptionOrNull()?.let { Log.w(TAG, "Sync failed for ${account.platform.displayName}", it) }
+            result.isFailure
+        }
+        if (failed.isEmpty()) {
             Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } else {
+            Result.failure(IllegalStateException("Couldn't sync ${failed.joinToString { "@${it.username}" }}"))
         }
     }
 
@@ -496,6 +513,82 @@ class SocialManager @Inject constructor(
         // Same as publishing: once the send starts, its outcome must be saved.
         withContext(NonCancellable) {
             sendReply(target, credentials, adapter, replyText, actor)
+        }
+    }
+
+    /**
+     * Replies to an Inbox item (a DM or mention). These live apart from comments, so they have
+     * their own lookup, and go out through the account that received them.
+     */
+    suspend fun replyToInteraction(
+        interactionId: String,
+        replyText: String,
+        actor: String = "USER"
+    ): Result<ReplyCommentResult> = withContext(Dispatchers.IO) {
+        val target = socialRepository.getInteractionById(interactionId)
+            ?: return@withContext Result.failure(IllegalArgumentException("Message not found"))
+        if (target.status == INTERACTION_REPLIED) {
+            return@withContext Result.failure(IllegalStateException("This message has already been replied to"))
+        }
+
+        val account = socialRepository.getAccountById(target.accountId)
+            ?.takeIf { it.status == AccountStatus.CONNECTED }
+            ?: return@withContext Result.failure(IllegalStateException("The ${target.platform.displayName} account this message came to is no longer connected"))
+        account.missingPermission(SocialPermission.REPLY_TO_COMMENTS)?.let { return@withContext Result.failure(it) }
+
+        val credentials = credentialStore.getCredentials(account.id, target.platform)
+            ?: return@withContext Result.failure(IllegalStateException("No credentials for ${target.platform}"))
+
+        val adapter = getAdapter(target.platform)
+        ensureActive()
+
+        withContext(NonCancellable) {
+            sendInboxReply(target, credentials, adapter, replyText, actor)
+        }
+    }
+
+    private suspend fun sendInboxReply(
+        target: SocialInteraction,
+        credentials: SocialCredentials,
+        adapter: SocialPlatformAdapter,
+        replyText: String,
+        actor: String
+    ): Result<ReplyCommentResult> {
+        if (!inboxRepliesInFlight.add(target.id)) {
+            return Result.failure(IllegalStateException("A reply to this message is already being sent"))
+        }
+        try {
+            val result = try {
+                adapter.replyToInteraction(credentials, target, replyText)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            if (result.isSuccess) {
+                socialRepository.updateInteractionStatus(target.id, INTERACTION_REPLIED)
+                auditLogger.log(
+                    actor = actor,
+                    action = "SENT_INBOX_REPLY",
+                    platform = target.platform,
+                    targetId = target.id,
+                    details = "Replied: \"${replyText.take(50)}...\"",
+                    status = "SUCCESS"
+                )
+                return result
+            }
+
+            val error = result.exceptionOrNull()?.message ?: "Failed to send reply"
+            auditLogger.log(
+                actor = actor,
+                action = "INBOX_REPLY_FAILED",
+                platform = target.platform,
+                targetId = target.id,
+                details = "Reply failed: $error",
+                status = "FAILED"
+            )
+            return Result.failure(Exception(error))
+        } finally {
+            inboxRepliesInFlight.remove(target.id)
         }
     }
 

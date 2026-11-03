@@ -108,8 +108,13 @@ interface SocialCommentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(comment: SocialCommentEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(comments: List<SocialCommentEntity>)
+    // Sync inserts new comments only. A comment already stored keeps its reply state and
+    // gets just the platform's latest text through updateSyncedContent.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllNew(comments: List<SocialCommentEntity>)
+
+    @Query("UPDATE social_comments SET content = :content, authorName = :authorName, authorAvatarUrl = :authorAvatarUrl, accountId = COALESCE(accountId, :accountId) WHERE id = :id")
+    suspend fun updateSyncedContent(id: String, content: String, authorName: String, authorAvatarUrl: String?, accountId: String?)
 
     @Query("UPDATE social_comments SET suggestedReply = :reply, replyStatus = 'SUGGESTED' WHERE id = :id AND replyStatus != 'SENDING'")
     suspend fun updateSuggestedReply(id: String, reply: String)
@@ -150,8 +155,13 @@ interface SocialInteractionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(interaction: SocialInteractionEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(interactions: List<SocialInteractionEntity>)
+    // Sync inserts new items only. An item already stored keeps its triage status and gets
+    // just the platform's latest text through updateSyncedContent.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllNew(interactions: List<SocialInteractionEntity>)
+
+    @Query("UPDATE social_interactions SET content = :content, authorName = :authorName, authorHandle = :authorHandle, replyTargetId = COALESCE(:replyTargetId, replyTargetId) WHERE id = :id")
+    suspend fun updateSyncedContent(id: String, content: String, authorName: String, authorHandle: String?, replyTargetId: String?)
 
     @Query("UPDATE social_interactions SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String)
