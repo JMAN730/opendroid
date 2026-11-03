@@ -5,11 +5,7 @@ import android.provider.Telephony
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.opendroid.ai.core.llm.LLMProviderFactory
-import com.opendroid.ai.core.llm.LLMRequest
-import com.opendroid.ai.core.llm.ResponseFormat
-import com.opendroid.ai.core.llm.prompts.AutoReplyPrompts
-import com.opendroid.ai.core.memory.MemoryManager
-import com.opendroid.ai.core.memory.NotificationIntelligence
+import com.opendroid.ai.core.security.UserProfileStore
 import com.opendroid.ai.data.db.dao.NotificationDao
 import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.models.AutoReplyConfig
@@ -24,7 +20,7 @@ import javax.inject.Singleton
  * Orchestrates the auto-reply pipeline:
  * 1. Check if auto-reply is enabled for this app/contact
  * 2. Wait the configured delay (default 15 min) — abort if user replies manually
- * 3. Build context from notification history + user memory
+ * 3. Build context from this contact's notification history only
  * 4. Generate reply via LLM
  * 5. Dispatch via ReplyDispatcher
  * 6. Log result to database
@@ -33,10 +29,9 @@ import javax.inject.Singleton
 class AutoReplyEngine @Inject constructor(
     private val notificationDao: NotificationDao,
     private val llmProviderFactory: LLMProviderFactory,
-    private val memoryManager: MemoryManager,
-    private val notificationIntelligence: NotificationIntelligence,
     private val replyDispatcher: ReplyDispatcher,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    userProfileStore: UserProfileStore
 ) {
     companion object {
         private const val TAG = "AutoReplyEngine"
@@ -47,6 +42,12 @@ class AutoReplyEngine @Inject constructor(
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    private val replyGenerator = AutoReplyGenerator(
+        notificationDao = notificationDao,
+        userProfileStore = userProfileStore,
+        activeProvider = { llmProviderFactory.getActiveProvider() }
+    )
 
     // Track pending auto-replies so we can cancel them if user replies manually
     private val pendingReplies = PendingReplies()
@@ -136,7 +137,7 @@ class AutoReplyEngine @Inject constructor(
                 }
 
                 // Generate and send reply
-                val replyText = generateReply(notification, freshConfig, channel)
+                val replyText = replyGenerator.generate(notification, freshConfig, channel)
                 if (replyText.isNullOrBlank()) {
                     Log.w(TAG, "LLM returned empty reply, skipping")
                     return@launch
@@ -191,75 +192,6 @@ class AutoReplyEngine @Inject constructor(
      */
     fun cancelAll() {
         pendingReplies.cancelAll()
-    }
-
-    private suspend fun generateReply(
-        notification: NotificationEntity,
-        config: AutoReplyConfig,
-        channel: AutoReplyChannel
-    ): String? {
-        if (!config.customReplyText.isNullOrBlank()) {
-            return config.customReplyText
-        }
-        return try {
-            val provider = llmProviderFactory.getActiveProvider()
-
-            // Get user name from secure prefs context
-            val userContext = memoryManager.getRelevantContext("")
-            val userName = extractUserName(userContext)
-            val senderName = notification.contactName ?: notification.title
-
-            // Build conversation history from recent notifications with this contact
-            val recentMessages = notificationDao.getNotificationsForContact(senderName)
-            val conversationHistory = recentMessages
-                .sortedBy { it.timestamp }
-                .takeLast(10)
-                .joinToString("\n") { msg ->
-                    val prefix = if (msg.isAutoReplied) "$userName" else senderName
-                    val text = if (msg.isAutoReplied) (msg.autoReplyText ?: "") else msg.text
-                    "[$prefix]: $text"
-                }
-
-            // Build the prompt based on app type
-            val systemPrompt = when (channel) {
-                AutoReplyChannel.WHATSAPP, AutoReplyChannel.TELEGRAM, AutoReplyChannel.DISCORD ->
-                    AutoReplyPrompts.buildWhatsAppReplyPrompt(
-                        userName, senderName, notification.text,
-                        conversationHistory, userContext, config.customPrompt
-                    )
-                AutoReplyChannel.EMAIL ->
-                    AutoReplyPrompts.buildEmailReplyPrompt(
-                        userName, senderName, notification.title, notification.text,
-                        userContext, config.customPrompt
-                    )
-                AutoReplyChannel.SMS ->
-                    AutoReplyPrompts.buildSmsReplyPrompt(
-                        userName, senderName, notification.text,
-                        conversationHistory, userContext, config.customPrompt
-                    )
-            }
-
-            val response = provider.complete(
-                LLMRequest(
-                    systemPrompt = systemPrompt,
-                    messages = listOf(
-                        com.opendroid.ai.data.models.ChatMessage(
-                            id = java.util.UUID.randomUUID().toString(),
-                            text = "Generate the reply.",
-                            sender = com.opendroid.ai.data.models.ChatMessage.Sender.USER
-                        )
-                    ),
-                    temperature = 0.7f,
-                    maxTokens = 150,
-                    responseFormat = ResponseFormat.TEXT
-                )
-            )
-
-            response.content.trim().removeSurrounding("\"")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to generate reply: ${e.message}")
-            null
-        }
     }
 
     private suspend fun dispatchReply(
@@ -321,10 +253,5 @@ class AutoReplyEngine @Inject constructor(
                 replyDispatcher.replyViaEmail(freshSbn, senderEmail, notification.title, replyText, context)
             }
         }
-    }
-
-    private fun extractUserName(context: String): String {
-        val match = Regex("User Name: (.+?)(?:;|\$)").find(context)
-        return match?.groupValues?.get(1)?.trim() ?: "User"
     }
 }

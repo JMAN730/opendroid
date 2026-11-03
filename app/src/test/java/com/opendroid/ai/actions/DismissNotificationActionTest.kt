@@ -111,6 +111,12 @@ class DismissNotificationActionTest {
             notifications.filter { it.packageName == packageName }.take(limit)
         override suspend fun getNotificationsForContact(contactName: String, limit: Int): List<NotificationEntity> =
             notifications.filter { it.contactName == contactName }.take(limit)
+        override suspend fun getNotificationsForContactInApp(
+            packageName: String,
+            contactName: String,
+            limit: Int
+        ): List<NotificationEntity> =
+            notifications.filter { it.packageName == packageName && it.contactName == contactName }.take(limit)
         override suspend fun getNotificationsSince(since: Long, limit: Int): List<NotificationEntity> =
             notifications.filter { it.timestamp > since }.take(limit)
         override suspend fun getMessageNotificationsSince(since: Long): List<NotificationEntity> =
