@@ -18,6 +18,7 @@ import java.net.Socket
 import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +34,8 @@ class McpServer @Inject constructor(
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
     private var serverThread: Thread? = null
+    // Shared by every pool, so a pool from a previous run cannot dispatch alongside the current one.
+    private val dispatchLock = ReentrantLock()
 
     @Synchronized
     fun start() {
@@ -57,12 +60,13 @@ class McpServer @Inject constructor(
     }
 
     private fun serve() {
+        val connections = McpConnectionPool(WORKERS, QUEUED_CONNECTIONS, THREAD_NAME, dispatchLock) { socket -> handle(socket) }
         try {
             ServerSocket(PORT, BACKLOG, InetAddress.getByName(LOOPBACK)).use { socket ->
                 serverSocket = socket
                 while (running.get()) {
                     try {
-                        socket.accept().use(::handle)
+                        connections.submit(socket.accept())
                     } catch (error: Exception) {
                         if (running.get()) Log.e(TAG, "MCP request failed", error)
                     }
@@ -73,22 +77,24 @@ class McpServer @Inject constructor(
         } finally {
             running.set(false)
             serverSocket = null
+            connections.shutdown()
         }
     }
 
-    private fun handle(socket: Socket) {
-        socket.soTimeout = REQUEST_TIMEOUT_MS
-        val input = BufferedInputStream(socket.getInputStream())
-        val requestLine = readAsciiLine(input) ?: return
-        val headers = mutableMapOf<String, String>()
-        while (true) {
-            val line = readAsciiLine(input) ?: return
-            if (line.isEmpty()) break
-            val separator = line.indexOf(':')
-            if (separator > 0) {
-                headers[line.substring(0, separator).lowercase()] = line.substring(separator + 1).trim()
-            }
+    private fun McpConnectionPool.handle(socket: Socket) {
+        // The whole request must arrive within one deadline, so a client trickling bytes
+        // cannot keep a worker past it; each read still times out after REQUEST_TIMEOUT_MS.
+        val deadlineAtMs = System.currentTimeMillis() + REQUEST_DEADLINE_MS
+        val input = BufferedInputStream(DeadlineInputStream(socket.getInputStream(), deadlineAtMs,
+            System::currentTimeMillis) { remaining -> socket.soTimeout = minOf(remaining, REQUEST_TIMEOUT_MS) })
+        val head = try {
+            McpHttpRequestReader.readHead(input) ?: return
+        } catch (rejected: McpRequestRejectedException) {
+            writeResponse(socket.getOutputStream(), rejected.status, JSONObject().put("error", rejected.message))
+            return
         }
+        val requestLine = head.requestLine
+        val headers = head.headers
 
         // A token that no longer decrypts is never replaced behind the user's back; say why
         // requests fail instead of answering 401 to a client that holds the right token.
@@ -123,25 +129,15 @@ class McpServer @Inject constructor(
                 writeEmptyResponse(socket.getOutputStream())
                 return
             }
-            writeResponse(socket.getOutputStream(), 200, dispatch(request))
+            // Requests are read in parallel, but tools still run one at a time as before, and
+            // none starts once this connection's pool has been shut down.
+            val response = runExclusive { dispatch(request) }
+            writeResponse(socket.getOutputStream(), 200, response)
+        } catch (rejected: McpRequestRejectedException) {
+            writeResponse(socket.getOutputStream(), rejected.status, JSONObject().put("error", rejected.message))
         } catch (error: Exception) {
             writeResponse(socket.getOutputStream(), 400, rpcError(null, -32600, error.message ?: "Invalid request"))
         }
-    }
-
-    private fun readAsciiLine(input: BufferedInputStream): String? {
-        val bytes = ByteArray(MAX_HEADER_LINE_BYTES)
-        var count = 0
-        while (count < bytes.size) {
-            val value = input.read()
-            if (value < 0) return if (count == 0) null else String(bytes, 0, count, StandardCharsets.US_ASCII)
-            if (value == '\n'.code) {
-                val end = if (count > 0 && bytes[count - 1] == '\r'.code.toByte()) count - 1 else count
-                return String(bytes, 0, end, StandardCharsets.US_ASCII)
-            }
-            bytes[count++] = value.toByte()
-        }
-        throw IllegalArgumentException("HTTP header line is too long")
     }
 
     private fun dispatch(request: JSONObject): JSONObject {
@@ -299,7 +295,10 @@ class McpServer @Inject constructor(
 
     private fun writeResponse(output: OutputStream, status: Int, body: JSONObject) {
         val bytes = body.toString().toByteArray(StandardCharsets.UTF_8)
-        val reason = when (status) { 200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; 503 -> "Service Unavailable"; else -> "Error" }
+        val reason = when (status) {
+            200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"; 408 -> "Request Timeout"
+            431 -> "Request Header Fields Too Large"; 503 -> "Service Unavailable"; else -> "Error"
+        }
         val header = "HTTP/1.1 $status $reason\r\nContent-Type: application/json\r\n" +
             "Content-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
         output.write(header.toByteArray(StandardCharsets.UTF_8))
@@ -330,8 +329,10 @@ class McpServer @Inject constructor(
         const val PORT = 8765
         const val BACKLOG = 8
         const val MAX_REQUEST_BYTES = 1_048_576
-        const val MAX_HEADER_LINE_BYTES = 8192
         const val REQUEST_TIMEOUT_MS = 15_000
+        const val REQUEST_DEADLINE_MS = 30_000L
+        const val WORKERS = 4
+        const val QUEUED_CONNECTIONS = 8
         const val JOIN_TIMEOUT_MS = 2_000L
         const val THREAD_NAME = "OpenDroid-MCP"
     }
