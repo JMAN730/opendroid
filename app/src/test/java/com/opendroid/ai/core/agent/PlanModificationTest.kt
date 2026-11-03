@@ -608,4 +608,16 @@ class PlanModificationTest {
         )
         assertTrue(ReEvaluationEngine.ReEvalResult("ok", "CONTINUE", plan).proposedActionNames().isEmpty())
     }
+
+    @Test
+    fun `reference to a completed step is kept when its id is reused by the revised step`() {
+        val search = step("s1", "WEB_SEARCH", status = StepStatus.COMPLETED)
+        val sms = step("s2", "SEND_SMS", params = mapOf("contact" to "+15550100", "message" to "\$\$s1"))
+        val revised = step("s1", "SEND_SMS", params = mapOf("contact" to "+15550100", "message" to "\$\$s1"))
+
+        val merged = PlanModification.merge(listOf(search, sms), listOf(revised)).steps
+
+        assertEquals("s2", merged[1].stepId)
+        assertEquals("\$\$s1", merged[1].params["message"])
+    }
 }
