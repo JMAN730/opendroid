@@ -77,6 +77,15 @@ class VideoCallActionTest {
     }
 
     @Test
+    fun `a number with post-dial digits calls the primary number, not the digits run together`() {
+        val result = videoCall(mapOf("contact" to "John"), "John Smith" to "+15550100#1234")
+
+        assertEquals(true, result.success)
+        val phone = shadowOf(application).nextStartedActivity.data?.toString()?.substringAfter("phone=")
+        assertEquals("+15550100", phone?.replace("%2B", "+")?.replace(" ", "+"))
+    }
+
+    @Test
     fun `the number chosen at the picker calls that person`() {
         val result = videoCall(mapOf("contact" to "+15550102"), "John Smith" to "+15550101", "John Doe" to "+15550102")
 
