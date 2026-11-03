@@ -11,8 +11,10 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.opendroid.ai.actions.base.ActionResult
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -430,6 +432,7 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
+            overlapError(src, dest)?.let { return ActionResult(false, null, it) }
             copyRecursively(src, dest)
             ActionResult(true, "Copied from ${src.absolutePath} to ${dest.absolutePath}!", null)
         } catch (e: Exception) {
@@ -444,17 +447,41 @@ object StorageWorkspaceProvider {
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
             }
-            dest.parentFile?.mkdirs()
-            val renamed = src.renameTo(dest)
-            if (renamed) {
-                ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
-            } else {
-                copyRecursively(src, dest)
-                src.deleteRecursively()
-                ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
-            }
+            moveResolved(src, dest)
         } catch (e: Exception) {
             ActionResult(false, null, "Couldn't move file: ${e.localizedMessage}")
+        }
+    }
+
+    /** Moves between paths already resolved by [resolveFile]. */
+    internal fun moveResolved(
+        src: File,
+        dest: File,
+        rename: (File, File) -> Boolean = File::renameTo,
+    ): ActionResult {
+        // A rename is safe here, but on case-insensitive storage a copy would write the file onto itself.
+        val caseOnly = src.path != dest.path && src.path.equals(dest.path, ignoreCase = true)
+        if (!caseOnly) {
+            overlapError(src, dest)?.let { return ActionResult(false, null, it) }
+        }
+        dest.parentFile?.mkdirs()
+        return when {
+            rename(src, dest) -> ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
+            caseOnly -> ActionResult(false, null, "Couldn't rename ${src.absolutePath} to ${dest.absolutePath}")
+            else -> moveByCopy(src, dest)
+        }
+    }
+
+    internal fun moveByCopy(
+        src: File,
+        dest: File,
+        deleteSource: (File) -> Boolean = File::deleteRecursively,
+    ): ActionResult {
+        copyRecursively(src, dest)
+        return if (deleteSource(src)) {
+            ActionResult(true, "Moved from ${src.absolutePath} to ${dest.absolutePath}!", null)
+        } else {
+            ActionResult(false, null, "Copied to ${dest.absolutePath}, but couldn't fully delete the source: ${src.absolutePath}")
         }
     }
 
@@ -464,6 +491,9 @@ object StorageWorkspaceProvider {
             val zipFile = resolveFile(context, zipFilePath)
             if (!src.exists()) {
                 return ActionResult(false, null, "Source path does not exist: ${src.absolutePath}")
+            }
+            if (zipFile.isSameOrInside(src)) {
+                return ActionResult(false, null, "Zip file can't be the source or inside it: ${zipFile.absolutePath}")
             }
             zipFile.parentFile?.mkdirs()
             ZipOutputStream(zipFile.outputStream().buffered()).use { zos ->
@@ -579,12 +609,30 @@ object StorageWorkspaceProvider {
         }
     }
 
-    private fun copyRecursively(src: File, dest: File) {
+    /** Why a copy or move from [src] to [dest] would destroy data, or null if the paths don't overlap. */
+    private fun overlapError(src: File, dest: File): String? {
+        val destInSrc = dest.isSameOrInside(src)
+        val srcInDest = src.isSameOrInside(dest)
+        return when {
+            destInSrc && srcInDest -> "Source and destination are the same path: ${src.absolutePath}"
+            destInSrc -> "Destination is inside the source: ${dest.absolutePath} is in ${src.absolutePath}"
+            srcInDest -> "Source is inside the destination: ${src.absolutePath} is in ${dest.absolutePath}"
+            else -> null
+        }
+    }
+
+    // Ignores case because the workspace lives on external storage, which is case-insensitive on Android.
+    private fun File.isSameOrInside(other: File): Boolean =
+        File(canonicalPath.lowercase(Locale.ROOT)).startsWith(File(other.canonicalPath.lowercase(Locale.ROOT)))
+
+    internal fun copyRecursively(src: File, dest: File) {
         if (src.isDirectory) {
+            // List first: a destination inside src must not show up as one of its children.
+            val children = src.listFiles() ?: throw IOException("Can't list ${src.absolutePath}")
             if (!dest.exists()) {
                 dest.mkdirs()
             }
-            src.listFiles()?.forEach { file ->
+            children.forEach { file ->
                 copyRecursively(file, File(dest, file.name))
             }
         } else {
