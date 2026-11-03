@@ -152,16 +152,19 @@ internal suspend fun runApprovedPlan(
 }
 
 /**
- * Fills in what a model-written plan left blank. Step ids are made unique, since
- * PlanManager updates every step sharing an id, and status, result and error are
- * reset: they are execution state, so the model cannot mark its own steps done.
+ * Fills in what a model-written plan left blank. The plan always gets a fresh id of
+ * the app's own: task history, Plan history and the approval gate all key on it, and
+ * models copy placeholder ids, so two tasks could otherwise share one. Step ids are
+ * made unique, since PlanManager updates every step sharing an id, and status, result
+ * and error are reset: they are execution state, so the model cannot mark its own
+ * steps done.
  */
 internal fun normalizePlan(plan: Plan): Plan {
     val usedIds = mutableSetOf<String>()
     val filled = plan.steps.map { step -> step.copy(stepId = step.stepId.ifBlank { "s${step.order}" }) }
     val explicitIds = filled.map { it.stepId }.toSet()
     return plan.copy(
-        planId = plan.planId.ifBlank { UUID.randomUUID().toString() },
+        planId = Plan.newId(),
         goal = plan.goal.ifBlank { "User request" },
         estimatedSteps = if (plan.estimatedSteps > 0) plan.estimatedSteps else plan.steps.size.coerceAtLeast(1),
         steps = filled.map { step ->
@@ -1932,7 +1935,7 @@ class AgentLoop @Inject constructor(
 
     private fun buildSingleStepPlan(goal: String, action: String, params: Map<String, String>): Plan {
         return Plan(
-            planId = UUID.randomUUID().toString(),
+            planId = Plan.newId(),
             goal = goal,
             estimatedDuration = "instant",
             estimatedSteps = 1,
