@@ -6,8 +6,11 @@ import com.opendroid.ai.data.db.entities.NotificationEntity
 import com.opendroid.ai.data.models.Memory
 import com.opendroid.ai.data.models.MemoryType
 import com.opendroid.ai.data.repository.MemoryRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -228,6 +231,8 @@ class NotificationIntelligence @Inject constructor(
             memoryRepository.getMemoriesByKeyPrefix(prefix)
                 .filter { it.key.startsWith(prefix) }
                 .forEach { memoryRepository.deleteMemory(it.key) }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete patterns $keyPrefix*: ${e.message}")
         }
@@ -239,15 +244,20 @@ class NotificationIntelligence @Inject constructor(
      */
     suspend fun clearLearnedPatterns() = patternLock.withLock {
         deletePatternsStartingWith("")
+        // Relearn from whatever history remains on the next notification, not in 6 hours.
+        lastAnalysisTimestamp = 0L
     }
 
     /**
      * Clear the captured notification history along with the patterns learned from it.
+     * Non-cancellable so it cannot stop between deleting the rows and the patterns.
      */
-    suspend fun clearHistory(): Int = patternLock.withLock {
-        val deleted = notificationDao.clearAll()
-        deletePatternsStartingWith("")
-        deleted
+    suspend fun clearHistory(): Int = withContext(NonCancellable) {
+        patternLock.withLock {
+            val deleted = notificationDao.clearAll()
+            deletePatternsStartingWith("")
+            deleted
+        }
     }
 
     /**
