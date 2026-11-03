@@ -144,6 +144,26 @@ class WrappedLLMProviderTest {
     }
 
     @Test
+    fun `collector failure reaches the caller unchanged instead of as a provider error`() = runBlocking {
+        var attempts = 0
+        val delegate = FakeProvider(
+            name = "OpenAI",
+            stream = {
+                attempts++
+                flow { emit("chunk") }
+            }
+        )
+
+        val failure = runCatching {
+            wrapper(delegate).streamComplete(request()).collect { throw IllegalStateException("db") }
+        }.exceptionOrNull()
+
+        assertTrue("got $failure", failure is IllegalStateException)
+        assertEquals("db", failure?.message)
+        assertEquals(1, attempts)
+    }
+
+    @Test
     fun `retry validates and executes the same proposed delay`() = runBlocking {
         var attempts = 0
         var jitterCalls = 0

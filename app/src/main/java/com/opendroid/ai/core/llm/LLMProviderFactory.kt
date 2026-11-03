@@ -195,6 +195,8 @@ class WrappedLLMProvider(
         val registrations = registerSecrets(resolved)
         var attempt = 1
         var emitted = false
+        // A failure thrown by our own collector (e.g. a Room write per chunk) is not the provider's.
+        var collectorFailure: Throwable? = null
         val startedAt = retryRuntime.nowMillis()
         try {
             while (true) {
@@ -202,7 +204,12 @@ class WrappedLLMProvider(
                     delegate.streamComplete(resolved).collect { chunk ->
                         if (chunk.isNotEmpty()) {
                             emitted = true
-                            emit(chunk)
+                            try {
+                                emit(chunk)
+                            } catch (throwable: Throwable) {
+                                collectorFailure = throwable
+                                throw throwable
+                            }
                         }
                     }
                     if (!emitted) {
@@ -212,6 +219,7 @@ class WrappedLLMProvider(
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (throwable: Throwable) {
+                    if (throwable === collectorFailure) throw throwable
                     val failure = LLMErrorMapper.fromThrowable(name, resolved.model.orEmpty(), throwable)
                     val delayMillis = proposedDelayMillis(failure, attempt)
                     if (emitted || !shouldRetry(resolved, failure, attempt, startedAt, delayMillis)) throw failure
