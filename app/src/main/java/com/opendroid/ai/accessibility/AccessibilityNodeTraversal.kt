@@ -1,7 +1,19 @@
 package com.opendroid.ai.accessibility
 
+import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import javax.inject.Inject
+
+/**
+ * Result of [AccessibilityNodeTraversal.findAndType]. [overwrittenText] is the
+ * field's earlier content when the whole field was replaced, so the step result
+ * can say what was lost; null when the field was empty or only a match was swapped.
+ */
+data class TypeOutcome(val typed: Boolean, val overwrittenText: String? = null) {
+    companion object {
+        val NOT_FOUND = TypeOutcome(typed = false)
+    }
+}
 
 /**
  * Pure node-tree traversal/matching logic used by [OpenDroidAccessibilityService],
@@ -72,6 +84,71 @@ class AccessibilityNodeTraversal @Inject constructor() {
             node.recycle()
         }
         return false
+    }
+
+    /**
+     * Finds an editable field for [searchText] and types [content] into it.
+     *
+     * A field is matched by its own label first: its hint, the text of the node
+     * that labels it (`labelFor`), or its contentDescription. That label is what
+     * names an empty field, and the whole field is replaced. Only when no label
+     * matches is a field matched by the text already in it, and then just the first
+     * case-insensitive occurrence of [searchText] is swapped for [content], so
+     * "milk" -> "oat milk" in a note edits one line instead of wiping the note (#165).
+     */
+    fun findAndType(root: AccessibilityNodeInfo?, searchText: String, content: String): TypeOutcome {
+        if (root == null || searchText.isEmpty()) return TypeOutcome.NOT_FOUND
+        val fields = mutableListOf<AccessibilityNodeInfo>()
+        collectEditable(root, fields, isRoot = true)
+        try {
+            fields.firstOrNull { labelMatches(it, searchText) }?.let { field ->
+                val previous = currentText(field)
+                setText(field, content)
+                return TypeOutcome(typed = true, overwrittenText = previous.ifEmpty { null })
+            }
+            for (field in fields) {
+                val current = currentText(field)
+                val start = current.indexOf(searchText, ignoreCase = true)
+                if (start < 0) continue
+                setText(field, current.replaceRange(start, start + searchText.length, content))
+                return TypeOutcome(typed = true)
+            }
+            return TypeOutcome.NOT_FOUND
+        } finally {
+            fields.forEach { if (it !== root) it.recycle() }
+        }
+    }
+
+    private fun collectEditable(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>, isRoot: Boolean) {
+        val keep = node.isEditable
+        if (keep) out.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectEditable(child, out, isRoot = false)
+        }
+        if (!keep && !isRoot) node.recycle()
+    }
+
+    private fun labelMatches(field: AccessibilityNodeInfo, searchText: String): Boolean {
+        val label = field.labeledBy
+        val labelText = label?.text?.toString()
+        label?.recycle()
+        return listOf(field.hintText?.toString(), labelText, field.contentDescription?.toString())
+            .any { it != null && it.contains(searchText, ignoreCase = true) }
+    }
+
+    /** The field's real content; an empty field reports its hint as its text. */
+    private fun currentText(field: AccessibilityNodeInfo): String {
+        val text = field.text?.toString() ?: return ""
+        val hint = field.hintText?.toString()
+        return if (field.isShowingHintText || (!hint.isNullOrEmpty() && text == hint)) "" else text
+    }
+
+    private fun setText(field: AccessibilityNodeInfo, text: String) {
+        val arguments = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
     /**
