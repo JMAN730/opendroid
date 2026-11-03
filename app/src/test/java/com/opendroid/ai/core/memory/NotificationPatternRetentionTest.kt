@@ -129,6 +129,19 @@ class NotificationPatternRetentionTest {
     }
 
     @Test
+    fun `patterns are relearned on the next notification after they are forgotten`() = runBlocking {
+        insert("Avery", minutesAgo = 5)
+        intelligence.analyzeIfNeeded()
+        intelligence.clearLearnedPatterns()
+
+        // A listener rebind forgets the patterns; stored history should be relearned right away,
+        // not after the 6-hour analysis interval.
+        intelligence.analyzeIfNeeded()
+
+        assertTrue(patternRows().any { it.key == "notif_pattern_top_contacts" })
+    }
+
+    @Test
     fun `clearing the history also forgets what was learned from it`() = runBlocking {
         (FIRST_SENDERS + LATER_SENDERS).forEachIndexed { i, name -> insert(name, minutesAgo = 100 - i) }
         intelligence.analyzePatterns()
