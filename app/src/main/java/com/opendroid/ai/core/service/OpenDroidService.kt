@@ -50,6 +50,7 @@ class OpenDroidService : Service() {
     private var showFloatingButton = false
     private val pendingApprovalListen = PendingApprovalListen()
     private val approvalListenGate = ApprovalListenGate()
+    private var foregroundStarted = false
 
     companion object {
         const val ACTION_TRIGGER_RECORD = "com.opendroid.ai.action.TRIGGER_RECORD"
@@ -69,7 +70,17 @@ class OpenDroidService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        
+
+        // Start Foreground Notification. A refused start (boot on Android 15, or a
+        // sticky restart from the background) stops the service instead of crashing
+        // the process; MainActivity and the Navigation ON_RESUME hook start it again.
+        createNotificationChannel()
+        foregroundStarted = startForegroundCompat()
+        if (!foregroundStarted) {
+            stopSelf()
+            return
+        }
+
         // Initialize engines
         wakeWordDetector = WakeWordDetector(this)
         speechRecognitionEngine = SpeechRecognitionEngine(this)
@@ -98,9 +109,6 @@ class OpenDroidService : Service() {
             }
         }
 
-        // Start Foreground Notification
-        createNotificationChannel()
-        startForegroundCompat()
         mcpServer.start()
 
         // Monitor floating button config to start/stop wake word detection dynamically
@@ -141,38 +149,18 @@ class OpenDroidService : Service() {
         }
     }
 
-    private fun startForegroundCompat() {
+    private fun startForegroundCompat(): Boolean {
         val notification = createNotification()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Starting a microphone-type FGS without RECORD_AUDIO granted throws a
-            // SecurityException on Android 14+, and starting one from BOOT_COMPLETED is
-            // prohibited on Android 15 even with the permission. Fall back to specialUse
-            // until the microphone is actually usable.
-            val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.RECORD_AUDIO
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val type = if (micGranted) {
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val types = ForegroundStart.typesFor(android.os.Build.VERSION.SDK_INT, micGranted)
+        return ForegroundStart.startFirstAllowed(types) { type ->
+            if (type == null) {
+                startForeground(NOTIFICATION_ID, notification)
             } else {
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            }
-            try {
                 androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
-            } catch (e: SecurityException) {
-                androidx.core.app.ServiceCompat.startForeground(
-                    this, NOTIFICATION_ID, notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                )
             }
-        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            // FOREGROUND_SERVICE_TYPE_MICROPHONE is an API 30 constant; API 29 devices
-            // fall through to plain startForeground, which uses the manifest-declared types.
-            androidx.core.app.ServiceCompat.startForeground(
-                this, NOTIFICATION_ID, notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
@@ -242,6 +230,8 @@ class OpenDroidService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The service is already stopping; a sticky restart would only be refused again.
+        if (!foregroundStarted) return START_NOT_STICKY
         if (intent?.action == ACTION_TRIGGER_RECORD) {
             startListeningForQuery()
         }
@@ -255,6 +245,7 @@ class OpenDroidService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        if (!foregroundStarted) return
         mcpServer.stop()
         wakeWordDetector.destroy()
         speechRecognitionEngine.destroy()
