@@ -160,10 +160,12 @@ private class RadioToggleAction(
     }
 }
 
-// Panels exist from API 29; the app's minSdk is 26.
+// Panels exist from API 29; the app's minSdk is 26. Callers pass the inlined
+// Settings.Panel strings and suppress InlinedApi, since lint does not see this guard.
 private fun panelIfAvailable(action: String, description: String): List<SettingsScreen> =
     if (android.os.Build.VERSION.SDK_INT >= 29) listOf(SettingsScreen(action, description)) else emptyList()
 
+@SuppressLint("InlinedApi")
 internal fun toggleWifiAction(
     controllerProvider: (Context) -> RadioController? = ::wifiController,
     waitForState: suspend (RadioController, Boolean) -> Boolean = ::waitForRadioState
@@ -176,6 +178,7 @@ internal fun toggleWifiAction(
         SettingsScreen(Settings.ACTION_WIFI_SETTINGS, "WiFi settings")
 )
 
+@SuppressLint("InlinedApi")
 internal fun toggleMobileDataAction(
     controllerProvider: (Context) -> RadioController? = ::mobileDataController,
     waitForState: suspend (RadioController, Boolean) -> Boolean = ::waitForRadioState

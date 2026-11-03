@@ -293,4 +293,12 @@ class ActionSchemaTest {
         assertEquals(ActionSchema.ValidationResult.MissingParams(listOf("destPath")), blank)
         assertTrue(filled is ActionSchema.ValidationResult.Valid)
     }
+
+    @Test
+    fun `the path rule names only blank path params`() {
+        // A blank required non-path param is caught by the placeholder rule, not the path rule.
+        val (result, _) = ActionSchema.validateParams("WRITE_FILE", mapOf("filePath" to "a.txt", "content" to ""))
+
+        assertEquals(ActionSchema.ValidationResult.MissingParams(listOf("content")), result)
+    }
 }

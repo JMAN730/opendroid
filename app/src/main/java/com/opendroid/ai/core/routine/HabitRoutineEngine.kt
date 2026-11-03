@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.opendroid.ai.actions.base.ActionResult
 import com.opendroid.ai.core.agent.ActionSequenceExecutor
-import com.opendroid.ai.core.memory.graph.KnowledgeCategory
 import com.opendroid.ai.core.memory.graph.MemoryTier
 import com.opendroid.ai.core.memory.graph.PersonalGrowthEngine
 import com.opendroid.ai.data.db.dao.HabitDao
@@ -231,13 +230,14 @@ class HabitRoutineEngine @Inject constructor(
         for (routine in discoveredRoutines) {
             habitDao.insertRoutine(routine)
 
-            // Feed pattern into PKG
+            // Feed pattern into PKG. Detection rediscovers SUGGESTED routines on every run,
+            // so this updates the routine's one node rather than adding another.
             try {
-                personalGrowthEngine.get().recordExplicitMemory(
+                personalGrowthEngine.get().upsertRoutineNode(
+                    routineId = routine.id,
                     label = routine.name,
                     summary = "Detected routine: ${routine.name} (${routine.triggerLabel}) - ${routine.description}",
-                    category = KnowledgeCategory.TASK_ROUTINE,
-                    properties = mapOf("routineId" to routine.id, "confidence" to routine.confidence.toString())
+                    properties = mapOf("confidence" to routine.confidence.toString())
                 )
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to update PKG for routine ${routine.id}: ${e.message}")
@@ -428,10 +428,10 @@ class HabitRoutineEngine @Inject constructor(
 
         // Store explicit fact in Personal Knowledge Graph
         try {
-            personalGrowthEngine.get().recordExplicitMemory(
+            personalGrowthEngine.get().upsertRoutineNode(
+                routineId = routineId,
                 label = entity.name,
                 summary = "User approved automated routine '${entity.name}' scheduled for ${entity.triggerLabel}",
-                category = KnowledgeCategory.TASK_ROUTINE,
                 properties = mapOf("macroId" to macroId, "trigger" to entity.triggerLabel)
             )
         } catch (e: Exception) {

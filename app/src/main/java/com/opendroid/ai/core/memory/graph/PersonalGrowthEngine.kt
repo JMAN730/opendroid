@@ -33,6 +33,7 @@ class PersonalGrowthEngine @Inject constructor(
         private const val TAG = "PersonalGrowthEngine"
         private const val PKG_NODE_PREFIX = "pkg_node_"
         private const val PKG_RELATION_KEY = "pkg_relations_index"
+        private const val ROUTINE_ID_PROPERTY = "routineId"
         private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
     }
 
@@ -292,6 +293,69 @@ class PersonalGrowthEngine @Inject constructor(
     fun getSensitiveSecret(key: String): String? {
         return sensitiveMemoryStore.read(key)
     }
+
+    /**
+     * Saves the long-term memory for a detected or approved routine under a key derived from
+     * [routineId], so each routine has exactly one node however often detection runs.
+     * A save that would change nothing but the timestamp is skipped, so a routine that is
+     * rediscovered unchanged doesn't climb above the user's own memories.
+     */
+    suspend fun upsertRoutineNode(
+        routineId: String,
+        label: String,
+        summary: String,
+        properties: Map<String, String> = emptyMap()
+    ): KnowledgeNode {
+        val nodeId = routineNodeId(routineId)
+        val node = KnowledgeNode(
+            id = nodeId,
+            label = label,
+            category = KnowledgeCategory.TASK_ROUTINE,
+            tier = MemoryTier.LONG_TERM,
+            summary = summary,
+            properties = properties + (ROUTINE_ID_PROPERTY to routineId),
+            confidence = 1.0f,
+            accessCount = 1,
+            lastUpdated = System.currentTimeMillis()
+        )
+        val existing = getNodeFromDb(nodeId)
+        if (existing != null && existing.copy(lastUpdated = node.lastUpdated) == node) return existing
+        saveNodeToDb(node)
+        return node
+    }
+
+    /**
+     * Older versions wrote a new timestamped `explicit_*` node for every routine on every
+     * detection run. Collapses those to one node per routine, moved to the stable key
+     * [upsertRoutineNode] uses: the newest copy is kept unless a stable node already exists.
+     */
+    suspend fun pruneDuplicateRoutineMemories() {
+        val legacyByRoutine = mutableMapOf<String, MutableList<KnowledgeNode>>()
+        for (memory in memoryRepository.getMemoriesByKeyPrefix("${PKG_NODE_PREFIX}explicit_")) {
+            val node = try {
+                json.decodeFromString<KnowledgeNode>(memory.value)
+            } catch (e: Exception) {
+                continue
+            }
+            val routineId = node.properties[ROUTINE_ID_PROPERTY] ?: continue
+            legacyByRoutine.getOrPut(routineId) { mutableListOf() }.add(node)
+        }
+
+        for ((routineId, legacyNodes) in legacyByRoutine) {
+            val stableId = routineNodeId(routineId)
+            if (getNodeFromDb(stableId) == null) {
+                saveNodeToDb(legacyNodes.maxBy { it.lastUpdated }.copy(id = stableId))
+            }
+            for (node in legacyNodes) {
+                memoryRepository.deleteMemory("$PKG_NODE_PREFIX${node.id}")
+            }
+        }
+        if (legacyByRoutine.isNotEmpty()) {
+            Log.i(TAG, "Collapsed duplicate memories for ${legacyByRoutine.size} routine(s)")
+        }
+    }
+
+    private fun routineNodeId(routineId: String) = "routine_$routineId"
 
     // ── PROMOTION & MANAGEMENT ─────────────────────────────────────────
 
