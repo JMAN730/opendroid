@@ -92,31 +92,28 @@ class OpenDroidNotificationListener : NotificationListenerService() {
 
                     // Schedule auto-reply if it's a message, but NOT if it's
                     // our own reply echoing back as a notification (loop prevention)
-                    if (isMessageNotification(sbn)) {
-                        val contactName = entity.contactName ?: entity.title
+                    val contactName = entity.contactName ?: entity.title
 
-                        // WhatsApp shows your own sent messages as "You: <text>"
-                        // Check for self-authored/outgoing indicators BEFORE bounceback check
-                        val isSelfMessage = entity.text.startsWith("You: ") ||
-                            isOwnSenderLabel(entity.title)
-
-                        if (isSelfMessage) {
-                            // The user answered this conversation themselves, so the reply
-                            // still waiting for it must not go out as well (#83).
-                            autoReplyEngine.cancelPendingReply(
-                                OutgoingMessage(sbn, outgoingContactName(contactName, notification))
-                            )
-                            Log.d(TAG, "Skipping auto-reply: self-message/outgoing detected for $contactName")
+                    // The group filter below keeps a reply from reaching several people, which
+                    // says nothing about whether the user answered. A self-only titled
+                    // conversation fails it, so cancelling can't wait on it (#83).
+                    if (isOutgoingMessage(sbn, entity.title, entity.text)) {
+                        // The user answered this conversation themselves, so the reply
+                        // still waiting for it must not go out as well.
+                        autoReplyEngine.cancelPendingReply(
+                            OutgoingMessage(sbn, outgoingContactName(contactName, notification))
+                        )
+                        Log.d(TAG, "Skipping auto-reply: self-message/outgoing detected for $contactName")
+                    } else if (isMessageNotification(sbn)) {
+                        // Schedule auto-reply if it's a message, but NOT if it's
+                        // our own reply echoing back as a notification (loop prevention)
+                        val isBounceback = autoReplyEngine.isOwnReplyBounceback(
+                            sbn.packageName, contactName, entity.text
+                        )
+                        if (isBounceback) {
+                            Log.d(TAG, "Skipping auto-reply: bounceback from own reply to $contactName")
                         } else {
-                            // Only check bounceback for incoming messages
-                            val isBounceback = autoReplyEngine.isOwnReplyBounceback(
-                                sbn.packageName, contactName, entity.text
-                            )
-                            if (isBounceback) {
-                                Log.d(TAG, "Skipping auto-reply: bounceback from own reply to $contactName")
-                            } else {
-                                autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
-                            }
+                            autoReplyEngine.scheduleAutoReply(savedEntity, sbn, applicationContext)
                         }
                     }
                 }
@@ -236,12 +233,24 @@ class OpenDroidNotificationListener : NotificationListenerService() {
      */
     internal fun isMessageNotification(sbn: StatusBarNotification): Boolean {
         val notification = sbn.notification
-        if (notification != null) {
-            // A reply here would reach every member, written as if by the user
-            if (isGroupConversation(notification)) return false
-            // A summary stands for its child notifications, which get their own check
-            if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
-        }
+        // A reply here would reach every member, written as if by the user
+        if (notification != null && isGroupConversation(notification)) return false
+        return isMessageSource(sbn)
+    }
+
+    /**
+     * True if the user sent this message: WhatsApp shows your own sent messages as
+     * "You: <text>", and other apps title them "You". Group conversations count too,
+     * since cancelling needs no reply to be safe.
+     */
+    internal fun isOutgoingMessage(sbn: StatusBarNotification, title: String, text: String): Boolean =
+        isMessageSource(sbn) && (text.startsWith("You: ") || isOwnSenderLabel(title))
+
+    /** True if [sbn] comes from a messaging app and is not a summary of other notifications. */
+    private fun isMessageSource(sbn: StatusBarNotification): Boolean {
+        val notification = sbn.notification
+        // A summary stands for its child notifications, which get their own check
+        if (notification != null && notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
         val pkg = sbn.packageName
         if (WHATSAPP_PACKAGES.contains(pkg)) return true
         if (TELEGRAM_PACKAGES.contains(pkg)) return true
