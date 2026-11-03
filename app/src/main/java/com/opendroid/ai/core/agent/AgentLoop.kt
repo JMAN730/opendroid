@@ -1168,38 +1168,10 @@ class AgentLoop @Inject constructor(
                         return
                     }
                     "MODIFY" -> {
-                        if (replan.updatedPlan != null) {
-                            val mergedSteps = currentPlanState.steps.filter { it.status != StepStatus.PENDING } +
-                                    replan.updatedPlan.steps.filter { step ->
-                                        currentPlanState.steps.none { it.stepId == step.stepId }
-                                    }
-                            planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps), context)
-                            // Auto-approved plans: silently injected steps must not run
-                            // past the allowlist. Re-check the merged plan's pending
-                            // steps; if any is blocked, park the WHOLE remainder back
-                            // in the PlanProposed gate. YOLO auto-approves everything
-                            // by design, so this re-check only gates AUTO mode.
-                            if (autoApproved) {
-                                val liveConfig = settingsRepository.llmConfig.first()
-                                val approval = liveConfig.approvalSettings()
-                                val mergedPlan = planManager.currentPlan.value
-                                val pending = mergedPlan?.steps?.filter { it.status == StepStatus.PENDING }.orEmpty()
-                                if (mergedPlan != null && !AutoApprovalPolicy.shouldAutoApprove(
-                                        approval.mode,
-                                        approval.grantedActions,
-                                        mergedPlan.copy(steps = pending)
-                                    )) {
-                                    // startNewPlan persisted the merged plan as RUNNING;
-                                    // reflect the approval gate in the stored status too so
-                                    // the Plan tab and history match the PlanProposed state.
-                                    planManager.updatePlanStatus(PlanStatus.PROPOSED)
-                                    proposePlan(
-                                        planManager.currentPlan.value ?: mergedPlan.copy(status = PlanStatus.PROPOSED),
-                                        sessionId
-                                    )
-                                    return
-                                }
-                            }
+                        if (replan.updatedPlan != null &&
+                            parkedForApproval(currentPlanState, replan.updatedPlan, context, sessionId, autoApproved)
+                        ) {
+                            return
                         }
                     }
                     else -> {
@@ -1291,19 +1263,61 @@ class AgentLoop @Inject constructor(
                     return
                 }
                 "MODIFY" -> {
-                    if (reEval.updatedPlan != null) {
-                        val mergedSteps = currentPlanState.steps.filter { it.status != StepStatus.PENDING } +
-                                reEval.updatedPlan.steps.filter { step ->
-                                    currentPlanState.steps.none { it.stepId == step.stepId }
-                                }
-                        planManager.startNewPlan(currentPlanState.copy(steps = mergedSteps), context)
+                    if (reEval.updatedPlan != null &&
+                        parkedForApproval(currentPlanState, reEval.updatedPlan, context, sessionId, autoApproved)
+                    ) {
+                        return
                     }
+                    currentPlanState = planManager.currentPlan.value ?: break
                 }
                 "CONTINUE" -> {
                     // Do nothing, continue to next step
                 }
             }
         }
+    }
+
+    /**
+     * Applies a re-evaluation MODIFY to the plan and returns true when the remainder
+     * went back to the PlanProposed gate, in which case the caller must stop executing.
+     *
+     * The merged plan is stored as PROPOSED, not RUNNING, so nothing it added is
+     * runnable until the gate has passed, and a process death in between leaves it
+     * waiting for approval. The gate reads the validated plan because that is what
+     * would execute: PlanValidator can rewrite params and insert steps of its own.
+     *
+     * [asked] is the snapshot the model answered about. The Plan tab can edit or delete
+     * pending steps during that LLM call, so the merge and the gate both start from the
+     * live plan, and a user's change is neither undone nor mistaken for the model's.
+     */
+    private suspend fun parkedForApproval(
+        asked: Plan,
+        updated: Plan,
+        context: Context,
+        sessionId: String,
+        autoApproved: Boolean
+    ): Boolean {
+        val rewrite = planManager.rewriteSteps(asked.planId, PlanStatus.PROPOSED, context) { live ->
+            val merge = PlanModification.merge(live, updated.steps, asked.steps)
+            if (merge.rejected.isNotEmpty()) {
+                android.util.Log.w("AgentLoop", "Re-evaluation named unknown actions: ${merge.rejected.map { it.action }}")
+            }
+            merge.steps
+        } ?: return true
+        // Re-read after LLM work: the user may have flipped mode or revoked grants.
+        val approval = settingsRepository.llmConfig.first().approvalSettings()
+        if (PlanModification.requiresApproval(
+                approval.mode,
+                approval.grantedActions,
+                rewrite.before.steps,
+                rewrite.after,
+                autoApproved
+            )) {
+            proposePlan(rewrite.after, sessionId)
+            return true
+        }
+        planManager.updatePlanStatus(PlanStatus.RUNNING)
+        return false
     }
 
     /**

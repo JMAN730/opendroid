@@ -15,6 +15,7 @@ import com.opendroid.ai.core.voice.TextToSpeechEngine
 import com.opendroid.ai.core.voice.VoiceApprovalIntent
 import com.opendroid.ai.core.voice.VoiceApprovalParser
 import com.opendroid.ai.core.voice.WakeWordDetector
+import com.opendroid.ai.data.models.Plan
 import com.opendroid.ai.data.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -105,13 +106,15 @@ class OpenDroidService : Service() {
         }
 
         // Hands-free plan approval (upstream issue 18 spec, voice section):
-        // speak the prompt once per proposed plan; auto-listen for the reply
-        // only in wake-word mode, where the user is known to be voice-driven.
+        // speak the prompt once per proposal; auto-listen for the reply only in
+        // wake-word mode, where the user is known to be voice-driven. Keyed on the
+        // whole plan: a re-evaluation can propose the same planId again mid-run,
+        // and that second proposal must not wait in silence.
         serviceScope.launch {
-            var promptedPlanId: String? = null
+            var promptedPlan: Plan? = null
             agentLoop.agentState.collectLatest { state ->
-                if (state is AgentState.PlanProposed && state.plan.planId != promptedPlanId) {
-                    promptedPlanId = state.plan.planId
+                if (state is AgentState.PlanProposed && state.plan != promptedPlan) {
+                    promptedPlan = state.plan
                     if (!showFloatingButton) {
                         pendingApprovalListen = true
                     }
