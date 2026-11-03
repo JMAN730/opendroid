@@ -286,7 +286,7 @@ class HabitRoutineEngine @Inject constructor(
 
         val routineId = "routine_${if (isWeekdayOnly) "weekday" else "daily"}_${bucketName.lowercase()}"
         val existing = existingRoutines[routineId]
-        if (existing != null && (existing.status == RoutineStatus.DISMISSED.name || existing.status == RoutineStatus.APPROVED.name || existing.status == RoutineStatus.ACTIVE.name)) {
+        if (existing != null && (existing.status == RoutineStatus.DISMISSED.name || existing.status == RoutineStatus.APPROVED.name || existing.status == RoutineStatus.ACTIVE.name || existing.status == RoutineStatus.PAUSED.name)) {
             return // Respect user's past decision
         }
 
