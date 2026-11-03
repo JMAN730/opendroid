@@ -13,6 +13,7 @@ import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.core.voice.TextToSpeechEngine
 import com.opendroid.ai.core.voice.VoiceApprovalIntent
+import com.opendroid.ai.core.voice.PendingApprovalListen
 import com.opendroid.ai.core.voice.VoiceApprovalParser
 import com.opendroid.ai.core.voice.WakeWordDetector
 import com.opendroid.ai.data.models.Plan
@@ -44,7 +45,7 @@ class OpenDroidService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var showFloatingButton = false
-    @Volatile private var pendingApprovalListen = false
+    private val pendingApprovalListen = PendingApprovalListen()
 
     companion object {
         const val ACTION_TRIGGER_RECORD = "com.opendroid.ai.action.TRIGGER_RECORD"
@@ -82,10 +83,7 @@ class OpenDroidService : Service() {
             if (agentLoop.agentState.value is AgentState.Speaking) {
                 agentLoop.setAgentState(AgentState.Idle)
             }
-            if (pendingApprovalListen) {
-                pendingApprovalListen = false
-                startListeningForApproval()
-            }
+            pendingApprovalListen.take()?.let { planId -> startListeningForApproval(planId) }
         }
 
         // Start Foreground Notification
@@ -113,10 +111,11 @@ class OpenDroidService : Service() {
         serviceScope.launch {
             var promptedPlan: Plan? = null
             agentLoop.agentState.collectLatest { state ->
+                pendingApprovalListen.onAgentState(state)
                 if (state is AgentState.PlanProposed && state.plan != promptedPlan) {
                     promptedPlan = state.plan
                     if (!showFloatingButton) {
-                        pendingApprovalListen = true
+                        pendingApprovalListen.arm(state.plan.planId)
                     }
                     textToSpeechEngine.speak(
                         "I've planned: ${state.plan.goal}, ${state.plan.estimatedSteps} steps. " +
@@ -210,12 +209,12 @@ class OpenDroidService : Service() {
      * PlanProposed with the visual modal still on screen. Never a grant path -
      * nothing spoken may widen the allowlist.
      */
-    private fun startListeningForApproval() {
+    private fun startListeningForApproval(planId: String) {
         wakeWordDetector.stopListening()
         speechRecognitionEngine.startListening(
             onResult = { utterance ->
                 when (VoiceApprovalParser.parse(utterance)) {
-                    VoiceApprovalIntent.APPROVE -> agentLoop.approveProposedPlan(this)
+                    VoiceApprovalIntent.APPROVE -> agentLoop.approveProposedPlan(this, planId)
                     VoiceApprovalIntent.REJECT -> agentLoop.rejectProposedPlan()
                     VoiceApprovalIntent.NONE -> Unit
                 }

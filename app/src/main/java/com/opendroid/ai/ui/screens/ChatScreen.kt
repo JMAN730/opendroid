@@ -435,7 +435,7 @@ fun ChatScreen(
                         stepsCount = proposedPlan.estimatedSteps,
                         blockedActions = blocked,
                         grantableActions = blocked.filter { AutoApprovalPolicy.isGrantable(it) }.toSet(),
-                        onApprove = { grants -> viewModel.approvePlan(context, grants) },
+                        onApprove = { grants -> viewModel.approvePlan(context, proposedPlan.planId, grants) },
                         onReject = { viewModel.rejectPlan() }
                     )
                 }
