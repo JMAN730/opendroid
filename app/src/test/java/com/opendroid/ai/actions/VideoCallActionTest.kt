@@ -73,7 +73,15 @@ class VideoCallActionTest {
         assertEquals(true, result.success)
         val started = shadowOf(application).nextStartedActivity
         assertEquals("com.whatsapp", started.`package`)
-        assertEquals("+15550101", started.data?.getQueryParameter("phone")?.replace(" ", "+"))
+        assertEquals("15550101", started.data?.getQueryParameter("phone"))
+    }
+
+    @Test
+    fun `a number with post-dial digits calls the primary number, not the digits run together`() {
+        val result = videoCall(mapOf("contact" to "John"), "John Smith" to "+15550100#1234")
+
+        assertEquals(true, result.success)
+        assertEquals("15550100", shadowOf(application).nextStartedActivity.data?.getQueryParameter("phone"))
     }
 
     @Test
@@ -81,6 +89,6 @@ class VideoCallActionTest {
         val result = videoCall(mapOf("contact" to "+15550102"), "John Smith" to "+15550101", "John Doe" to "+15550102")
 
         assertEquals(true, result.success)
-        assertEquals("+15550102", shadowOf(application).nextStartedActivity.data?.getQueryParameter("phone")?.replace(" ", "+"))
+        assertEquals("15550102", shadowOf(application).nextStartedActivity.data?.getQueryParameter("phone"))
     }
 }
