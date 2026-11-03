@@ -37,7 +37,13 @@ internal class LiteRTEngineHost(
 ) {
     private val mutex = Mutex()
     private var cachedEngine: LiteRTEngine? = null
-    private var cachedModelPath: String? = null
+    @Volatile private var cachedModelPath: String? = null
+
+    /**
+     * Whether the cached engine holds [modelPath]. Read without [mutex], so it is only a hint,
+     * good enough to skip a memory check for a model that is already resident.
+     */
+    fun holds(modelPath: String): Boolean = cachedModelPath == modelPath
 
     /** Decodes [prompt] and emits each text delta, up to the output cap. */
     fun stream(
