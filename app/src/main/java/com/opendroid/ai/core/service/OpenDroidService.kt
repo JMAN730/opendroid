@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.opendroid.ai.core.agent.AgentLoop
 import com.opendroid.ai.core.agent.AgentState
+import com.opendroid.ai.core.agent.PlanApprovalSummary
 import com.opendroid.ai.core.voice.SpeechRecognitionEngine
 import com.opendroid.ai.core.voice.TextToSpeechEngine
 import com.opendroid.ai.core.voice.VoiceApprovalIntent
@@ -117,10 +118,7 @@ class OpenDroidService : Service() {
                     if (!showFloatingButton) {
                         pendingApprovalListen.arm(state.plan.planId)
                     }
-                    textToSpeechEngine.speak(
-                        "I've planned: ${state.plan.goal}, ${state.plan.estimatedSteps} steps. " +
-                        "Say approve to run, or cancel."
-                    )
+                    textToSpeechEngine.speak(PlanApprovalSummary.spokenPrompt(state.plan))
                 }
             }
         }
