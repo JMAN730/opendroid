@@ -119,7 +119,7 @@ class AutoReplyEngineCancellationTest {
         withTimeout(WAIT_MS) { inFlight.firstJob.join() }
 
         assertSame(inFlight.newerJob, pendingReplies()[CONTACT_KEY])
-        engine.cancelPendingReply(MESSAGES_PACKAGE, PHONE)
+        engine.cancelPendingReply(OutgoingMessage(MESSAGES_PACKAGE, PHONE, null, null))
         assertTrue(inFlight.newerJob.isCancelled)
     }
 
