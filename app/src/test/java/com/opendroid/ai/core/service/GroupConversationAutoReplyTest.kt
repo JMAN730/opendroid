@@ -122,4 +122,31 @@ class GroupConversationAutoReplyTest {
 
         assertTrue(canAutoReply(notification))
     }
+
+    @Suppress("DEPRECATION")
+    private fun isOutgoing(notification: Notification, title: String, text: String) =
+        listener.isOutgoingMessage(
+            StatusBarNotification(
+                "com.whatsapp", "com.whatsapp", 1, null, 10_123, 0, 0,
+                notification, Process.myUserHandle(), 1_000L
+            ),
+            title,
+            text
+        )
+
+    @Test
+    fun `the user's own message in a self-only titled conversation still cancels a pending reply`() {
+        val style = NotificationCompat.MessagingStyle(me).setConversationTitle("Alice")
+        style.addMessage("on my way", 1_000L, me)
+        val notification = builder().setStyle(style).build()
+
+        assertFalse(canAutoReply(notification))
+        assertTrue(isOutgoing(notification, "You", "on my way"))
+        assertTrue(isOutgoing(notification, "Alice", "You: on my way"))
+    }
+
+    @Test
+    fun `an incoming message is not an outgoing one`() {
+        assertFalse(isOutgoing(messaging("Alice", senders = arrayOf(alice)), "Alice", "hello"))
+    }
 }

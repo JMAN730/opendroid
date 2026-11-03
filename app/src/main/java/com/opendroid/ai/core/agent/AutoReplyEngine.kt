@@ -49,7 +49,7 @@ class AutoReplyEngine @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // Track pending auto-replies so we can cancel them if user replies manually
-    private val pendingReplies = mutableMapOf<String, Job>()
+    private val pendingReplies = PendingReplies()
 
     // Track when we last sent an auto-reply per contact key to detect bouncebacks
     // Store both timestamp and the reply text to verify it's actually an echo
@@ -95,10 +95,9 @@ class AutoReplyEngine @Inject constructor(
     ) {
         val contactKey = "${notification.packageName}:${notification.contactName ?: notification.title}"
 
-        // Cancel any existing pending reply for this contact (they sent another message)
-        pendingReplies[contactKey]?.cancel()
-
-        val job = scope.launch {
+        // LAZY so the job is registered before it can run: with a zero delay it could
+        // otherwise finish before registration and leave a stale entry behind.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val config = settingsRepository.autoReplyConfig.first()
 
@@ -117,10 +116,11 @@ class AutoReplyEngine @Inject constructor(
                     Log.d(TAG, "Executing auto-reply immediately (0 sec delay) for ${notification.contactName}")
                 }
 
-                // Re-check config (user might have disabled it during the wait)
+                // Re-check the full policy: during the wait the user may have turned
+                // auto-reply off globally or for this app, or blocklisted the contact.
                 val freshConfig = settingsRepository.autoReplyConfig.first()
-                if (!freshConfig.globalEnabled) {
-                    Log.d(TAG, "Auto-reply disabled during wait period")
+                if (replyChannelFor(notification, freshConfig, Telephony.Sms.getDefaultSmsPackage(context)) == null) {
+                    Log.d(TAG, "Auto-reply no longer allowed after the wait period")
                     return@launch
                 }
 
@@ -139,6 +139,11 @@ class AutoReplyEngine @Inject constructor(
                 val replyText = generateReply(notification, freshConfig, channel)
                 if (replyText.isNullOrBlank()) {
                     Log.w(TAG, "LLM returned empty reply, skipping")
+                    return@launch
+                }
+
+                if (!pendingReplies.claimForSending(contactKey, coroutineContext.job)) {
+                    Log.d(TAG, "Auto-reply cancelled for ${notification.contactName} before sending")
                     return@launch
                 }
 
@@ -161,28 +166,31 @@ class AutoReplyEngine @Inject constructor(
                 Log.e(TAG, "Auto-reply failed: ${e.message}")
             } finally {
                 // A cancelled send can finish long after a newer reply took over this key
-                pendingReplies.remove(contactKey, coroutineContext.job)
+                pendingReplies.finished(contactKey, coroutineContext.job)
             }
         }
 
-        pendingReplies[contactKey] = job
+        // Replaces (and cancels) any reply already waiting for this contact: they sent another message.
+        pendingReplies.register(
+            contactKey,
+            job,
+            ReplyConversation(notification.packageName, notification.contactName ?: notification.title, sbn)
+        )
+        job.start()
     }
 
     /**
-     * Cancel a pending auto-reply (e.g., user opened the app and is replying manually).
+     * Cancel the pending auto-reply for the conversation the user just answered by hand.
      */
-    fun cancelPendingReply(packageName: String, contactName: String?) {
-        val contactKey = "$packageName:${contactName ?: ""}"
-        pendingReplies[contactKey]?.cancel()
-        pendingReplies.remove(contactKey)
+    internal fun cancelPendingReply(outgoing: OutgoingMessage) {
+        pendingReplies.cancelAnsweredBy(outgoing)
     }
 
     /**
      * Cancel all pending auto-replies.
      */
     fun cancelAll() {
-        pendingReplies.values.forEach { it.cancel() }
-        pendingReplies.clear()
+        pendingReplies.cancelAll()
     }
 
     private suspend fun generateReply(
