@@ -71,6 +71,16 @@ class MemoryRepository @Inject constructor(
         )
     }
 
+    suspend fun getMemory(key: String): Memory? {
+        val entity = memoryDao.getMemoryByKey(key) ?: return null
+        return Memory(
+            key = entity.key,
+            value = entity.value,
+            type = MemoryType.valueOf(entity.type),
+            timestamp = entity.timestamp
+        )
+    }
+
     suspend fun deleteMemory(key: String) {
         memoryDao.deleteMemory(key)
     }
