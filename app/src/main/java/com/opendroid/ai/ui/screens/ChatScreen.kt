@@ -49,6 +49,7 @@ import com.opendroid.ai.core.agent.AgentState
 import com.opendroid.ai.core.agent.AutoApprovalPolicy
 import com.opendroid.ai.core.agent.ChatErrorPrimaryAction
 import com.opendroid.ai.core.agent.ChatErrorUiState
+import com.opendroid.ai.core.agent.PlanApprovalSummary
 import com.opendroid.ai.core.agent.guidance
 import com.opendroid.ai.core.agent.primaryAction
 import com.opendroid.ai.core.agent.title
@@ -432,7 +433,8 @@ fun ChatScreen(
                     ProposedPlanPrompt(
                         planId = proposedPlan.planId,
                         goal = proposedPlan.goal,
-                        stepsCount = proposedPlan.estimatedSteps,
+                        stepCount = PlanApprovalSummary.stepCount(proposedPlan),
+                        stepLines = PlanApprovalSummary.stepLines(proposedPlan),
                         blockedActions = blocked,
                         grantableActions = blocked.filter { AutoApprovalPolicy.isGrantable(it) }.toSet(),
                         onApprove = { grants -> viewModel.approvePlan(context, proposedPlan.planId, grants) },
@@ -906,7 +908,8 @@ fun ThinkingBubble() {
 fun ProposedPlanPrompt(
     planId: String,
     goal: String,
-    stepsCount: Int,
+    stepCount: String,
+    stepLines: List<String>,
     blockedActions: List<String> = emptyList(),
     grantableActions: Set<String> = emptySet(),
     onApprove: (Set<String>) -> Unit,
@@ -950,8 +953,32 @@ fun ProposedPlanPrompt(
                 color = TextPrimary
             )
             Spacer(modifier = Modifier.height(6.dp))
+            // The goal above is the model's own words; this list is what will actually run.
             Text(
-                text = "OpenDroid has formulated a sequence of $stepsCount steps to complete this goal. Review the steps in the PLAN tab or approve below to execute.",
+                text = "Approving runs these $stepCount:",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            // Bounded and scrollable: the card sits outside the messages list, so an
+            // unbounded list of a long plan would push Reject/Approve off screen.
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 160.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                stepLines.forEachIndexed { i, line ->
+                    Text(
+                        text = "${i + 1}. $line",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = TextPrimary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Review the steps in the PLAN tab or approve below to execute.",
                 fontSize = 12.sp,
                 color = TextSecondary
             )
