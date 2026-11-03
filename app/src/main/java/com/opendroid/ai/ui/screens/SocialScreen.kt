@@ -247,6 +247,7 @@ fun SocialScreen(
                         onSchedulePost = { postId, time -> viewModel.schedulePost(postId, time) },
                         onCancelPost = { postId -> viewModel.cancelPost(postId) },
                         onDeletePost = { postId -> viewModel.deletePost(postId) },
+                        onResolveInterruptedPublish = { postId, wasPublished -> viewModel.resolveInterruptedPublish(postId, wasPublished) },
                         onShorten = { content, platform, cb -> viewModel.shortenContent(content, platform, cb) },
                         onExpand = { content, platform, cb -> viewModel.expandContent(content, platform, cb) },
                         onChangeTone = { content, tone, platform, cb -> viewModel.changeToneContent(content, tone, platform, cb) },
@@ -265,6 +266,7 @@ fun SocialScreen(
                         unansweredComments = unansweredComments,
                         onReplyToComment = { id, text -> viewModel.replyToComment(id, text) },
                         onIgnoreComment = { id -> viewModel.ignoreComment(id) },
+                        onResolveInterruptedReply = { id, wasSent -> viewModel.resolveInterruptedReply(id, wasSent) },
                         onGenerateSuggestedReply = { comment, cb -> viewModel.generateReplyForComment(comment, cb) }
                     )
                     6 -> SocialCampaignsTab(

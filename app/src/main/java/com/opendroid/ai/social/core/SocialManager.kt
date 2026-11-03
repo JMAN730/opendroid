@@ -11,11 +11,14 @@ import com.opendroid.ai.social.core.audit.SocialAuditLogger
 import com.opendroid.ai.social.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,6 +52,11 @@ class SocialManager @Inject constructor(
         SocialPlatform.INSTAGRAM to instagramAdapter,
         SocialPlatform.FACEBOOK to facebookAdapter
     )
+
+    // Sends running in this process. A PUBLISHING post or SENDING comment that isn't listed here
+    // was left behind by process death, and only then can the user settle it.
+    private val postsInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val repliesInFlight = ConcurrentHashMap.newKeySet<String>()
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -211,8 +219,12 @@ class SocialManager @Inject constructor(
         val post = socialRepository.getPostById(postId)
             ?: return@withContext Result.failure(IllegalArgumentException("Post $postId not found"))
 
+        if (post.status.isSentOrSending()) {
+            return@withContext Result.failure(IllegalStateException("Post $postId is ${post.status} and can't be approved"))
+        }
+
         val approvedPost = post.copy(
-            status = if (publishImmediately) PostStatus.PUBLISHED else (if (post.scheduledPublishTime != null) PostStatus.SCHEDULED else PostStatus.DRAFT),
+            status = if (post.scheduledPublishTime != null) PostStatus.SCHEDULED else PostStatus.DRAFT,
             requiresApproval = false,
             approvedBy = "USER",
             approvedAt = System.currentTimeMillis(),
@@ -234,6 +246,7 @@ class SocialManager @Inject constructor(
             if (pubResult.isFailure) {
                 return@withContext Result.failure(pubResult.exceptionOrNull() ?: Exception("Publication failed"))
             }
+            return@withContext Result.success(socialRepository.getPostById(postId) ?: approvedPost)
         }
 
         Result.success(approvedPost)
@@ -242,6 +255,10 @@ class SocialManager @Inject constructor(
     suspend fun schedulePost(postId: String, scheduledTime: Long): Result<SocialPost> = withContext(Dispatchers.IO) {
         val post = socialRepository.getPostById(postId)
             ?: return@withContext Result.failure(IllegalArgumentException("Post $postId not found"))
+
+        if (post.status.isSentOrSending()) {
+            return@withContext Result.failure(IllegalStateException("Post $postId is ${post.status} and can't be scheduled"))
+        }
 
         val nextStatus = if (post.requiresApproval) PostStatus.DRAFT else PostStatus.SCHEDULED
         val updated = post.copy(
@@ -279,27 +296,55 @@ class SocialManager @Inject constructor(
             ?: return@withContext Result.failure(IllegalStateException("No stored credentials found for ${post.platform.displayName}"))
 
         val adapter = getAdapter(post.platform)
-        val result = adapter.publishPost(credentials, post)
+        ensureActive()
 
-        if (result.isSuccess) {
-            val publishResult = result.getOrThrow()
-            socialRepository.updatePublishResult(
-                id = postId,
-                status = PostStatus.PUBLISHED,
-                publishedTime = System.currentTimeMillis(),
-                platformPostId = publishResult.platformPostId,
-                errorMessage = null
-            )
-            auditLogger.log(
-                actor = post.approvedBy ?: "OPENDROID_AI",
-                action = "PUBLISHED_POST",
-                platform = post.platform,
-                targetId = postId,
-                details = "Published post: ${publishResult.platformPostId ?: "OK"}",
-                status = "SUCCESS"
-            )
-            Result.success(publishResult)
-        } else {
+        // The HTTP call can't be recalled once it starts, so from the claim onwards the caller
+        // leaving must not stop the outcome being saved.
+        withContext(NonCancellable) {
+            sendPost(post, credentials, adapter)
+        }
+    }
+
+    private suspend fun sendPost(
+        post: SocialPost,
+        credentials: SocialCredentials,
+        adapter: SocialPlatformAdapter
+    ): Result<PublishPostResult> {
+        val postId = post.id
+        if (!postsInFlight.add(postId)) {
+            return Result.failure(IllegalStateException("Post $postId is already being published"))
+        }
+        try {
+            if (!socialRepository.claimPostForPublishing(postId)) {
+                return Result.failure(IllegalStateException("Post $postId can't be published from its current status"))
+            }
+
+            val result = try {
+                adapter.publishPost(credentials, post)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            if (result.isSuccess) {
+                val publishResult = result.getOrThrow()
+                socialRepository.updatePublishResult(
+                    id = postId,
+                    status = PostStatus.PUBLISHED,
+                    publishedTime = System.currentTimeMillis(),
+                    platformPostId = publishResult.platformPostId,
+                    errorMessage = null
+                )
+                auditLogger.log(
+                    actor = post.approvedBy ?: "OPENDROID_AI",
+                    action = "PUBLISHED_POST",
+                    platform = post.platform,
+                    targetId = postId,
+                    details = "Published post: ${publishResult.platformPostId ?: "OK"}",
+                    status = "SUCCESS"
+                )
+                return Result.success(publishResult)
+            }
+
             val error = result.exceptionOrNull()?.message ?: "Publication failed"
             socialRepository.updatePublishResult(
                 id = postId,
@@ -316,9 +361,45 @@ class SocialManager @Inject constructor(
                 details = "Publication failed: $error",
                 status = "FAILED"
             )
-            Result.failure(Exception(error))
+            return Result.failure(Exception(error))
+        } finally {
+            postsInFlight.remove(postId)
         }
     }
+
+    /**
+     * Settles a post left in PUBLISHING by process death, after the user has checked the platform.
+     * Saying it isn't live moves it to FAILED, where Retry is the user's own decision.
+     */
+    suspend fun resolveInterruptedPublish(postId: String, wasPublished: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        if (postId in postsInFlight) {
+            return@withContext Result.failure(IllegalStateException("This post is still being sent"))
+        }
+        val post = socialRepository.getPostById(postId)
+            ?: return@withContext Result.failure(IllegalArgumentException("Post $postId not found"))
+
+        val resolved = if (wasPublished) {
+            socialRepository.resolveInterruptedPublish(postId, PostStatus.PUBLISHED, System.currentTimeMillis(), null)
+        } else {
+            socialRepository.resolveInterruptedPublish(postId, PostStatus.FAILED, null, "Publishing was interrupted and the post isn't live")
+        }
+        if (!resolved) {
+            return@withContext Result.failure(IllegalStateException("Post $postId is not waiting to be checked"))
+        }
+
+        auditLogger.log(
+            actor = "USER",
+            action = "RESOLVED_INTERRUPTED_PUBLISH",
+            platform = post.platform,
+            targetId = postId,
+            details = "User checked an interrupted publish (live: $wasPublished)",
+            status = "SUCCESS"
+        )
+        Result.success(Unit)
+    }
+
+    private fun PostStatus.isSentOrSending(): Boolean =
+        this == PostStatus.PUBLISHING || this == PostStatus.PUBLISHED
 
     // ── SYNCING & COMMENTS ───────────────────────────────────────────────────
 
@@ -391,21 +472,50 @@ class SocialManager @Inject constructor(
             ?: return@withContext Result.failure(IllegalStateException("No credentials for ${target.platform}"))
 
         val adapter = getAdapter(target.platform)
-        val result = adapter.replyToComment(credentials, target.platformCommentId, replyText)
+        ensureActive()
 
-        if (result.isSuccess) {
-            socialRepository.markCommentReplied(target.id, replyText)
-            auditLogger.log(
-                actor = actor,
-                action = "SENT_REPLY",
-                platform = target.platform,
-                targetId = target.id,
-                details = "Replied: \"${replyText.take(50)}...\"",
-                status = "SUCCESS"
-            )
-            result
-        } else {
+        // Same as publishing: once the send starts, its outcome must be saved.
+        withContext(NonCancellable) {
+            sendReply(target, credentials, adapter, replyText, actor)
+        }
+    }
+
+    private suspend fun sendReply(
+        target: SocialComment,
+        credentials: SocialCredentials,
+        adapter: SocialPlatformAdapter,
+        replyText: String,
+        actor: String
+    ): Result<ReplyCommentResult> {
+        if (!repliesInFlight.add(target.id)) {
+            return Result.failure(IllegalStateException("A reply to this comment is already being sent"))
+        }
+        try {
+            if (!socialRepository.claimCommentForReplying(target.id, replyText)) {
+                return Result.failure(IllegalStateException("This comment can't be replied to from its current status"))
+            }
+
+            val result = try {
+                adapter.replyToComment(credentials, target.platformCommentId, replyText)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            if (result.isSuccess) {
+                socialRepository.markCommentReplied(target.id, replyText)
+                auditLogger.log(
+                    actor = actor,
+                    action = "SENT_REPLY",
+                    platform = target.platform,
+                    targetId = target.id,
+                    details = "Replied: \"${replyText.take(50)}...\"",
+                    status = "SUCCESS"
+                )
+                return result
+            }
+
             val error = result.exceptionOrNull()?.message ?: "Failed to send reply"
+            socialRepository.releaseReplyClaim(target.id)
             auditLogger.log(
                 actor = actor,
                 action = "REPLY_FAILED",
@@ -414,7 +524,40 @@ class SocialManager @Inject constructor(
                 details = "Reply failed: $error",
                 status = "FAILED"
             )
-            Result.failure(Exception(error))
+            return Result.failure(Exception(error))
+        } finally {
+            repliesInFlight.remove(target.id)
         }
+    }
+
+    /**
+     * Settles a comment left in SENDING by process death, after the user has checked the platform.
+     * Saying the reply didn't go out makes the comment answerable again.
+     */
+    suspend fun resolveInterruptedReply(commentId: String, wasSent: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        if (commentId in repliesInFlight) {
+            return@withContext Result.failure(IllegalStateException("This reply is still being sent"))
+        }
+        val comment = socialRepository.getCommentById(commentId)
+            ?: return@withContext Result.failure(IllegalArgumentException("Comment not found"))
+
+        val resolved = if (wasSent) {
+            socialRepository.confirmInterruptedReply(commentId)
+        } else {
+            socialRepository.releaseReplyClaim(commentId)
+        }
+        if (!resolved) {
+            return@withContext Result.failure(IllegalStateException("This comment is not waiting to be checked"))
+        }
+
+        auditLogger.log(
+            actor = "USER",
+            action = "RESOLVED_INTERRUPTED_REPLY",
+            platform = comment.platform,
+            targetId = commentId,
+            details = "User checked an interrupted reply (sent: $wasSent)",
+            status = "SUCCESS"
+        )
+        Result.success(Unit)
     }
 }
