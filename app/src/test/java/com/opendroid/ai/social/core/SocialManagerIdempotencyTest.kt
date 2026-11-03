@@ -474,8 +474,72 @@ class SocialManagerIdempotencyTest {
         assertEquals(CommentReplyStatus.REPLIED.name, comment(id).replyStatus)
     }
 
+    // ── SENDS THE ADAPTER DOESN'T IMPLEMENT ──────────────────────────────────
+
+    @Test
+    fun `a YouTube publish with a real token ends FAILED with no fake post id`() = runBlocking {
+        repository.saveAccount(
+            SocialAccount(YOUTUBE_ACCOUNT_ID, SocialPlatform.YOUTUBE, "channel", "Channel", status = AccountStatus.CONNECTED)
+        )
+        repository.savePost(
+            SocialPost(
+                id = POST_ID,
+                accountId = YOUTUBE_ACCOUNT_ID,
+                platform = SocialPlatform.YOUTUBE,
+                content = "hello",
+                requiresApproval = false
+            )
+        )
+
+        val result = manager.publishPost(POST_ID)
+
+        assertEquals("Publishing to YouTube isn't supported yet", result.exceptionOrNull()?.message)
+        assertEquals(0, sends.get())
+        val saved = repository.getPostById(POST_ID)!!
+        assertEquals(PostStatus.FAILED, saved.status)
+        assertNull(saved.platformPostId)
+        assertEquals("Publishing to YouTube isn't supported yet", saved.errorMessage)
+        assertTrue(audit("PUBLISHED_POST").isEmpty())
+        assertEquals(1, audit("PUBLISH_FAILED").size)
+    }
+
+    @Test
+    fun `a LinkedIn reply with a real token isn't marked replied`() = runBlocking {
+        assertUnsentReply(SocialPlatform.LINKEDIN, "Replying to LinkedIn comments isn't supported yet")
+    }
+
+    @Test
+    fun `a YouTube reply with a real token isn't marked replied`() = runBlocking {
+        assertUnsentReply(SocialPlatform.YOUTUBE, "Replying to YouTube comments isn't supported yet")
+    }
+
+    private suspend fun assertUnsentReply(platform: SocialPlatform, expectedMessage: String) {
+        repository.saveAccount(
+            SocialAccount("${platform.name}_acct", platform, "account", "Account", status = AccountStatus.CONNECTED)
+        )
+        repository.saveComment(
+            SocialComment(
+                id = COMMENT_ID,
+                platformCommentId = "42",
+                postId = null,
+                platform = platform,
+                authorName = "someone",
+                content = "a question"
+            )
+        )
+
+        val result = manager.replyToComment(COMMENT_ID, "thanks")
+
+        assertEquals(expectedMessage, result.exceptionOrNull()?.message)
+        assertEquals(0, sends.get())
+        assertEquals(CommentReplyStatus.NONE.name, comment(COMMENT_ID).replyStatus)
+        assertTrue(audit("SENT_REPLY").isEmpty())
+        assertEquals(1, audit("REPLY_FAILED").size)
+    }
+
     private companion object {
         const val ACCOUNT_ID = "acct"
+        const val YOUTUBE_ACCOUNT_ID = "yt_acct"
         const val POST_ID = "post"
         const val COMMENT_ID = "comment"
         const val TELEGRAM_OK = """{"ok":true,"result":{"message_id":7}}"""
