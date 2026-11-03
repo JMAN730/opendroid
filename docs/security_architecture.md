@@ -152,9 +152,15 @@ Configured in [`backup_rules.xml`](file:///workspaces/opendroid/app/src/main/res
         <exclude domain="sharedpref" path="."/>
         <exclude domain="database" path="."/>
         <exclude domain="file" path="datastore/"/>
+        <exclude domain="file" path="."/>
+        <exclude domain="external" path="."/>
     </device-transfer>
 </data-extraction-rules>
 ```
+
+`android:allowBackup="false"` disables cloud backup outright, so workspace documents, background
+photos and model files never reach it. Device transfer has the extra `file` and `external` excludes
+because some manufacturers keep it running despite that flag.
 
 ---
 
