@@ -63,6 +63,39 @@ class ActionSequenceExecutorTest {
     }
 
     @Test
+    fun `a reference to a step's result field resolves to the result, not the result plus the suffix`() {
+        val executor = executor { _, _, _ -> error("must not dispatch") }
+
+        val resolved = executor.resolveParameters(
+            mapOf("single" to "Weather: \$s1.result", "double" to "Weather: \$\$s1.result"),
+            completedResults = mapOf("s1" to "Sunny")
+        )
+
+        assertEquals(mapOf("single" to "Weather: Sunny", "double" to "Weather: Sunny"), resolved)
+    }
+
+    @Test
+    fun `an unresolved template reference is not sent, while a resolved one is`() {
+        val executor = executor { _, _, _ -> error("must not dispatch") }
+        val completed = mapOf("s1" to "Sunny")
+
+        val templated = executor.resolveParameters(
+            mapOf("contact" to "+15551234567", "message" to "Weather: {{s1.result}}"), completed
+        )
+        assertEquals(
+            ActionSchema.ValidationResult.MissingParams(listOf("message")),
+            ActionSchema.validateParams("SEND_SMS", templated).first
+        )
+
+        val referenced = executor.resolveParameters(
+            mapOf("contact" to "+15551234567", "message" to "Weather: \$\$s1"), completed
+        )
+        val (validation, params) = ActionSchema.validateParams("SEND_SMS", referenced)
+        assertEquals(ActionSchema.ValidationResult.Valid, validation)
+        assertEquals("Weather: Sunny", params["message"])
+    }
+
+    @Test
     fun `failed primary action uses one fallback and continues only after fallback succeeds`() = runBlocking {
         val calls = mutableListOf<String>()
         val executor = ActionSequenceExecutor(

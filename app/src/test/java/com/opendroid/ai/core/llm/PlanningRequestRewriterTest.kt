@@ -77,6 +77,13 @@ class PlanningRequestRewriterTest {
     }
 
     @Test
+    fun `the rewritten prompt teaches the step reference syntax and no placeholder message`() {
+        val prompt = plannedSystemPrompt("message mom on whatsapp")
+        assertTrue(prompt.contains("\$\$s1"))
+        assertFalse(prompt.contains("message: \"...\""))
+    }
+
+    @Test
     fun `a non-planning request passes through unchanged`() {
         val request = LLMRequest(
             systemPrompt = "You are a helpful assistant.",

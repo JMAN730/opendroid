@@ -1,5 +1,9 @@
 package com.opendroid.ai.core.agent
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+
 data class ActionDefinition(
     val name: String,
     val description: String,
@@ -1495,7 +1499,16 @@ object ActionSchema {
         val invalid = mutableListOf<ValidationResult.InvalidParam>()
 
         definition.params.forEach { paramDef ->
-            val value = enrichedParams[paramDef.name]
+            val given = enrichedParams[paramDef.name]
+            // A placeholder the model left in, such as "..." or an unresolved "{{s1}}", is
+            // not a value: sent as a message it would go out as that literal text.
+            val value = if (paramDef.required && paramDef.type == ParamType.STRING &&
+                given is String && isPlaceholderValue(given)) {
+                enrichedParams.remove(paramDef.name)
+                null
+            } else {
+                given
+            }
 
             when {
                 // Param provided — validate enum if needed
@@ -1536,6 +1549,37 @@ object ActionSchema {
             invalid.isNotEmpty() -> Pair(invalid.first(), enrichedParams)
             missingRequired.isEmpty() -> Pair(ValidationResult.Valid, enrichedParams)
             else -> Pair(ValidationResult.MissingParams(missingRequired), enrichedParams)
+        }
+    }
+
+    private val PLACEHOLDER_LITERALS = setOf("null", "...", "…")
+    private val BARE_PLACEHOLDER = Regex("""^(<[^<>]*>|\[[^\[\]]*])$""")
+    // {{s1}}, ${s1}, $$anyId, or $sN: the forms models write for another step's output.
+    private val UNRESOLVED_REFERENCE = Regex("\\{\\{.*?\\}\\}|\\\$\\{[^}]*\\}|\\\$\\\$\\w+|\\\$s\\d+\\b")
+
+    /**
+     * Whether [value] is filler rather than a real value: blank, "null", "...", a bare
+     * "<message>" or "[s1.result]", or a step reference that resolution left in place.
+     * A JSON array or object, such as CREATE_MACRO's steps, is structured data and never
+     * a placeholder, even when it contains step references meant for a later run.
+     */
+    internal fun isPlaceholderValue(value: String): Boolean {
+        val trimmed = value.trim()
+        if (isJsonStructure(trimmed)) return false
+        return trimmed.isEmpty() ||
+            trimmed.lowercase() in PLACEHOLDER_LITERALS ||
+            BARE_PLACEHOLDER.matches(trimmed) ||
+            UNRESOLVED_REFERENCE.containsMatchIn(trimmed)
+    }
+
+    // An object, or a non-empty array of objects. The parser reads an unquoted "[s1.result]"
+    // as an array of one literal, so a bare array of primitives stays a placeholder.
+    private fun isJsonStructure(value: String): Boolean {
+        if (!(value.startsWith("[") || value.startsWith("{"))) return false
+        return when (val element = runCatching { Json.parseToJsonElement(value) }.getOrNull()) {
+            is JsonObject -> true
+            is JsonArray -> element.isNotEmpty() && element.all { it is JsonObject }
+            else -> false
         }
     }
 
