@@ -1240,7 +1240,14 @@ class AgentLoop @Inject constructor(
                     }
                     "MODIFY" -> {
                         if (replan.updatedPlan != null &&
-                            parkedForApproval(currentPlanState, replan.updatedPlan, context, sessionId, autoApproved)
+                            parkedForApproval(
+                                currentPlanState,
+                                replan.updatedPlan,
+                                context,
+                                sessionId,
+                                autoApproved,
+                                repairing = stepToExecute.stepId
+                            )
                         ) {
                             return
                         }
@@ -1375,21 +1382,32 @@ class AgentLoop @Inject constructor(
      * [asked] is the snapshot the model answered about. The Plan tab can edit or delete
      * pending steps during that LLM call, so the merge and the gate both start from the
      * live plan, and a user's change is neither undone nor mistaken for the model's.
+     *
+     * A revision whose steps were all rejected fails the plan and also returns true:
+     * carrying on would report success for a plan the model had just said must change.
      */
     private suspend fun parkedForApproval(
         asked: Plan,
         updated: Plan,
         context: Context,
         sessionId: String,
-        autoApproved: Boolean
+        autoApproved: Boolean,
+        repairing: String? = null
     ): Boolean {
+        var revisionLost = false
         val rewrite = planManager.rewriteSteps(asked.planId, PlanStatus.PROPOSED, context) { live ->
-            val merge = PlanModification.merge(live, updated.steps, asked.steps)
+            val merge = PlanModification.merge(live, updated.steps, asked.steps, repairing)
             if (merge.rejected.isNotEmpty()) {
                 android.util.Log.w("AgentLoop", "Re-evaluation named unknown actions: ${merge.rejected.map { it.action }}")
             }
+            revisionLost = merge.revisionLost
             merge.steps
         } ?: return true
+        if (revisionLost) {
+            planManager.updatePlanStatus(PlanStatus.FAILED)
+            speakAndSaveSummary(rewrite.after, false, sessionId)
+            return true
+        }
         // Re-read after LLM work: the user may have flipped mode or revoked grants.
         val approval = settingsRepository.llmConfig.first().approvalSettings()
         if (PlanModification.requiresApproval(
