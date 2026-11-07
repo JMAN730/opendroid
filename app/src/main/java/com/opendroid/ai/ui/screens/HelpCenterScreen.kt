@@ -132,6 +132,7 @@ fun HelpCenterScreen(
                             "Supported providers:\n" +
                             "• Google Gemini (recommended for beginners)\n" +
                             "• OpenAI (GPT-4, GPT-3.5)\n" +
+                            "• ChatGPT (sign in with your ChatGPT account, no API key: select ChatGPT, then Connect with device code)\n" +
                             "• Anthropic Claude\n" +
                             "• Groq (fast inference)\n" +
                             "• Mistral AI, OpenRouter, Together AI, Cohere, DeepSeek, Opencode-Go\n" +

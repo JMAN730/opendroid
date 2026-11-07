@@ -135,6 +135,7 @@ class LLMProviderFactoryUnknownProviderTest {
         return LLMProviderFactory(
             claudeProvider = unused("Claude"),
             openAIProvider = unused("OpenAI"),
+            chatGptProvider = unused("ChatGPT"),
             geminiProvider = Provider {
                 geminiRequests++
                 throw AssertionError("Gemini must not be used for an unknown provider")

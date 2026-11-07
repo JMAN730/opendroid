@@ -10,6 +10,9 @@ import androidx.work.WorkManager
 import com.opendroid.ai.core.llm.ModelDownloadTestApplication
 import com.opendroid.ai.core.llm.ModelFetcher
 import com.opendroid.ai.core.llm.OnDeviceEngineReleaser
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAuthRepository
+import com.opendroid.ai.core.llm.chatgpt.ChatGptBackend
+import com.opendroid.ai.core.llm.chatgpt.ChatGptOAuthClient
 import com.opendroid.ai.core.security.CredentialStoreResult
 import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
@@ -156,13 +159,18 @@ class SettingsViewModelModelSelectionTest {
         settingsRepository = settings,
         notificationDao = database.notificationDao(),
         llmProviderFactory = { error("no provider calls in this test") },
-        modelFetcher = { ModelFetcher(OkHttpClient(), settings) },
+        modelFetcher = { ModelFetcher(OkHttpClient(), settings, ChatGptBackend(OkHttpClient(), chatGptAuth)) },
         modelRepository = ModelRepository(context, database.modelDao(), settings, OnDeviceEngineReleaser { }),
         okHttpClient = OkHttpClient(),
         providerCredentialStore = EmptyProviderCredentialStore(),
         appSettingsStore = NoOpAppSettingsStore(),
-        mcpConfigStore = McpConfigStore(context)
+        mcpConfigStore = McpConfigStore(context),
+        chatGptAuth = chatGptAuth
     )
+
+    private val chatGptAuth by lazy {
+        ChatGptAuthRepository(EmptyProviderCredentialStore(), ChatGptOAuthClient(OkHttpClient()))
+    }
 
     private fun stored(): LLMConfig = runBlocking { settings.llmConfig.first() }
 

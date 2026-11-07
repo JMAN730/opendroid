@@ -33,6 +33,33 @@ class ProviderCredentialStoreTest {
     }
 
     @Test
+    fun `a stored ChatGPT session is not an API key and does not force credential reentry`() {
+        val records = InMemoryCredentialRecords()
+        val store = newStore(records = records)
+        store.write(ProviderCredentialId.ApiKey("OpenAI"), "openai-secret")
+        store.write(ProviderCredentialId.ChatGptSession, """{"access":"a","refresh":"r","expiresAt":1}""")
+
+        val keys = store.readProviderApiKeys()
+
+        assertEquals(CredentialStoreResult.Success(mapOf("OpenAI" to "openai-secret")), keys)
+        assertEquals(ProviderCredentialRecoveryState.Ready, store.recoveryState.value)
+        assertEquals(
+            """{"access":"a","refresh":"r","expiresAt":1}""",
+            (store.read(ProviderCredentialId.ChatGptSession) as CredentialStoreResult.Success).value
+        )
+    }
+
+    @Test
+    fun `reset for reentry also discards the ChatGPT session`() {
+        val store = newStore(records = InMemoryCredentialRecords())
+        store.write(ProviderCredentialId.ChatGptSession, "session-json")
+
+        assertTrue(store.resetForReentry() is CredentialStoreResult.Success)
+
+        assertNull((store.read(ProviderCredentialId.ChatGptSession) as CredentialStoreResult.Success).value)
+    }
+
+    @Test
     fun `tampered AES GCM ciphertext is rejected rather than returned`() {
         val records = InMemoryCredentialRecords()
         val store = newStore(records = records)

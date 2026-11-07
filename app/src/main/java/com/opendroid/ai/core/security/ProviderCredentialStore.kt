@@ -53,6 +53,17 @@ sealed class ProviderCredentialId protected constructor(
         legacyPreferenceKey = "huggingface_token"
     )
 
+    /**
+     * The ChatGPT sign-in session (OAuth access and refresh tokens) from the device-code login.
+     * It is never an API key, so it stays out of [ProviderCredentialStore.readProviderApiKeys]
+     * and out of the per-provider key fields. No build ever wrote it to the legacy file, so its
+     * legacy key is never read or imported.
+     */
+    data object ChatGptSession : ProviderCredentialId(
+        logicalId = "chatgpt-oauth-session",
+        legacyPreferenceKey = "chatgpt_oauth_session"
+    )
+
     internal companion object {
         private const val STORAGE_KEY_PREFIX = "credential."
         private const val API_KEY_LOGICAL_PREFIX = "provider-api-key:"
@@ -82,6 +93,8 @@ sealed class ProviderCredentialId protected constructor(
         private fun fromLogicalId(logicalId: String): ProviderCredentialId? = when {
             logicalId == ElevenLabsApiKey.logicalId -> ElevenLabsApiKey
             logicalId == HuggingFaceToken.logicalId -> HuggingFaceToken
+            // Must be recognized here: readProviderApiKeys treats an unknown record as corruption.
+            logicalId == ChatGptSession.logicalId -> ChatGptSession
             logicalId.startsWith(API_KEY_LOGICAL_PREFIX) -> runCatching {
                 ApiKey(logicalId.removePrefix(API_KEY_LOGICAL_PREFIX))
             }.getOrNull()
