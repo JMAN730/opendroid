@@ -29,6 +29,10 @@ import com.opendroid.ai.core.llm.ModelFetchOutcome
 import com.opendroid.ai.core.llm.ProviderCatalog
 import com.opendroid.ai.core.llm.ResponseFormat
 import com.opendroid.ai.core.llm.RetryPolicy
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAccountStatus
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAuthException
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAuthRepository
+import com.opendroid.ai.core.llm.chatgpt.DeviceLoginOutcome
 import com.opendroid.ai.core.llm.error.SecretRegistry
 import com.opendroid.ai.data.models.resolveClaudeModelOrNull
 import com.opendroid.ai.data.models.selectedModelFor
@@ -66,8 +70,17 @@ class SettingsViewModel @Inject constructor(
     // The verification timestamp says when a token was last checked, never what the token is,
     // so it lives with ordinary settings rather than in encrypted storage.
     private val appSettingsStore: AppSettingsStore,
-    private val mcpConfigStore: McpConfigStore
+    private val mcpConfigStore: McpConfigStore,
+    private val chatGptAuth: ChatGptAuthRepository
 ) : ViewModel() {
+
+    /** The ChatGPT sign-in as stored; never carries a token. */
+    val chatGptStatus: StateFlow<ChatGptAccountStatus> = chatGptAuth.status
+
+    private val _chatGptLogin = MutableStateFlow<ChatGptLoginState>(ChatGptLoginState.Idle)
+    /** Progress of a device-code login started from Settings. */
+    val chatGptLogin: StateFlow<ChatGptLoginState> = _chatGptLogin.asStateFlow()
+    private var chatGptLoginJob: Job? = null
 
     private val _huggingFaceToken = MutableStateFlow("")
     val huggingFaceToken: StateFlow<String> = _huggingFaceToken
@@ -132,6 +145,9 @@ class SettingsViewModel @Inject constructor(
     val mcpResetFailed: StateFlow<Boolean> = _mcpResetFailed
 
     init {
+        viewModelScope.launch {
+            reloadChatGptStatus()
+        }
         viewModelScope.launch(Dispatchers.IO) {
             // The MCP server only reads its secrets when a request arrives; check now so a lost
             // key is reported here even before anything connects.
@@ -184,6 +200,7 @@ class SettingsViewModel @Inject constructor(
                         apiKeys = emptyMap(),
                         elevenLabsApiKey = ""
                     )
+                    reloadChatGptStatus()
                 }
             }
         }
@@ -235,6 +252,66 @@ class SettingsViewModel @Inject constructor(
                         elevenLabsApiKey = ""
                     )
                 }
+                // The reset also discards the ChatGPT sign-in.
+                reloadChatGptStatus()
+            }
+        }
+    }
+
+    /**
+     * Starts a ChatGPT device-code login: shows a code for the user to enter on OpenAI's page,
+     * then polls until they approve it. Starting again abandons any login in progress.
+     */
+    fun connectChatGpt() {
+        chatGptLoginJob?.cancel()
+        _chatGptLogin.value = ChatGptLoginState.Starting
+        chatGptLoginJob = viewModelScope.launch {
+            try {
+                val start = chatGptAuth.startDeviceLogin()
+                _chatGptLogin.value = ChatGptLoginState.AwaitingApproval(
+                    userCode = start.userCode,
+                    verificationUrl = start.verificationUrl
+                )
+                when (val outcome = chatGptAuth.completeDeviceLogin(start)) {
+                    DeviceLoginOutcome.SignedIn -> {
+                        _chatGptLogin.value = ChatGptLoginState.Idle
+                        _connectionResults.value = _connectionResults.value - ProviderCatalog.CHATGPT
+                        if (_llmConfig.value.activeProvider == ProviderCatalog.CHATGPT) {
+                            refreshModels(force = true)
+                        }
+                    }
+                    is DeviceLoginOutcome.Failed ->
+                        _chatGptLogin.value = ChatGptLoginState.Failed(outcome.message)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: ChatGptAuthException) {
+                _chatGptLogin.value = ChatGptLoginState.Failed(
+                    e.message ?: "ChatGPT sign-in failed. Try again."
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "ChatGPT sign-in failed: ${e.javaClass.simpleName}")
+                _chatGptLogin.value = ChatGptLoginState.Failed("ChatGPT sign-in failed. Try again.")
+            }
+        }
+    }
+
+    /** Abandons a device login in progress. Nothing is saved. */
+    fun cancelChatGptLogin() {
+        chatGptLoginJob?.cancel()
+        chatGptLoginJob = null
+        _chatGptLogin.value = ChatGptLoginState.Idle
+    }
+
+    /** Forgets the ChatGPT sign-in on this device. */
+    fun disconnectChatGpt() {
+        cancelChatGptLogin()
+        _connectionResults.value = _connectionResults.value - ProviderCatalog.CHATGPT
+        viewModelScope.launch {
+            if (!chatGptAuth.signOut()) {
+                _chatGptLogin.value = ChatGptLoginState.Failed(
+                    "The ChatGPT sign-in could not be removed. Check device storage and try again."
+                )
             }
         }
     }
@@ -659,7 +736,7 @@ class SettingsViewModel @Inject constructor(
         clearInFlightConnectionState()
         connectionTestJob = viewModelScope.launch {
             val snapshot = _llmConfig.value
-            val providers = ConnectionTestPlanner.configuredProviders(snapshot)
+            val providers = ConnectionTestPlanner.configuredProviders(snapshot, isChatGptSignedIn())
             providers.forEachIndexed { index, providerName ->
                 if (!coroutineContext.isActive) return@launch
                 _connectionBatchProgress.value = ConnectionTestState.Testing(
@@ -698,7 +775,7 @@ class SettingsViewModel @Inject constructor(
         val snapshot = _llmConfig.value
         val model = snapshot.selectedModelFor(provider)
         val now = System.currentTimeMillis()
-        val gap = ConnectionTestPlanner.configurationGap(snapshot, provider)
+        val gap = ConnectionTestPlanner.configurationGap(snapshot, provider, isChatGptSignedIn())
         if (gap != null) {
             publishConnectionResult(ConnectionTestPlanner.stamp(gap, now))
             return
@@ -943,6 +1020,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    private suspend fun reloadChatGptStatus() {
+        try {
+            chatGptAuth.reloadStatus()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SettingsViewModel", "Could not read the ChatGPT sign-in: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private fun isChatGptSignedIn(): Boolean = chatGptStatus.value is ChatGptAccountStatus.SignedIn
+
     private fun clearHuggingFaceVerificationMetadata() {
         // Invoked only from the IO dispatcher because the commit is synchronous.
         if (!appSettingsStore.setHuggingFaceLastVerified(null)) {
@@ -954,4 +1043,12 @@ class SettingsViewModel @Inject constructor(
             )
         }
     }
+}
+
+/** A device-code login started from Settings. Messages are the app's own, never a response body. */
+sealed interface ChatGptLoginState {
+    data object Idle : ChatGptLoginState
+    data object Starting : ChatGptLoginState
+    data class AwaitingApproval(val userCode: String, val verificationUrl: String) : ChatGptLoginState
+    data class Failed(val message: String) : ChatGptLoginState
 }

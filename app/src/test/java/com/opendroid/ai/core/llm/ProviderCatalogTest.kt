@@ -13,10 +13,18 @@ class ProviderCatalogTest {
 
     @Test
     fun `catalog has one default for every stable provider`() {
-        assertEquals(16, ProviderCatalog.providers.size)
+        assertEquals(17, ProviderCatalog.providers.size)
         ProviderCatalog.providers.forEach { provider ->
             assertTrue(provider.displayName, ProviderCatalog.defaultModel(provider.displayName).isNotBlank())
         }
+    }
+
+    @Test
+    fun `chatgpt signs in instead of using an api key`() {
+        assertEquals("gpt-5.4", ProviderCatalog.defaultModel("ChatGPT"))
+        assertTrue(ProviderCatalog.isKnown("ChatGPT"))
+        assertTrue(!ProviderCatalog.requiresApiKey("ChatGPT"))
+        assertTrue(!ProviderCatalog.isOnDevice("ChatGPT"))
     }
 
     @Test

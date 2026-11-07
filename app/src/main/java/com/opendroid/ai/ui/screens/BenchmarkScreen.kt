@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.core.llm.ConnectionTestPlanner
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAccountStatus
 import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.ui.theme.*
@@ -34,6 +35,7 @@ fun BenchmarkScreen(
     val config by viewModel.llmConfig.collectAsState()
     val connectionResults by viewModel.connectionResults.collectAsState()
     val batchProgress by viewModel.connectionBatchProgress.collectAsState()
+    val chatGptStatus by viewModel.chatGptStatus.collectAsState()
     var showConfirm by remember { mutableStateOf(false) }
 
     val providers = ConnectionTestPlanner.cloudProviders()
@@ -89,7 +91,10 @@ fun BenchmarkScreen(
         modifier = modifier
     ) { padding ->
         if (showConfirm) {
-            val configuredCount = ConnectionTestPlanner.configuredProviders(config).size
+            val configuredCount = ConnectionTestPlanner.configuredProviders(
+                config,
+                chatGptSignedIn = chatGptStatus is ChatGptAccountStatus.SignedIn
+            ).size
             AlertDialog(
                 onDismissRequest = { showConfirm = false },
                 title = { Text("Test all configured?") },

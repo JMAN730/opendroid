@@ -6,6 +6,7 @@ import com.opendroid.ai.core.security.ProviderCredentialId
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.security.ProviderCredentialStore
 import com.opendroid.ai.data.repository.SettingsRepository
+import com.opendroid.ai.core.llm.chatgpt.signedOutChatGptBackend
 import com.opendroid.ai.di.AppModule
 import java.net.InetAddress
 import java.nio.file.Files
@@ -113,7 +114,11 @@ class ModelFetcherCustomEndpointTest {
             settingsRepository.updateConfig { config ->
                 config.copy(customEndpoints = config.customEndpoints + (provider to baseUrl))
             }
-            ModelFetcher(AppModule.provideOkHttpClient(), settingsRepository).fetchModels(provider)
+            ModelFetcher(
+                AppModule.provideOkHttpClient(),
+                settingsRepository,
+                signedOutChatGptBackend()
+            ).fetchModels(provider)
         }
     }
 

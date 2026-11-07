@@ -44,17 +44,26 @@ object ConnectionTestPlanner {
         .filter { spec -> spec.canonicalName !in onDeviceCanonicalNames }
         .map { spec -> spec.displayName }
 
-    fun configuredProviders(config: LLMConfig): List<String> =
-        cloudProviders().filter { provider -> configurationGap(config, provider) == null }
+    fun configuredProviders(config: LLMConfig, chatGptSignedIn: Boolean = false): List<String> =
+        cloudProviders().filter { provider -> configurationGap(config, provider, chatGptSignedIn) == null }
 
     /**
      * Returns a local configuration failure without contacting the network, or
      * null when the provider snapshot is complete enough to probe.
+     *
+     * [chatGptSignedIn] stands in for a key: the ChatGPT sign-in is not part of [LLMConfig].
      */
-    fun configurationGap(config: LLMConfig, providerName: String): ConnectionTestState.ConfigMissing? {
+    fun configurationGap(
+        config: LLMConfig,
+        providerName: String,
+        chatGptSignedIn: Boolean = false
+    ): ConnectionTestState.ConfigMissing? {
         val provider = ProviderCatalog.canonicalName(providerName)
         val model = config.selectedModelFor(provider)
         when (provider) {
+            ProviderCatalog.CHATGPT -> if (!chatGptSignedIn) {
+                return ConnectionTestState.ConfigMissing(provider, LLMError.AuthMissing, 0L)
+            }
             "Ollama" -> if (config.ollamaUrl.isBlank()) {
                 return ConnectionTestState.ConfigMissing(provider, LLMError.RequestInvalid, 0L)
             }

@@ -1,5 +1,7 @@
 package com.opendroid.ai.core.llm
 
+import com.opendroid.ai.core.llm.chatgpt.ChatGptProtocol
+
 /**
  * Stable provider identity and defaults used by Settings, request resolution,
  * connection tests, and providers. Provider display strings are persisted, so
@@ -13,6 +15,7 @@ object ProviderCatalog {
     )
 
     const val ON_DEVICE = "On-Device AI"
+    const val CHATGPT = "ChatGPT"
     const val LEGACY_ON_DEVICE = "Gemma 4 (On-device)"
 
     /**
@@ -25,6 +28,8 @@ object ProviderCatalog {
     val providers: List<ProviderSpec> = listOf(
         ProviderSpec("Google Gemini", "gemini-2.5-flash"),
         ProviderSpec("OpenAI", "gpt-4o"),
+        // Signs in with a ChatGPT account (device code) instead of an API key.
+        ProviderSpec(CHATGPT, ChatGptProtocol.DEFAULT_MODEL),
         ProviderSpec("Anthropic Claude", ClaudeModelCatalog.defaultModelId),
         ProviderSpec("Mistral AI", "mistral-large-latest"),
         ProviderSpec("Groq", "llama-3.3-70b-versatile"),

@@ -2,6 +2,9 @@ package com.opendroid.ai.core.llm
 
 import android.util.Log
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
+import com.opendroid.ai.core.llm.chatgpt.ChatGptBackend
+import com.opendroid.ai.core.llm.error.LLMError
+import com.opendroid.ai.core.llm.error.LLMException
 import com.opendroid.ai.core.llm.providers.OpencodeGoProtocol
 import com.opendroid.ai.core.util.UrlUtils
 import com.opendroid.ai.data.repository.SettingsRepository
@@ -52,7 +55,8 @@ sealed interface ModelFetchOutcome {
 @Singleton
 class ModelFetcher @Inject constructor(
     private val httpClient: OkHttpClient,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val chatGptBackend: ChatGptBackend
 ) {
 
     private val tag = "ModelFetcher"
@@ -85,6 +89,18 @@ class ModelFetcher @Inject constructor(
                     ModelFetchOutcome.Success(
                         openAiStyle("https://api.openai.com/v1/models", apiKey, provider)
                     )
+                }
+
+                ProviderCatalog.CHATGPT -> {
+                    // Listed with the account's sign-in, not an API key.
+                    try {
+                        ModelFetchOutcome.Success(chatGptBackend.listModels())
+                    } catch (e: LLMException) {
+                        if (e.error != LLMError.AuthMissing) throw e
+                        ModelFetchOutcome.NeedsCredentials(
+                            "Connect your ChatGPT account to load the models it can use."
+                        )
+                    }
                 }
 
                 "Groq" -> {
