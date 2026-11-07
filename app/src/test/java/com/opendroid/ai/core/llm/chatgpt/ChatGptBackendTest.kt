@@ -97,7 +97,8 @@ class ChatGptBackendTest {
         codex.enqueue(
             sse(
                 """{"type":"response.output_text.delta","delta":"Hello"}""",
-                """{"type":"response.output_text.delta","delta":" world"}"""
+                """{"type":"response.output_text.delta","delta":" world"}""",
+                COMPLETED
             )
         )
 
@@ -107,7 +108,7 @@ class ChatGptBackendTest {
     @Test
     fun `an image is sent as an input image`() = runBlocking {
         signIn()
-        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"ok"}"""))
+        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"ok"}""", COMPLETED))
 
         provider.complete(
             request().copy(
@@ -130,7 +131,7 @@ class ChatGptBackendTest {
                 .body("""{"access_token":"access-2","refresh_token":"refresh-2","expires_in":3600}""")
                 .build()
         )
-        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"pong"}"""))
+        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"pong"}""", COMPLETED))
 
         assertEquals("pong", provider.complete(request()).content)
 
@@ -171,6 +172,21 @@ class ChatGptBackendTest {
         assertEquals(listOf("partial"), emitted)
         assertTrue("got $failure", failure is LLMException)
         assertEquals(LLMError.ServerError, (failure as LLMException).error)
+    }
+
+    @Test
+    fun `a stream that ends before response completed fails after emitting its text`() = runBlocking {
+        signIn()
+        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"cut"}"""))
+        val emitted = mutableListOf<String>()
+
+        val failure = runCatching {
+            provider.streamComplete(request()).collect { emitted += it }
+        }.exceptionOrNull()
+
+        assertEquals(listOf("cut"), emitted)
+        assertTrue("got $failure", failure is LLMException)
+        assertEquals(LLMError.MalformedResponse, (failure as LLMException).error)
     }
 
     @Test
@@ -234,7 +250,7 @@ class ChatGptBackendTest {
     @Test
     fun `a session with no account id sends no account header`() = runBlocking {
         signIn(accountId = null)
-        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"ok"}"""))
+        codex.enqueue(sse("""{"type":"response.output_text.delta","delta":"ok"}""", COMPLETED))
 
         provider.complete(request())
 
@@ -259,6 +275,10 @@ class ChatGptBackendTest {
         ),
         responseFormat = ResponseFormat.TEXT
     )
+
+    private companion object {
+        const val COMPLETED = """{"type":"response.completed","response":{}}"""
+    }
 
     private fun sse(vararg events: String) = MockResponse.Builder()
         .code(200)

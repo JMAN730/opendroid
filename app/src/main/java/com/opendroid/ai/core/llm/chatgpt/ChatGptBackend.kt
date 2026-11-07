@@ -174,6 +174,7 @@ class ChatGptBackend internal constructor(
         var outputBytes = 0L
         var tokensUsed = 0
         var failure: LLMException? = null
+        var completed = false
 
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -199,6 +200,7 @@ class ChatGptBackend internal constructor(
                     if (delta.isNotEmpty()) onDelta(delta)
                 }
                 "response.completed" -> {
+                    completed = true
                     tokensUsed = event.obj("response")?.obj("usage")?.int("total_tokens") ?: tokensUsed
                 }
                 "response.failed" -> {
@@ -213,7 +215,8 @@ class ChatGptBackend internal constructor(
         // A failure after some text still fails the reply: the deltas were already passed to
         // onDelta, so a streaming caller keeps the partial text and marks it incomplete.
         failure?.let { throw it }
-        if (output.isBlank()) throw LLMErrorMapper.malformed(ProviderCatalog.CHATGPT, model)
+        // A stream that ends before response.completed was cut off, however much text it sent.
+        if (!completed || output.isBlank()) throw LLMErrorMapper.malformed(ProviderCatalog.CHATGPT, model)
         return Completion(output.toString(), tokensUsed)
     }
 
