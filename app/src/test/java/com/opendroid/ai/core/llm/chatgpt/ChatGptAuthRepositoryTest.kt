@@ -88,6 +88,24 @@ class ChatGptAuthRepositoryTest {
     }
 
     @Test
+    fun `a refreshed session that cannot be saved asks for a reconnect until a save succeeds`() = runBlocking {
+        save(session(access = "access-1", expiresAt = now))
+        store.failWrites = true
+        server.enqueue(json("""{"access_token":"access-2","refresh_token":"refresh-2","expires_in":3600}"""))
+
+        assertEquals("access-2", repository.validSession().access)
+        assertEquals(ChatGptAccountStatus.ReconnectRequired, repository.status.value)
+        assertEquals(ChatGptAccountStatus.ReconnectRequired, repository.reloadStatus())
+
+        store.failWrites = false
+        server.enqueue(json("""{"authorization_code":"code-1","code_verifier":"verifier-1"}"""))
+        server.enqueue(json("""{"access_token":"access-3","refresh_token":"refresh-3","expires_in":3600}"""))
+        assertEquals(DeviceLoginOutcome.SignedIn, repository.completeDeviceLogin(start(intervalMillis = 1_000)))
+
+        assertEquals(ChatGptAccountStatus.SignedIn(null), repository.status.value)
+    }
+
+    @Test
     fun `a rejected refresh is an auth failure and keeps the stored session`() = runBlocking {
         val current = session(access = "access-1", expiresAt = now)
         save(current)

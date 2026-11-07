@@ -2802,6 +2802,8 @@ private fun ChatGptAccountCard(
                         append("Connected")
                         signedIn.planType?.let { append(" · ").append(it.replaceFirstChar(Char::titlecase)) }
                     }
+                    status == ChatGptAccountStatus.ReconnectRequired ->
+                        "Session could not be saved on this device — reconnect"
                     status == ChatGptAccountStatus.Unavailable -> "Sign-in storage is unavailable on this device"
                     else -> "Not connected"
                 },
@@ -2890,6 +2892,7 @@ private fun ChatGptAccountCard(
                 ChatGptLoginState.Idle -> Unit
             }
 
+            val hasSession = signedIn != null || status == ChatGptAccountStatus.ReconnectRequired
             val loginInProgress = login is ChatGptLoginState.Starting ||
                 login is ChatGptLoginState.AwaitingApproval
             if (!loginInProgress) {
@@ -2899,12 +2902,12 @@ private fun ChatGptAccountCard(
                         colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
                     ) {
                         Text(
-                            text = if (signedIn != null) "Reconnect" else "Connect with device code",
+                            text = if (hasSession) "Reconnect" else "Connect with device code",
                             fontSize = 11.sp,
                             color = DarkBackground
                         )
                     }
-                    if (signedIn != null) {
+                    if (hasSession) {
                         OutlinedButton(onClick = viewModel::disconnectChatGpt) {
                             Text("Disconnect", fontSize = 11.sp, color = AccentRed)
                         }

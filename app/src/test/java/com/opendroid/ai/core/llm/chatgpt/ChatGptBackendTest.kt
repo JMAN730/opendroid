@@ -154,7 +154,7 @@ class ChatGptBackendTest {
     }
 
     @Test
-    fun `text that arrived before an in-stream failure is still returned`() = runBlocking {
+    fun `an in-stream failure after partial text fails the reply after emitting the text`() = runBlocking {
         signIn()
         codex.enqueue(
             sse(
@@ -162,8 +162,15 @@ class ChatGptBackendTest {
                 """{"type":"error","message":"boom"}"""
             )
         )
+        val emitted = mutableListOf<String>()
 
-        assertEquals("partial", provider.complete(request()).content)
+        val failure = runCatching {
+            provider.streamComplete(request()).collect { emitted += it }
+        }.exceptionOrNull()
+
+        assertEquals(listOf("partial"), emitted)
+        assertTrue("got $failure", failure is LLMException)
+        assertEquals(LLMError.ServerError, (failure as LLMException).error)
     }
 
     @Test

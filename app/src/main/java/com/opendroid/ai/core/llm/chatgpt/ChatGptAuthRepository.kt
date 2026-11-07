@@ -24,6 +24,11 @@ import javax.inject.Singleton
 sealed interface ChatGptAccountStatus {
     data object SignedOut : ChatGptAccountStatus
     data class SignedIn(val planType: String?) : ChatGptAccountStatus
+    /**
+     * A refreshed session could not be saved. Refresh tokens are single-use, so the stored one
+     * is likely spent and the user must sign in again.
+     */
+    data object ReconnectRequired : ChatGptAccountStatus
     /** The encrypted credential store cannot be read, so the sign-in state is unknown. */
     data object Unavailable : ChatGptAccountStatus
 }
@@ -56,6 +61,10 @@ class ChatGptAuthRepository internal constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val sessionLock = Mutex()
 
+    /** Set when a rotated session could not be saved; cleared by the next successful save or sign-out. */
+    @Volatile
+    private var refreshNotSaved = false
+
     private val mutableStatus = MutableStateFlow<ChatGptAccountStatus>(ChatGptAccountStatus.SignedOut)
     val status: StateFlow<ChatGptAccountStatus> = mutableStatus.asStateFlow()
 
@@ -78,7 +87,9 @@ class ChatGptAuthRepository internal constructor(
                 DevicePollResult.Pending -> Unit
                 is DevicePollResult.Failed -> return DeviceLoginOutcome.Failed(result.message)
                 is DevicePollResult.Approved -> {
-                    val saved = sessionLock.withLock { write(result.session) }
+                    val saved = sessionLock.withLock {
+                        write(result.session).also { if (it) refreshNotSaved = false }
+                    }
                     reloadStatus()
                     return if (saved) {
                         DeviceLoginOutcome.SignedIn
@@ -95,7 +106,7 @@ class ChatGptAuthRepository internal constructor(
         val removed = sessionLock.withLock {
             withContext(Dispatchers.IO) {
                 store.remove(ProviderCredentialId.ChatGptSession) is CredentialStoreResult.Success
-            }
+            }.also { if (it) refreshNotSaved = false }
         }
         reloadStatus()
         return removed
@@ -131,10 +142,10 @@ class ChatGptAuthRepository internal constructor(
         } catch (e: ChatGptAuthException) {
             throw e.toLLMException()
         }
-        if (!write(fresh)) {
-            // The new tokens still serve this request; the next one may need a reconnect.
-            Log.w(TAG, "Could not persist the refreshed ChatGPT session.")
-        }
+        // The new tokens still serve this request. If they cannot be saved, the stored refresh
+        // token is likely spent, so Settings asks for a reconnect instead of showing Connected.
+        refreshNotSaved = !write(fresh)
+        if (refreshNotSaved) Log.w(TAG, "Could not persist the refreshed ChatGPT session.")
         publish(StoredSession.Present(fresh))
         fresh
     }
@@ -175,7 +186,9 @@ class ChatGptAuthRepository internal constructor(
 
     private fun publish(read: StoredSession): ChatGptAccountStatus {
         val status = when (read) {
-            is StoredSession.Present -> ChatGptAccountStatus.SignedIn(read.session.planType)
+            is StoredSession.Present ->
+                if (refreshNotSaved) ChatGptAccountStatus.ReconnectRequired
+                else ChatGptAccountStatus.SignedIn(read.session.planType)
             StoredSession.Absent -> ChatGptAccountStatus.SignedOut
             StoredSession.Unreadable -> ChatGptAccountStatus.Unavailable
         }

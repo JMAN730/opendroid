@@ -210,8 +210,9 @@ class ChatGptBackend internal constructor(
             }
         }
 
-        // As in the Codex CLI, text that arrived before a failure is still the answer.
-        if (output.isEmpty()) failure?.let { throw it }
+        // A failure after some text still fails the reply: the deltas were already passed to
+        // onDelta, so a streaming caller keeps the partial text and marks it incomplete.
+        failure?.let { throw it }
         if (output.isBlank()) throw LLMErrorMapper.malformed(ProviderCatalog.CHATGPT, model)
         return Completion(output.toString(), tokensUsed)
     }
