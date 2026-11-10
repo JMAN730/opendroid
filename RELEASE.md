@@ -6,7 +6,7 @@ See the full release documentation and changelogs in [docs/RELEASE.md](docs/RELE
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
-**New signing key.** v1.0.9 is signed with a new release key (certificate SHA-256 `45e7e11c6476b4f21387db1809c66c769878416f3f311e71b286f2d77db1e165`). Android refuses to update an earlier build in place: uninstall it first, then install this one.
+**New signing key.** v1.0.9 is signed with a new release key (certificate SHA-256 `45e7e11c6476b4f21387db1809c66c769878416f3f311e71b286f2d77db1e165`). Android refuses to update an earlier build in place, so it must be uninstalled first. Uninstalling deletes all local app data, including conversations, memories, routines and saved API keys, and app backups are disabled, so there is no automatic way to restore it. Install this build only once you accept losing that data.
 
 v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto-reply, storage, on-device models, social, memory and MCP. v1.0.8 was never published as a GitHub release, so everything in the v1.0.8 notes below also ships for the first time in this build.
 
