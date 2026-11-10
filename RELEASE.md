@@ -6,6 +6,8 @@ See the full release documentation and changelogs in [docs/RELEASE.md](docs/RELE
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
 
+**New signing key.** v1.0.9 is signed with a new release key (certificate SHA-256 `45e7e11c6476b4f21387db1809c66c769878416f3f311e71b286f2d77db1e165`). Android refuses to update an earlier build in place, so it must be uninstalled first. Uninstalling deletes all local app data, including conversations, memories, routines and saved API keys, and app backups are disabled, so there is no automatic way to restore it. Install this build only once you accept losing that data.
+
 v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto-reply, storage, on-device models, social, memory and MCP. v1.0.8 was never published as a GitHub release, so everything in the v1.0.8 notes below also ships for the first time in this build.
 
 ### Highlights since v1.0.8
@@ -57,10 +59,10 @@ v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto
 * **`app-release.aab`** — Release Android App Bundle.
 
 ### Checksums (SHA-256)
-* **`app-debug.apk`**: `TBD`
-* **`app-release.apk`**: `TBD`
-* **`app-debug.aab`**: `TBD`
-* **`app-release.aab`**: `TBD`
+* **`app-debug.apk`**: `1ddf7efb22ed44e21f5ba60a48584207d9025370a4478a2d038bfca5c55443bb`
+* **`app-release.apk`**: `cafe14e8f36c13fb99233f5fbd82bc6a4f6f0f5a0d977242acb9387b5b015615`
+* **`app-debug.aab`**: `61a7452a4e545a14829b8605eeaffdf04275e0b1e1cbadab6e339e3b3a5b59a5`
+* **`app-release.aab`**: `98ef49f2fd7039441837ec9269a1b71fa4519fe93503bbfa812b0b3966d6c98f`
 
 ### Build Configuration
 * **Package**: `com.opendroid.aiagent`
