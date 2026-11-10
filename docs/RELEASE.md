@@ -14,7 +14,7 @@ v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto
 
 #### 🔒 Privacy & Security
 *   **Backups off again**: `android:allowBackup="false"` is restored, and app files are excluded from device-to-device transfer (#241).
-*   **Level 4 secrets stay out of storage and logs**: sensitive plan parameters are kept out of the `plans` table (#240), and Level 4 label nodes are cleared, with collector errors passed through the stream wrapper (#237).
+*   **Level 4 secrets kept out of saved plans**: sensitive plan parameters are kept out of the `plans` table (#240), and Level 4 label nodes are cleared, with collector errors passed through the stream wrapper (#237).
 *   **Workspace confinement**: file actions are confined to the workspace, refuse its root (#243), stay on the chosen custom SAF folder (#244), and refuse copy, move or zip when the source and destination overlap (#242).
 *   **MCP server hardening**: request headers are capped, and requests get a deadline and a bounded worker pool (#249). The MCP store no longer resets when decryption fails (#248).
 
@@ -33,7 +33,7 @@ v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto
 *   Notification history is pruned after 30 days and the history screen is capped (#216). Learned patterns stay in fixed rows and are cleared with the history (#225). The learned profile is kept out of `READ_NOTIFICATIONS` results (#224).
 
 #### 🧠 On-Device & Cloud Models
-*   On-device engine use is serialized under one mutex (#232). Decoding stops at the output cap (#231). The token estimate is now an upper bound (#230).
+*   On-device engine use is serialized under one mutex (#232). Decoding stops at the output cap (#231). The token estimate is more conservative, though still a heuristic (#230).
 *   The on-device planning prompt goes to the model unrewritten (#233). Only requests marked as planning are rewritten, not ones matched by prompt text (#221).
 *   RAM tiers are judged by what phones report, not advertised GB (#234).
 *   A stopped download keeps its partial file and releases the LiteRT engine (#236). Delete Unused Models keeps the selected on-device model (#235).
