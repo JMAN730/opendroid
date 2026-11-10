@@ -69,6 +69,24 @@ class ConnectionTestPlannerTest {
     }
 
     @Test
+    fun `chatgpt without a sign-in is AuthMissing and is not counted as configured`() {
+        val config = LLMConfig()
+
+        val gap = ConnectionTestPlanner.configurationGap(config, "ChatGPT", chatGptSignedIn = false)
+
+        assertEquals(LLMError.AuthMissing, gap?.reason)
+        assertTrue("ChatGPT" !in ConnectionTestPlanner.configuredProviders(config))
+    }
+
+    @Test
+    fun `chatgpt with a sign-in is configured without any api key`() {
+        val config = LLMConfig()
+
+        assertNull(ConnectionTestPlanner.configurationGap(config, "ChatGPT", chatGptSignedIn = true))
+        assertTrue("ChatGPT" in ConnectionTestPlanner.configuredProviders(config, chatGptSignedIn = true))
+    }
+
+    @Test
     fun `custom endpoint missing is RequestInvalid`() {
         val gap = ConnectionTestPlanner.configurationGap(
             LLMConfig(apiKeys = mapOf("Custom OpenAI Compatible" to "sk")),

@@ -44,6 +44,7 @@ class ProviderErrorDetail private constructor(
 
     enum class Provider(val displayName: String) {
         OPENAI("OpenAI"),
+        CHATGPT("ChatGPT"),
         CLAUDE("Anthropic Claude"),
         GEMINI("Google Gemini"),
         GROQ("Groq"),

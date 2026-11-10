@@ -198,6 +198,8 @@ class SettingsRepository internal constructor(
                 is ProviderCredentialId.ApiKey -> snapshot.providerApiKeys[credential.providerName]
                 ProviderCredentialId.ElevenLabsApiKey -> snapshot.elevenLabsApiKey
                 ProviderCredentialId.HuggingFaceToken -> null
+                // Never written through updateConfig, so it is never in attemptedCredentials.
+                ProviderCredentialId.ChatGptSession -> null
             }
             val result = persistCredential(credential, previousValue)
             if (result !is CredentialStoreResult.Success) return result.toPersistenceState()

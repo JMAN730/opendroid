@@ -28,6 +28,7 @@ import javax.inject.Singleton
 class LLMProviderFactory @Inject constructor(
     private val claudeProvider: Provider<ClaudeProvider>,
     private val openAIProvider: Provider<OpenAIProvider>,
+    private val chatGptProvider: Provider<ChatGptProvider>,
     private val geminiProvider: Provider<GeminiProvider>,
     private val mistralProvider: Provider<MistralProvider>,
     private val groqProvider: Provider<GroqProvider>,
@@ -59,6 +60,7 @@ class LLMProviderFactory @Inject constructor(
         val rawProvider = when (name) {
             "Anthropic Claude" -> claudeProvider.get()
             "OpenAI" -> openAIProvider.get()
+            ProviderCatalog.CHATGPT -> chatGptProvider.get()
             "Google Gemini" -> geminiProvider.get()
             "Mistral AI" -> mistralProvider.get()
             "Groq" -> groqProvider.get()

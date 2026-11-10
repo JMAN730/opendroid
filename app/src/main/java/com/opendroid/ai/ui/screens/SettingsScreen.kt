@@ -43,6 +43,9 @@ import com.opendroid.ai.data.models.resolvedOllamaTimeoutSeconds
 import com.opendroid.ai.core.llm.OnDeviceModelRegistry
 import com.opendroid.ai.core.llm.OnDeviceBackend
 import com.opendroid.ai.core.llm.ConnectionTestState
+import com.opendroid.ai.core.llm.ProviderCatalog
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAccountStatus
+import com.opendroid.ai.ui.viewmodel.ChatGptLoginState
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.core.security.ProviderCredentialRecoveryState
 import com.opendroid.ai.core.service.McpConfigRecoveryState
@@ -97,6 +100,7 @@ fun SettingsScreen(
     val providers = listOf(
         "Google Gemini",
         "OpenAI",
+        ProviderCatalog.CHATGPT,
         "Anthropic Claude",
         "Groq",
         "Mistral AI",
@@ -1576,6 +1580,16 @@ fun SettingsScreen(
                 }
             }
 
+            // ChatGPT sign-in card (visible only when ChatGPT is selected)
+            if (config.activeProvider == ProviderCatalog.CHATGPT) {
+                item {
+                    ChatGptAccountCard(
+                        viewModel = viewModel,
+                        connectionState = connectionResults[ProviderCatalog.CHATGPT]
+                    )
+                }
+            }
+
             // Copilot Endpoint Config Card (Visible only when Copilot API is selected)
             if (config.activeProvider == "Copilot API") {
                 item {
@@ -1695,7 +1709,10 @@ fun SettingsScreen(
                                 modifier = Modifier.padding(top = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val inputProviders = providers.filter { it != "Ollama" && it != "On-Device AI" }
+                                // ChatGPT signs in with a device code in its own card; it has no API key.
+                                val inputProviders = providers.filter {
+                                    it != "Ollama" && it != "On-Device AI" && it != ProviderCatalog.CHATGPT
+                                }
                                 inputProviders.forEach { providerName ->
                                     val keyVal = config.apiKeys[providerName] ?: ""
                                     val connectionState = connectionResults[providerName]
@@ -2686,15 +2703,18 @@ private fun connectionStatusLabel(state: ConnectionTestState?): String = when (s
     is ConnectionTestState.Connected ->
         "Connected with ${state.model} · ${state.latencyMs} ms"
     is ConnectionTestState.Failed -> when (state.error) {
-        LLMError.AuthInvalid -> "Key rejected"
-        LLMError.AuthMissing -> "Key required"
+        LLMError.AuthInvalid ->
+            if (state.provider == ProviderCatalog.CHATGPT) "Sign-in rejected — reconnect" else "Key rejected"
+        LLMError.AuthMissing ->
+            if (state.provider == ProviderCatalog.CHATGPT) "Sign-in required" else "Key required"
         LLMError.QuotaExhausted -> "Quota exhausted"
         LLMError.RateLimited -> "Rate limited"
         LLMError.Network -> "Network error"
         else -> "Connection failed"
     }
     is ConnectionTestState.ConfigMissing -> when (state.reason) {
-        LLMError.AuthMissing -> "Key required"
+        LLMError.AuthMissing ->
+            if (state.provider == ProviderCatalog.CHATGPT) "Sign-in required" else "Key required"
         else -> "Configuration required"
     }
     else -> "Not tested"
@@ -2744,4 +2764,184 @@ private fun SecureApiKeyField(
         ),
         modifier = modifier.fillMaxWidth()
     )
+}
+
+/**
+ * Signs in to ChatGPT with a device code: the app shows a short code, the user enters it on
+ * OpenAI's page in any browser, and the app picks up the session once it is approved.
+ */
+@Composable
+private fun ChatGptAccountCard(
+    viewModel: SettingsViewModel,
+    connectionState: ConnectionTestState?
+) {
+    val status by viewModel.chatGptStatus.collectAsState()
+    val login by viewModel.chatGptLogin.collectAsState()
+    val context = LocalContext.current
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderColor, RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = CardBackground)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "CHATGPT ACCOUNT",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            val signedIn = status as? ChatGptAccountStatus.SignedIn
+            Text(
+                text = when {
+                    signedIn != null -> buildString {
+                        append("Connected")
+                        signedIn.planType?.let { append(" · ").append(it.replaceFirstChar(Char::titlecase)) }
+                    }
+                    status == ChatGptAccountStatus.ReconnectRequired ->
+                        "Session could not be saved on this device — reconnect"
+                    status == ChatGptAccountStatus.Unavailable -> "Sign-in storage is unavailable on this device"
+                    else -> "Not connected"
+                },
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (signedIn != null) AccentCyan else TextSecondary
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (val state = login) {
+                ChatGptLoginState.Starting -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = TextPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Requesting a device code…", fontSize = 12.sp, color = TextSecondary)
+                    }
+                }
+                is ChatGptLoginState.AwaitingApproval -> {
+                    Text(
+                        text = "1. Open the OpenAI page below and sign in.\n2. Enter this code:",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = state.userCode,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 3.sp,
+                        color = AccentCyan
+                    )
+                    Text(
+                        text = state.verificationUrl,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("ChatGPT device code", state.userCode)
+                                )
+                            }
+                        ) {
+                            Text("Copy code", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = { uriHandler.openUri(state.verificationUrl) },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
+                        ) {
+                            Text("Open page", fontSize = 11.sp, color = DarkBackground)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = TextPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Waiting for approval…",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = viewModel::cancelChatGptLogin) {
+                            Text("Cancel", fontSize = 11.sp, color = AccentRed)
+                        }
+                    }
+                }
+                is ChatGptLoginState.Failed -> {
+                    Text(text = state.message, fontSize = 12.sp, color = AccentRed)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                ChatGptLoginState.Idle -> Unit
+            }
+
+            val hasSession = signedIn != null || status == ChatGptAccountStatus.ReconnectRequired
+            val loginInProgress = login is ChatGptLoginState.Starting ||
+                login is ChatGptLoginState.AwaitingApproval
+            if (!loginInProgress) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = viewModel::connectChatGpt,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
+                    ) {
+                        Text(
+                            text = if (hasSession) "Reconnect" else "Connect with device code",
+                            fontSize = 11.sp,
+                            color = DarkBackground
+                        )
+                    }
+                    if (hasSession) {
+                        OutlinedButton(onClick = viewModel::disconnectChatGpt) {
+                            Text("Disconnect", fontSize = 11.sp, color = AccentRed)
+                        }
+                    }
+                }
+            }
+
+            if (signedIn != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = connectionStatusLabel(connectionState),
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { viewModel.testConnection(ProviderCatalog.CHATGPT) }) {
+                        Text("Test connection", fontSize = 11.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Uses your ChatGPT plan instead of an API key, through the same sign-in as " +
+                    "OpenAI's Codex CLI. This is not an official public API, so OpenAI may change " +
+                    "or block it. Usage counts against your ChatGPT plan limits.",
+                fontSize = 10.sp,
+                color = TextSecondary
+            )
+        }
+    }
 }

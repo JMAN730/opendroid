@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opendroid.ai.core.llm.ConnectionTestPlanner
+import com.opendroid.ai.core.llm.ProviderCatalog
+import com.opendroid.ai.core.llm.chatgpt.ChatGptAccountStatus
 import com.opendroid.ai.core.llm.ConnectionTestState
 import com.opendroid.ai.core.llm.error.LLMError
 import com.opendroid.ai.ui.theme.*
@@ -34,6 +36,7 @@ fun BenchmarkScreen(
     val config by viewModel.llmConfig.collectAsState()
     val connectionResults by viewModel.connectionResults.collectAsState()
     val batchProgress by viewModel.connectionBatchProgress.collectAsState()
+    val chatGptStatus by viewModel.chatGptStatus.collectAsState()
     var showConfirm by remember { mutableStateOf(false) }
 
     val providers = ConnectionTestPlanner.cloudProviders()
@@ -89,7 +92,10 @@ fun BenchmarkScreen(
         modifier = modifier
     ) { padding ->
         if (showConfirm) {
-            val configuredCount = ConnectionTestPlanner.configuredProviders(config).size
+            val configuredCount = ConnectionTestPlanner.configuredProviders(
+                config,
+                chatGptSignedIn = chatGptStatus is ChatGptAccountStatus.SignedIn
+            ).size
             AlertDialog(
                 onDismissRequest = { showConfirm = false },
                 title = { Text("Test all configured?") },
@@ -173,9 +179,9 @@ fun ProviderConnectionRow(
     val statusText = when (state) {
         is ConnectionTestState.Testing -> "Testing…"
         is ConnectionTestState.Connected -> "Connected · ${state.latencyMs} ms · ${state.model}"
-        is ConnectionTestState.Failed -> connectionFailureLabel(state.error)
+        is ConnectionTestState.Failed -> connectionFailureLabel(state.provider, state.error)
         is ConnectionTestState.ConfigMissing -> when (state.reason) {
-            LLMError.AuthMissing -> "Key required"
+            LLMError.AuthMissing -> connectionFailureLabel(state.provider, LLMError.AuthMissing)
             else -> "Configuration required"
         }
         else -> legacyLatencyMs?.takeIf { it > 0 && it != 9999L }?.let { "Last latency $it ms" }
@@ -244,9 +250,12 @@ fun ProviderConnectionRow(
     }
 }
 
-private fun connectionFailureLabel(error: LLMError): String = when (error) {
-    LLMError.AuthMissing -> "Key required"
-    LLMError.AuthInvalid -> "Invalid key"
+/** ChatGPT signs in instead of using a key, so its auth failures are worded as sign-in. */
+private fun connectionFailureLabel(provider: String, error: LLMError): String = when (error) {
+    LLMError.AuthMissing ->
+        if (provider == ProviderCatalog.CHATGPT) "Sign-in required" else "Key required"
+    LLMError.AuthInvalid ->
+        if (provider == ProviderCatalog.CHATGPT) "Sign-in rejected — reconnect" else "Invalid key"
     LLMError.QuotaExhausted -> "Quota exhausted"
     LLMError.RateLimited -> "Rate limited"
     LLMError.ModelUnavailable -> "Model unavailable"
