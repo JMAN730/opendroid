@@ -2,6 +2,12 @@
 
 Guidance for Claude Code and other agents working in this repository.
 
+## Attribution
+
+Never include Claude session links (`claude.ai/code/session_...`) in commit messages,
+PR titles or descriptions, PR or issue comments, or committed files. The
+`Co-Authored-By` trailer and a plain "Generated with Claude Code" line are fine.
+
 ## Agent skills
 
 ### Issue tracker

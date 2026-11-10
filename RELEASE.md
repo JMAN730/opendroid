@@ -2,9 +2,78 @@
 
 See the full release documentation and changelogs in [docs/RELEASE.md](docs/RELEASE.md).
 
-## v1.0.8 — Latest Release (October 28, 2026)
+## v1.0.9 — Latest Release (November 9, 2026)
 
 Current release. Sideload the APK for direct install, or use the AAB for Play Store distribution.
+
+v1.0.9 is a stability, privacy and safety release: 50 fixes across actions, auto-reply, storage, on-device models, social, memory and MCP. v1.0.8 was never published as a GitHub release, so everything in the v1.0.8 notes below also ships for the first time in this build.
+
+### Highlights since v1.0.8
+
+#### 🔒 Privacy & Security
+* **Backups off again**: `android:allowBackup="false"` is restored, and app files are excluded from device-to-device transfer (#241).
+* **Level 4 secrets kept out of saved plans**: sensitive plan parameters are kept out of the `plans` table (#240), and Level 4 label nodes are cleared, with collector errors passed through the stream wrapper (#237).
+* **Workspace confinement**: file actions are confined to the workspace, refuse its root (#243), stay on the chosen custom SAF folder (#244), and refuse copy, move or zip when the source and destination overlap (#242).
+* **MCP server hardening**: request headers are capped, and requests get a deadline and a bounded worker pool (#249). The MCP store no longer resets when decryption fails (#248).
+
+#### 📲 Actions & Messaging
+* **PAY_UPI** is no longer reported as sent, and its recipient and amount are validated (#206).
+* **WhatsApp**: links carry the number's country code in E.164 (#208), the empty-input check uses WhatsApp's own hint, and fallbacks no longer re-send unconfirmed messages (#209). An open SMS composer counts as a hand-off, so the WhatsApp fallback can't send the message twice (#212).
+* **Calls & contacts**: video calls go through the contact picker, saved picks are re-checked, and `#` is kept in tel URIs (#207).
+* **TYPE_TEXT** no longer wipes a field it found by its own text (#210).
+* **Do Not Disturb** turns on with the priority filter instead of total silence (#213).
+
+#### 💬 Auto-Reply & Notifications
+* Never replies through another conversation's notification (#214) and never replies into group conversations (#217).
+* Pending replies are cancelled when you answer by hand (#218). Private context is kept out of the auto-reply prompt (#220).
+* `AUTO_REPLY_TOGGLE` applies to every channel and the global switch (#223). The SMS toggle is limited to SMS apps (#215). Contact lookups are keyed on the app, not the bare name (#222).
+* A pending settings edit is saved when you leave the screen (#219).
+* Notification history is pruned after 30 days and the history screen is capped (#216). Learned patterns stay in fixed rows and are cleared with the history (#225). The learned profile is kept out of `READ_NOTIFICATIONS` results (#224).
+
+#### 🧠 On-Device & Cloud Models
+* On-device engine use is serialized under one mutex (#232). Decoding stops at the output cap (#231). The token estimate is more conservative, though still a heuristic (#230).
+* The on-device planning prompt goes to the model unrewritten (#233). Only requests marked as planning are rewritten, not ones matched by prompt text (#221).
+* RAM tiers are judged by what phones report, not advertised GB (#234).
+* A stopped download keeps its partial file and releases the LiteRT engine (#236). Delete Unused Models keeps the selected on-device model (#235).
+* Cloud provider responses are parsed without trusting their shape (#227). A huge `Retry-After` no longer overflows into an immediate retry (#226). An unknown saved provider fails instead of routing to Gemini (#229).
+* Settings: a model pick is saved for the provider it was picked for (#238), and non-secret settings still save while credentials are unreadable (#228).
+
+#### 🌐 Social
+* YouTube publish and YouTube/LinkedIn replies fail visibly instead of faking success (#245).
+* Publish and reply are idempotent across cancellation (#239).
+* Send permissions are enforced and the right account is picked (#246). Refresh, re-sync triage, inbox replies and smaller bugs are fixed (#247).
+* **Room migrations `MIGRATION_9_10` and `MIGRATION_10_11`**: the database schema goes from version 9 to 11, adding `social_comments.accountId` and `social_interactions.replyTargetId` and storing unreported metrics as unknown instead of 0.
+
+#### 🗂️ Memory, Routines & UI
+* Ordinary mentions of a spouse no longer overwrite the stored spouse name (#255). Contact picks are kept out of the prompt's user facts (#211). Startup cleanup no longer deletes user facts (#248).
+* Each detected routine keeps one memory (#253). Paused routines stay on the Routines screen (#250). Routine sections come from one flow, with geocoding kept off the main thread (#254).
+* The service stops instead of crashing when a foreground start is refused at boot (#252).
+* Stale contact pickers are closed, and speech stops on cancel (#251).
+
+### Release Assets
+* **`app-debug.apk`** — Debug build APK for developer testing & logging.
+* **`app-release.apk`** — Release APK (signed with V1+V2 signatures, ready to sideload).
+* **`app-debug.aab`** — Debug Android App Bundle.
+* **`app-release.aab`** — Release Android App Bundle.
+
+### Checksums (SHA-256)
+* **`app-debug.apk`**: `TBD`
+* **`app-release.apk`**: `TBD`
+* **`app-debug.aab`**: `TBD`
+* **`app-release.aab`**: `TBD`
+
+### Build Configuration
+* **Package**: `com.opendroid.aiagent`
+* **Version Code**: 10
+* **Version Name**: 1.0.9
+* **Min SDK**: 26 (Android 8.0)
+* **Target SDK**: 36 (Android 16)
+
+---
+
+## v1.0.8 (October 28, 2026)
+
+Not published as a GitHub release. These changes first ship in v1.0.9.
 
 ### Highlights since v1.0.7
 
