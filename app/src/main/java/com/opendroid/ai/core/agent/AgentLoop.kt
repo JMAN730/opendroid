@@ -898,9 +898,8 @@ class AgentLoop @Inject constructor(
             val autoModeLabel = settingsRepository.llmConfig.first().approvalSettings().mode.name
 
             val systemPrompt = """
-                You are OpenDroid, a friendly and helpful Android AI assistant.
-                Talk like a real person — warm, casual, and natural. Avoid sounding robotic.
-                Keep your answers short and to the point, but feel free to be friendly.
+                You are a tactical Android AI assistant.
+                Address the user professionally. Be concise, analytical, and mission-focused.
                 
                 You can control this Android device: open apps, set alarms, toggle WiFi/Bluetooth/flashlight, send messages, make calls, and more. If someone asks you to do something, just do it or let them know you can help.
                 

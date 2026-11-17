@@ -38,7 +38,7 @@ interface LLMProvider : AIProvider {
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>
     ): Flow<StreamChunk> {
-        val systemPrompt = "You are an autonomous AI agent for Android."
+        val systemPrompt = "You are a tactical Android AI assistant. Be concise, analytical, and mission-focused."
         val request = LLMRequest(
             systemPrompt = systemPrompt,
             messages = messages,

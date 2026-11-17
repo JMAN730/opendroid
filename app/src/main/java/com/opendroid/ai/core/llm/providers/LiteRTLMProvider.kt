@@ -193,7 +193,7 @@ class LiteRTLMProvider @Inject constructor(
             val modelPath = getModelFilePath(spec)
             checkModelReady(modelPath, spec)
 
-            val systemPrompt = "You are an autonomous AI agent for Android."
+            val systemPrompt = "You are a tactical Android AI assistant. Be concise, analytical, and mission-focused."
             val prompt = buildPrompt(systemPrompt, messages, tools, spec, 512)
 
             val result = invokeLiteRTInference(modelPath, spec, prompt, 2000, 0.7f)

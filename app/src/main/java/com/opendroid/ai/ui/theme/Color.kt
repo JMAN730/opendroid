@@ -28,16 +28,16 @@ data class OpenDroidColors(
     val isDark: Boolean
 )
 
-// ── Dark palette: Classic Pure Black (#000000) ───────────────
+// ── Dark palette: Deep Obsidian and Tactical Gold ───────────
 val DarkPalette = OpenDroidColors(
-    background = Color(0xFF000000),      // Classic pure OLED black
-    surface = Color(0xFF0A0A0A),         // Deep charcoal surface
+    background = Color(0xFF05070A),      // Deep obsidian
+    surface = Color(0xFF080C10),         // Elevated obsidian surface
     cardBackground = Color(0xFF141416),  // Elevated card surface
     borderColor = Color(0xFF27272A),     // Zinc 800 hairline border
     textPrimary = Color(0xFFFFFFFF),     // Pure white
     textSecondary = Color(0xFFA1A1AA),   // Zinc 400 silver
-    accentNeonGreen = Color(0xFFFFFFFF), // High-contrast monochrome (replaces green)
-    accentGreenButton = Color(0xFFFFFFFF), // Crisp white button
+    accentNeonGreen = Color(0xFFFFD700), // Tactical gold accent
+    accentGreenButton = Color(0xFFFFD700), // Tactical gold button
     accentPurple = Color(0xFFA855F7),    // Electric purple
     accentCyan = Color(0xFF38BDF8),      // Sky sapphire
     accentRed = Color(0xFFEF4444),       // Clean alert red
