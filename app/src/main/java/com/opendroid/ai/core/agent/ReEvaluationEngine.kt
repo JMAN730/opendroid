@@ -100,7 +100,7 @@ class ReEvaluationEngine @Inject constructor(
             
             // Format details for the prompt
             val systemPrompt = """
-                You are OpenDroid's Re-evaluation Engine. A plan step failed because the action '${failedStep.action}' is NOT registered.
+                You are the re-evaluation engine for a tactical Android assistant. A plan step failed because the action '${failedStep.action}' is NOT registered.
                 
                 You must rewrite the plan starting from this failed step. 
                 You MUST ONLY use the actions listed in the Whitelist below. Any other actions will fail.

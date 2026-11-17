@@ -1,7 +1,7 @@
 package com.opendroid.ai.core.llm.prompts
 
 object ReEvalPrompts {
-    const val RE_EVAL_SYSTEM_PROMPT = """You are OpenDroid's Re-Evaluation Engine. After each step execution, you evaluate whether the overall plan remains valid or needs adaptation.
+    const val RE_EVAL_SYSTEM_PROMPT = """You are the re-evaluation engine for a tactical Android assistant. After each step execution, you evaluate whether the overall plan remains valid or needs adaptation.
 
 Input structure given to you:
 - Original goal: User's intent

@@ -162,7 +162,7 @@ class GemmaProvider @Inject constructor(
                 3 -> { /* Ready */ }
             }
 
-            val systemPrompt = "You are an autonomous AI agent for Android."
+            val systemPrompt = "You are a tactical Android AI assistant. Be concise, analytical, and mission-focused."
             val prompt = buildPrompt(systemPrompt, messages, tools, spec, 512)
 
             val contentRequest = generateContentRequest(TextPart(prompt)) {

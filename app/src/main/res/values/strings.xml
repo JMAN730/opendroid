@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenDroid</string>
-    <string name="accessibility_service_desc">Provides autonomous UI interaction, screen reading, and navigation assistance for OpenDroid Agent control.</string>
+    <string name="app_name">Tactical Assistant</string>
+    <string name="accessibility_service_desc">Provides autonomous UI interaction, screen reading, and navigation assistance for Tactical Assistant control.</string>
 </resources>
